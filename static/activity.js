@@ -52,6 +52,19 @@ export const totals=report=>{
   return {total,errors,users:Number(report.active_users ?? 0),
     success:total?Math.max(0,Math.round((total-errors)*100/total)):100};
 };
+export function completeDailySeries(rows, days, todayISO){
+  const count=Math.max(1,Math.min(90,Number(days)||14));
+  const today=new Date((todayISO || new Date().toISOString().slice(0,10))+'T00:00:00Z');
+  if(Number.isNaN(today.valueOf()))return [];
+  const keyed=new Map((rows||[]).map(row=>[row.day,row]));
+  const result=[];
+  for(let back=count-1;back>=0;back--){
+    const date=new Date(today.valueOf()-back*86400000).toISOString().slice(0,10);
+    const item=keyed.get(date);
+    result.push({day:date,total:Number(item?.total||0),errors:Number(item?.errors||0)});
+  }
+  return result;
+}
 export function barScale(rows){
   const max=Math.max(1,...rows.map(row=>Number(row.total||0)));
   return rows.map(row=>({...row,pct:Math.round(Number(row.total||0)*100/max)}));
@@ -162,7 +175,7 @@ async function load(){
     $('activity-failed').textContent=formatNum(kpi.errors);
     $('activity-users').textContent=formatNum(kpi.users);
     $('activity-success').textContent=formatNum(kpi.success)+'٪';
-    renderTrend(report.days);
+    renderTrend(completeDailySeries(report.days,Number($('activity-days').value)));
     renderBars('activity-surfaces',report.surfaces,name=>surfaceLabel[name]||name);
     renderBars('activity-top-users',report.users);
     renderBars('activity-top-actions',report.actions,actionLabel);
