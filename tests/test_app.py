@@ -128,3 +128,53 @@ def test_browser_overview_denies_metrics_only_users(client):
     raw, _ = main.store.create_session(user_id)
     c.cookies.set('panadan_session',raw)
     assert c.get('/dashboard/overview/5').status_code == 403
+
+
+def test_admin_activity_page_and_reporting_are_protected(client):
+    c,main=client
+    assert c.get('/dashboard/activity').status_code == 401
+    assert c.get('/dashboard/activity/data').status_code == 401
+    uid=main.store.create_user('activityreader','safe-reader-password-long','reader',['calls:read'])
+    raw,_=main.store.create_session(uid)
+    c.cookies.set('panadan_session',raw)
+    assert c.get('/dashboard/activity').status_code == 403
+    assert c.get('/dashboard/activity/data').status_code == 403
+    admin=main.store.verify_login('admin','a-long-safe-testing-password')
+    token,_=main.store.create_session(admin)
+    c.cookies.set('panadan_session',token)
+    page=c.get('/dashboard/activity')
+    assert page.status_code == 200
+    assert 'فعالیت کاربران' in page.text
+    data=c.get('/dashboard/activity/data?days=14')
+    assert data.status_code == 200
+    assert 'total' in data.json()
+    assert data.headers['cache-control']=='no-store'
+    assert c.get('/dashboard/activity/data?surface=invalid').status_code==400
+
+
+def test_ai_transcripts_are_separately_permissioned_and_paged(client,monkeypatch):
+    c,main=client
+    calls=[]
+    def excerpt(call_id,limit,offset):
+        calls.append((call_id,limit,offset))
+        return {'id':call_id,'transcription':'Hello 09121234567',
+                'total_chars':12000}
+    monkeypatch.setattr(main.database,'transcript_excerpt',excerpt)
+    uid=main.store.create_user('ai_reader','ai-reader-password-long','analyst',
+                               ['calls:read','metrics:read','mcp:use'])
+    token,_=main.store.create_session(uid)
+    c.cookies.set('panadan_session',token)
+    assert c.get('/dashboard/ai/transcript/8').status_code == 403
+    assert not calls
+    admin=main.store.verify_login('admin','a-long-safe-testing-password')
+    raw,_=main.store.create_session(admin)
+    c.cookies.set('panadan_session',raw)
+    response=c.get('/dashboard/ai/transcript/8?offset=6000')
+    assert response.status_code==200
+    assert calls==[(8,6000,6000)]
+    assert response.json()['has_more']
+    assert response.json()['next_offset']==6017
+    assert '09121234567' not in response.json()['text']
+    logs=main.store.list_transcript_audit()
+    assert logs[0]['surface']=='webmcp'
+    assert logs[0]['call_id']==8
