@@ -117,6 +117,17 @@ class Store:
                 created_at INTEGER NOT NULL
             )""")
             c.execute('CREATE INDEX IF NOT EXISTS transcript_audit_user_time ON transcript_access_audit(user_id,created_at)')
+            c.execute("""CREATE TABLE IF NOT EXISTS activity_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                surface TEXT NOT NULL CHECK(surface IN ('dashboard','api','mcp','auth')),
+                action TEXT NOT NULL,
+                http_status INTEGER NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            )""")
+            c.execute('CREATE INDEX IF NOT EXISTS activity_events_time ON activity_events(created_at)')
+            c.execute('CREATE INDEX IF NOT EXISTS activity_events_user_time ON activity_events(user_id,created_at)')
             # Previously created tokens were admin-owned; require the existing admin
             # account to remain active for those tokens to work.
             admin = c.execute('SELECT id FROM users WHERE role=? ORDER BY id LIMIT 1', ('admin',)).fetchone()
@@ -306,6 +317,106 @@ class Store:
                 (user_id, surface, call_id, char_limit, now)
             )
             return True
+
+    def actor_for_token(self, raw: str, scope: str) -> int | None:
+        """Resolve owner from an already-authenticated service token, or None."""
+        if not raw or len(raw) > 256 or scope not in ('mcp:read','api:read','api:sensitive'):
+            return None
+        with self.db() as c:
+            row = c.execute(
+                """SELECT u.id,u.role,u.grants,u.is_active,t.scope
+                   FROM access_tokens t JOIN users u ON u.id=t.owner_id
+                   WHERE t.token_hash=? AND t.expires_at>?""",
+                (digest(raw),int(time.time())),
+            ).fetchone()
+        if not row or not row['is_active'] or (
+            row['scope'] != scope and not (scope == 'api:read' and row['scope'] == 'api:sensitive')
+        ):
+            return None
+        return int(row['id'])
+
+    def actor_for_oauth(self, issuer: str, subject: str) -> int | None:
+        if not issuer or not subject:
+            return None
+        with self.db() as c:
+            row=c.execute(
+                """SELECT u.id,u.role,u.grants,u.is_active
+                   FROM oauth_identities i JOIN users u ON u.id=i.user_id
+                   WHERE i.issuer=? AND i.subject=?""",
+                (issuer,subject),
+            ).fetchone()
+        return int(row['id']) if row and row['is_active'] else None
+
+    def record_activity(self, *, user_id: int | None, surface: str, action: str,
+                        http_status: int, duration_ms: int) -> None:
+        """Append safe request metadata only. No body, URL params or secrets."""
+        if surface not in ('dashboard','api','mcp','auth') or not 1 <= len(action) <= 120:
+            raise ValueError('Invalid audit event')
+        if not 100 <= http_status <= 599:
+            raise ValueError('Invalid HTTP status')
+        with self.db() as c:
+            c.execute(
+                """INSERT INTO activity_events
+                   (user_id,surface,action,http_status,duration_ms,created_at)
+                   VALUES(?,?,?,?,?,?)""",
+                (user_id,surface,action,http_status,max(0,min(duration_ms,600000)),int(time.time())),
+            )
+            # 90-day retention prevents unbounded growth; no customer data stored.
+            c.execute('DELETE FROM activity_events WHERE created_at<?',
+                      (int(time.time())-90*86400,))
+
+    def activity_report(self, *, days: int = 14, user_id: int | None = None,
+                        surface: str | None = None, limit: int = 100) -> dict:
+        if not 1 <= days <= 90 or not 1 <= limit <= 250:
+            raise ValueError('Invalid report range')
+        if surface and surface not in ('dashboard','api','mcp','auth'):
+            raise ValueError('Invalid activity surface')
+        where=['a.created_at>=?']
+        params=[int(time.time())-days*86400]
+        if user_id is not None:
+            where.append('a.user_id=?');params.append(user_id)
+        if surface:
+            where.append('a.surface=?');params.append(surface)
+        clause=' WHERE '+' AND '.join(where)
+        with self.db() as c:
+            def grouped(sql):
+                return [dict(row) for row in c.execute(sql+clause,params)]
+            daily=grouped(
+                """SELECT strftime('%Y-%m-%d',a.created_at,'unixepoch') AS day,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN a.http_status>=400 THEN 1 ELSE 0 END) AS errors
+                   FROM activity_events a"""
+                # GROUP BY is appended after WHERE.
+                + '' 
+            ) if False else [dict(row) for row in c.execute(
+                """SELECT strftime('%Y-%m-%d',a.created_at,'unixepoch') AS day,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN a.http_status>=400 THEN 1 ELSE 0 END) AS errors
+                   FROM activity_events a""" + clause + " GROUP BY day ORDER BY day", params
+            )]
+            surfaces=[dict(row) for row in c.execute(
+                """SELECT a.surface AS name,COUNT(*) AS total
+                   FROM activity_events a""" + clause + " GROUP BY a.surface ORDER BY total DESC", params
+            )]
+            actions=[dict(row) for row in c.execute(
+                """SELECT a.action AS name,COUNT(*) AS total
+                   FROM activity_events a""" + clause + " GROUP BY a.action ORDER BY total DESC LIMIT 8", params
+            )]
+            users=[dict(row) for row in c.execute(
+                """SELECT COALESCE(u.username,'ناشناس') AS name,COUNT(*) AS total
+                   FROM activity_events a LEFT JOIN users u ON u.id=a.user_id""" +
+                clause + " GROUP BY a.user_id ORDER BY total DESC LIMIT 8",params
+            )]
+            recent=[dict(row) for row in c.execute(
+                """SELECT a.id,COALESCE(u.username,'ناشناس') AS username,a.surface,
+                   a.action,a.http_status,a.duration_ms,a.created_at
+                   FROM activity_events a LEFT JOIN users u ON u.id=a.user_id""" +
+                clause + " ORDER BY a.id DESC LIMIT ?",(*params,limit)
+            )]
+        total=sum(item['total'] for item in surfaces)
+        failed=sum(item['errors'] for item in daily)
+        return {'total':total,'errors':failed,'days':daily,'surfaces':surfaces,
+                'actions':actions,'users':users,'recent':recent}
 
     def list_transcript_audit(self, limit: int = 100) -> list[dict]:
         with self.db() as c:
