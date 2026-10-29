@@ -5,6 +5,9 @@ from datetime import date, datetime, timezone
 import hmac
 import os
 import secrets
+import time
+import re
+import json
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -39,6 +42,52 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title='Panadan API', version='0.6.0', docs_url=None,
               redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.mount('/static', StaticFiles(directory='static'), name='static')
+# Activity logs contain ONLY a route category, actor, status and duration.
+# Query strings, token headers, request bodies and response bodies are omitted.
+@app.middleware('http')
+async def audit_http_activity(request: Request, call_next):
+    path = request.url.path
+    if not (path.startswith('/dashboard') or path.startswith('/api/v1/')):
+        return await call_next(request)
+    start = time.monotonic()
+    user_id = None
+    if path.startswith('/dashboard'):
+        session = store.session(request.cookies.get(COOKIE_NAME))
+        user_id = session['user_id'] if session else None
+        surface = 'dashboard'
+    else:
+        auth = request.headers.get('authorization', '')
+        token = auth[7:] if auth.startswith('Bearer ') else ''
+        user_id = store.actor_for_token(token, 'api:read')
+        surface = 'api'
+    # Prevent raw IDs, external names and query parameters entering the log.
+    # Only known route families and sanitized method are recorded.
+    approved = {
+        '/dashboard', '/dashboard/data', '/dashboard/metrics',
+        '/dashboard/filter-options', '/dashboard/api', '/dashboard/users',
+        '/dashboard/tokens', '/dashboard/connect', '/dashboard/oauth',
+        '/dashboard/activity', '/dashboard/activity/data'
+    }
+    action = path if path in approved else re.sub(
+        r'/\\d+(?=/|$)', '/{id}', path
+    )[:100]
+    action = request.method.upper() + ' ' + action
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        elapsed = int((time.monotonic()-start)*1000)
+        try:
+            store.record_activity(user_id=user_id, surface=surface,
+                                  action=action, http_status=status_code,
+                                  duration_ms=elapsed)
+        except Exception:
+            # Auditing failure must not turn an authorized read into a 500.
+            # Production monitoring should separately alert on SQLite failures.
+            pass
+
 
 
 def current_session(request: Request) -> dict:
@@ -344,6 +393,26 @@ def update_user(request: Request, uid: int, role: str = Form(...), csrf: str = F
     try: store.update_user(uid,role,grants if role != 'admin' else None,is_active,session['user_id'])
     except ValueError as exc: raise HTTPException(400,str(exc)) from exc
     return RedirectResponse('/dashboard/users',status_code=303)
+
+
+@app.get('/dashboard/activity', response_class=HTMLResponse, include_in_schema=False)
+def activity_page(request: Request, session: dict = Depends(current_session)):
+    admin_only(session)
+    return templates.TemplateResponse(request, 'activity.html', {
+        'session':session, 'csrf':session['csrf'],
+        'users':store.list_users(),
+    },headers={'Cache-Control':'no-store'})
+
+
+@app.get('/dashboard/activity/data', include_in_schema=False)
+def activity_data(days: int = Query(14,ge=1,le=90),
+                  user_id: int | None = Query(None,ge=1),
+                  surface: str | None = None,
+                  session: dict = Depends(current_session)):
+    admin_only(session)
+    try: result = store.activity_report(days=days,user_id=user_id,surface=surface)
+    except ValueError as e: raise HTTPException(400,str(e)) from e
+    return JSONResponse(result,headers={'Cache-Control':'no-store'})
 
 
 @app.get('/dashboard/api', response_class=HTMLResponse, include_in_schema=False)
