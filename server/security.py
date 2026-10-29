@@ -292,10 +292,10 @@ class Store:
 
     def audit_transcript_request(self, *, user_id: int, surface: str,
                                  call_id: int, char_limit: int) -> bool:
-        """Reserve a bounded transcript disclosure and log only metadata.
+        """Log every authorized transcript retrieval, without arbitrary quotas.
 
-        Atomic SQLite quota: at most 20 requests per account per rolling hour
-        across browser and remote MCP. Denials and errors disclose no transcript.
+        The per-request chunk size protects HTTP performance. The user may
+        fetch all remaining chunks, regardless of conversation length.
         """
         if surface not in ('mcp', 'webmcp') or call_id < 1 or not 1 <= char_limit <= 6000:
             return False
@@ -305,12 +305,6 @@ class Store:
             row = c.execute('SELECT role,grants,is_active FROM users WHERE id=?',(user_id,)).fetchone()
             caps = permissions(row['role'], row['grants']) if row and row['is_active'] else set()
             if not {'calls:read', 'calls:transcript:read'} <= caps:
-                return False
-            count = c.execute(
-                'SELECT COUNT(*) FROM transcript_access_audit WHERE user_id=? AND created_at>?',
-                (user_id, now-3600)
-            ).fetchone()[0]
-            if count >= 20:
                 return False
             c.execute(
                 'INSERT INTO transcript_access_audit(user_id,surface,call_id,char_limit,created_at) VALUES(?,?,?,?,?)',
