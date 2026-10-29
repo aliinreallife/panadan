@@ -21,7 +21,7 @@ def transcript_for_ai(record: dict | None, *, limit: int = MAX_TRANSCRIPT_CHARS,
         return None
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > MAX_TRANSCRIPT_CHARS:
         raise ValueError('Invalid transcript limit')
-    if type(offset) is not int or not 0 <= offset <= 1000000:
+    if type(offset) is not int or not 0 <= offset <= 2147483646:
         raise ValueError('Invalid transcript offset')
     text = str(record.get('transcription') or '')
     # Bound return size even if the database view contains a huge transcript.
