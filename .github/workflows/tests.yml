@@ -27,7 +27,7 @@ jobs:
       - name: Compile sources
         run: uv run --locked python -m compileall -q server tests tools
       - name: Test transcript formatter
-        run: node --test tests/transcript.test.mjs
+        run: node --test tests/*.test.mjs
       - name: Compile dashboard assets
         run: npm install --no-audit --no-fund && npm run build
       - name: Validate shell scripts
