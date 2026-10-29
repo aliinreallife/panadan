@@ -104,7 +104,7 @@ def transcript_excerpt(call_id: int, char_limit: int = 6000,
         raise ValueError('Invalid call ID')
     if type(char_limit) is not int or not 1 <= char_limit <= 6000:
         raise ValueError('Invalid transcript length')
-    if type(offset) is not int or not 0 <= offset <= 1000000:
+    if type(offset) is not int or not 0 <= offset <= 2147483646:
         raise ValueError('Invalid transcript offset')
     query = ('SELECT id, SUBSTRING("transcription" FROM %s FOR %s) AS transcription, '
              'COALESCE(LENGTH("transcription"), 0) AS total_chars '
