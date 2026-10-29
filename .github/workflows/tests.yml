@@ -1,15 +1,25 @@
-name: tests
+name: CI
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v9
         with:
-          python-version: '3.12'
-      - run: pip install -r requirements-dev.txt
-      - run: python -m compileall -q server tests
-      - run: pytest -q
+          enable-cache: true
+          version: "0.13.6"
+      - name: Confirm lockfile exists
+        run: test -s uv.lock
+      - name: Install locked dependencies
+        run: uv sync --locked --dev --python 3.12
+      - name: Run tests
+        run: uv run --locked pytest -q
+      - name: Compile sources
+        run: uv run --locked python -m compileall -q server tests tools
+      - name: Validate shell scripts
+        run: bash -n panadan.sh migrate-from-danf.sh

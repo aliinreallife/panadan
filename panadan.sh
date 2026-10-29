@@ -1,72 +1,90 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-cmd="${1:-help}"
-port="${PANADAN_HTTP_PORT:-8508}"
+cmd="${1:-help}"; shift || true
+umask 077
 if [[ -f .env.app ]]; then
-  value="$(sed -n 's/^PANADAN_HTTP_PORT=//p' .env.app | tail -n 1 | tr -d '\r')"
-  [[ "$value" =~ ^[0-9]+$ ]] && port="$value"
+  port="$(sed -n 's/^PANADAN_HTTP_PORT=//p' .env.app | tail -1 | tr -d '\r')"
+  proxy_port="$(sed -n 's/^PANADAN_PG_PROXY_PORT=//p' .env.app | tail -1 | tr -d '\r')"
 fi
+port="${port:-8508}"
+proxy_port="${proxy_port:-15432}"
 check_config() {
   [[ -s .env.db && -s .env.app && -s vpn/client.ovpn ]] || {
-    echo 'Missing .env.db / .env.app / vpn/client.ovpn; run ./migrate-from-danf.sh ~/danf-hub' >&2
+    echo 'Missing .env.db, .env.app or vpn/client.ovpn. See README.md.' >&2
     exit 1
   }
   grep -Eq '^PANADAN_ADMIN_PASSWORD=.{14,}$' .env.app || {
-    echo 'Set PANADAN_ADMIN_PASSWORD to 14+ characters in .env.app first.' >&2
-    exit 1
+    echo 'PANADAN_ADMIN_PASSWORD must be 14+ characters in .env.app.' >&2; exit 1;
   }
 }
-compose() { docker compose --env-file .env.app "$@"; }
+require_uv() {
+  command -v uv >/dev/null 2>&1 || { echo 'uv is required. Install uv on WSL; no system pip is needed.' >&2; exit 1; }
+}
+lock_if_needed() {
+  if [[ ! -s uv.lock ]]; then
+    echo 'First setup: resolving dependencies with uv and creating uv.lock ...'
+    uv lock
+    echo 'Commit uv.lock before deploying or publishing the repository.'
+  fi
+}
+compose_dev() { docker compose --env-file .env.app -f compose.dev.yaml "$@"; }
+compose_prod() { docker compose --env-file .env.app -f compose.prod.yaml "$@"; }
 case "$cmd" in
+  setup)
+    require_uv
+    lock_if_needed
+    uv sync --locked --dev
+    echo 'uv environment ready; uv.lock is the source of truth.'
+    ;;
+  dev)
+    check_config; require_uv; lock_if_needed
+    for image in danf-v2-vpn:latest danf-v2-python:latest; do
+      docker image inspect "$image" >/dev/null 2>&1 || { echo "Local image $image unavailable. See README." >&2; exit 1; }
+    done
+    compose_dev up -d --no-build
+    echo 'Using uv-managed Python on WSL; DB via isolated Docker VPN proxy.'
+    export PGHOST=127.0.0.1
+    export PGPORT="$proxy_port"
+    export PANADAN_AUTH_DB="$(pwd)/data/auth.sqlite"
+    export PANADAN_COOKIE_SECURE=false
+    uv run --locked --env-file .env.db --env-file .env.app \
+      uvicorn server.main:app --host 127.0.0.1 --port "$port" --no-proxy-headers "$@"
+    ;;
+  vpn-up) check_config; compose_dev up -d --no-build; compose_dev ps ;;
+  vpn-down) compose_dev down ;;
   up)
     check_config
-    compose up -d --build
-    compose ps
-    echo "Dashboard: http://localhost:${port}/login"
+    # Production: prebuilt images from GHCR; requires registry access for first pull.
+    compose_prod up -d --no-build
+    compose_prod ps
+    echo "Dashboard: http://localhost:$port/login"
     ;;
-  up-local)
-    check_config
-    for base in danf-v2-vpn:latest danf-v2-python:latest; do
-      docker image inspect "$base" >/dev/null 2>&1 || {
-        echo "Required local image missing: $base" >&2
-        echo 'This offline build uses locally cached images from DANF v2. Restore/rebuild those first, or repair Docker Hub access.' >&2
-        exit 1
-      }
-    done
-    if ! compgen -G 'wheelhouse/*.whl' >/dev/null; then
-      echo 'Preparing Python wheels through WSL, not Docker Hub ...'
-      python3 -m pip download --only-binary=:all: -r requirements.txt -d wheelhouse || {
-        echo 'Python wheel download failed. Fix WSL pip access or copy a complete wheelhouse/ here.' >&2
-        exit 1
-      }
-    fi
-    echo 'Building web image from the local DANF v2 Python image (no Docker Hub base pull) ...'
-    docker build --network=none -f Dockerfile.web.local -t panadan-web:local .
-    docker compose -f compose.local.yaml --env-file .env.app up -d --no-build
-    docker compose -f compose.local.yaml --env-file .env.app ps
-    echo "Dashboard: http://localhost:${port}/login"
-    ;;
-  wheels)
-    mkdir -p wheelhouse
-    python3 -m pip download --only-binary=:all: -r requirements.txt -d wheelhouse
-    ;;
-  down) compose down ;;
-  status) compose ps ;;
-  logs) compose logs --tail=80 -f web ;;
-  vpn-logs) compose logs --tail=80 vpn ;;
+  down) compose_prod down ;;
+  status) compose_dev ps || true; compose_prod ps || true ;;
+  logs) compose_dev logs --tail=80 pgrelay vpn ;;
+  prod-logs) compose_prod logs --tail=80 web vpn ;;
   test)
-    compose exec -T vpn sh -c 'ip -4 route get 192.168.3.9 && pg_isready -h 192.168.3.9 -p 5432'
-    echo 'For API check use: curl -fsS http://localhost:'"$port"'/healthz'
+    require_uv; check_config; lock_if_needed
+    uv sync --locked --dev
+    uv run --locked pytest -q
+    ;;
+  check)
+    check_config
+    echo 'VPN route:'
+    compose_dev exec -T vpn ip -4 route get 192.168.3.9
+    echo 'Local proxy (TCP reachability only):'
+    uv run --no-project --python 3.12 python -c 'import socket,sys; c=socket.create_connection(("127.0.0.1",int(sys.argv[1])),timeout=5); c.close(); print("local relay reachable")' "$proxy_port"
     ;;
   diagnose)
-    echo 'Docker context:'; docker context show
-    echo 'Local image availability:'
-    for i in danf-v2-python:latest danf-v2-vpn:latest python:3.12-slim debian:bookworm-slim; do
-      if docker image inspect "$i" >/dev/null 2>&1; then echo "  OK $i"; else echo "  MISSING $i"; fi
+    echo "uv: $(command -v uv || echo missing)"
+    echo 'Docker:'; docker context show
+    for image in danf-v2-vpn:latest danf-v2-python:latest; do
+      docker image inspect "$image" >/dev/null 2>&1 && echo "OK $image" || echo "MISSING $image"
     done
-    echo 'WSL Docker Hub DNS:'
-    getent ahostsv4 registry-1.docker.io | head -3 || true
     ;;
-  *) echo 'Usage: ./panadan.sh {up|up-local|wheels|down|status|logs|vpn-logs|test|diagnose}';;
+  *)
+    echo 'Usage: ./panadan.sh {setup|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|diagnose}'
+    echo 'dev = native WSL uv FastAPI + Docker-isolated VPN; up = GHCR production images'
+    ;;
 esac

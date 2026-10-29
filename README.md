@@ -1,76 +1,81 @@
-# Panadan · پنل گزارش تماس‌ها، FastAPI و MCP
+# Panadan · پانادان
 
-**Private, read-only reporting app** for the permitted `odoo.public.vw_danix_call_info_report` PostgreSQL view. Includes a responsive Persian RTL dashboard, API tokens, and MCP Streamable HTTP with separately scoped bearer tokens. **All access runs through the existing isolated OpenVPN container**; Windows and ordinary WSL traffic remain untouched.
+Private Persian RTL call-report dashboard, authenticated FastAPI REST API and read-only MCP endpoint backed by **only** the permitted PostgreSQL view `odoo.public.vw_danix_call_info_report`.
 
-## Why normal Docker build failed
+## What changed in v0.3
 
-Your `registry-1.docker.io` DNS/HTTPS connection timed out before FastAPI was even built. It is a **Docker Desktop registry networking** error, not an application or PostgreSQL error. The normal build (`./panadan.sh up`) needs Docker Hub access. Use `up-local` instead when the two `danf-v2-*` images are already in Docker Desktop's local image store.
+- **uv-first**: `pyproject.toml`, locked sync, `.python-version`, `uv run` and GitHub Actions with uv. System `pip` is not required.
+- **Local development without Docker Hub builds**: `uv run` starts FastAPI in WSL, while Docker **only** starts the isolated OpenVPN tunnel plus a localhost-only TCP relay to PostgreSQL.
+- No `wheelhouse/`, no per-start pip or wheel downloads, no `Dockerfile.web.local`, no `up-local` workaround.
+- **Production** is two prebuilt GHCR images, built in GitHub Actions, deployed using `compose.prod.yaml`. Docker Compose does not build on the deployment host.
+- Auth: dashboard admin session, separate revocable scoped API and MCP bearer tokens. MCP is still manual-bearer rather than OAuth 2.1. Keep local-only.
 
-## Migrate from existing DANF Hub
+### A lockfile note
+
+The ZIP **does not contain a `uv.lock`**, because dependency-index access was unavailable during packaging and a fabricated lockfile would be unsafe. Your first `./panadan.sh setup` runs `uv lock` on WSL and creates a real reproducible lockfile; **commit `uv.lock` to Git** before pushing. All subsequent commands use `--locked`, including CI and Docker builds. Initial uv dependency download requires WSL access to the Python package registry. Future runs reuse the uv cache.
+
+## Recommended install — next to old Panadan, no overwrites
 
 ```bash
 cd ~
-unzip /mnt/c/Users/ali/Downloads/panadan-repository.zip
-cd ~/panadan
-./migrate-from-danf.sh ~/danf-hub
-nano .env.app                  # PANADAN_ADMIN_PASSWORD=unique-14+-character-password
-(cd ~/danf-hub && docker compose down)  # only if its old VPN still runs
+unzip /mnt/c/Users/ali/Downloads/panadan-uv.zip
+cd ~/panadan-uv
+./migrate-from-danf.sh ~/panadan
+nano .env.app                      # PANADAN_ADMIN_PASSWORD=your-unique-14+-character-password
 ./panadan.sh diagnose
-./panadan.sh up-local          # reuses the local DANF v2 images; no Docker Hub pulls
+./panadan.sh setup                # resolves once, generates uv.lock, installs dependencies
+# Stop previous Panadan Docker web/VPN first to avoid conflicting VPN sessions:
+(cd ~/panadan && docker compose down)  # if previous app is running
+./panadan.sh dev                  # dashboard at http://localhost:8508/login
 ```
 
-The source app is unchanged; new credentials files are copied privately and never committed. `up-local` runs `pip download` from **WSL** to populate `wheelhouse/` if empty. If WSL PyPI access is also blocked, run `./panadan.sh wheels` on a working network or populate the wheelhouse separately before retrying. `wheelhouse/` stays ignored by Git.
+Note: `./panadan.sh dev` stays attached to your terminal (Ctrl+C stops the local web server); the VPN services remain available until `./panadan.sh vpn-down`. Your **old `~/panadan` remains unchanged**. Keep the new directory or rename it only after verifying the new version.
 
-If Docker Hub works again, `./panadan.sh up` uses the original Dockerfiles and builds normally.
-
-**Dashboard:** http://localhost:8508/login  
+**Local dashboard:** http://localhost:8508/login  
 **API:** http://localhost:8508/api/v1/calls  
-**MCP:** http://localhost:8508/mcp/ (bearer token required)
+**MCP:** http://localhost:8508/mcp/ (separate MCP token)
+
+### Quick commands
 
 ```bash
-./panadan.sh status
-./panadan.sh test
-curl -fsS http://localhost:8508/healthz
-./panadan.sh logs
-./panadan.sh down
+./panadan.sh setup             # install/update locked dependencies (does not start app)
+./panadan.sh dev               # start VPN, relay and FastAPI through uv
+./panadan.sh vpn-up            # VPN and DB relay only
+./panadan.sh vpn-down          # stop dev VPN/relay
+./panadan.sh test              # unit tests (synthetic data only)
+./panadan.sh status            # container states
+./panadan.sh logs              # VPN/relay logs
 ```
 
-## API and MCP authentication
+### Architecture
 
-- Dashboard: private admin account from `.env.app`, HttpOnly session cookies, CSRF protection for form actions.
-- API: scoped expiring `api:read` bearer token. Only `api:sensitive` tokens may request customer names, phones, call summaries, and transcripts through the designated detail endpoint.
-- MCP: separate expiring `mcp:read` bearer token. No raw SQL, customer contact details or transcripts. Four tools: `list_recent_calls`, `get_call_summary`, `get_call_metrics`, `get_available_states`.
-- Issue or revoke all API/MCP tokens in `/dashboard/tokens` after signing in.
+```text
+Windows + WSL                       Docker private network
 
-`/docs` is available after dashboard login. Tokens are shown only at creation and only token hashes are stored.
-
-## Safety constraints
-
-- Read-only PostgreSQL transaction and timeout per query; SQL bound to an allowlisted reporting view.
-- Database credentials and OpenVPN files live locally in ignored `.env.db` and `vpn/`.
-- Browser UI is bound to `127.0.0.1:8508` only; do not expose it to the internet without hardened proxy/TLS, host controls and OAuth support for remote MCP clients.
-- Existing PostgreSQL grants, network rules and VPN restrictions remain in effect. Other databases will still be blocked by `pg_hba.conf`.
-- Local API/MCP static bearer tokens are **not** OAuth 2.1: some remote MCP clients require OAuth and cannot connect until it is implemented.
-
-## Testing
-
-```bash
-python3 -m pip install -r requirements-dev.txt
-python3 -m pytest -q
-python3 -m compileall -q server tests
-bash -n panadan.sh migrate-from-danf.sh
+FastAPI + MCP (uv run)                 OpenVPN (tun0)
+    |                                      |
+    +-- localhost:15432 --> TCP relay ------> PostgreSQL 192.168.3.9:5432
+        (host loopback only)     (shared VPN namespace; fail-closed DB egress)
 ```
 
-Tests use synthetic data. Do not commit call exports or customer records.
+**Security:** `compose.dev.yaml` publishes the relay on `127.0.0.1` only, never on external interfaces. It is a raw PostgreSQL TCP forwarder protected by existing database credentials/SSL, not an authenticated HTTP proxy. Any local program could attempt to connect to the relay, but must still authenticate to PostgreSQL. Never publish port 15432 publicly or run the dev Compose file on a shared untrusted machine. The FastAPI app is likewise bound to `127.0.0.1`. Its admin detail route can expose personally identifying call data; never upload reports or transcripts to GitHub.
 
-## Create the private GitHub repository
+### Production workflow
 
-```bash
-cd ~/panadan
-gh auth status
-gh repo create aliinreallife/panadan --private --source=. --remote=origin --push
-```
+1. Run `./panadan.sh setup` so a real `uv.lock` exists; commit it. Review `docs/SECURITY.md` before deployment.
+2. Publish a **private** repository (`gh repo create aliinreallife/panadan --private --source=. --remote=origin --push`) only after checking no `.env`/VPN/data files are staged.
+3. GitHub Actions runs tests from the lockfile, builds VPN/web images, pushes `ghcr.io/<owner>/panadan-{web,vpn}:main` and `:sha-<commit>` to GHCR. Ensure private GHCR package pull permissions are configured.
+4. With GHCR access on the target host, copy locally your private `.env.app`, `.env.db` and `vpn/` files, then run `./panadan.sh up`. For reproducible production deployment, set `PANADAN_WEB_IMAGE` and `PANADAN_VPN_IMAGE` in `.env.app` to **sha-tagged** images.
+5. Dashboard port is bound to loopback; for remote access deploy a proper authenticated TLS proxy, host/Origin protection, audit logging, and full OAuth support as applicable for remote MCP clients.
 
-The ZIP contains a local Git repo with an initial commit. This does not mean the remote GitHub repository was created.
+If Docker Hub/GHCR DNS is broken locally, **local dev still works** using your existing `danf-v2-...` images. Production pulling from GHCR requires registry connectivity (or preloading the built images through `docker load`).
 
-See `docs/PRD.md`, `docs/SECURITY.md`, `docs/DECISIONS.md`, and `docs/STATUS.md`.
+### Authentication and data permissions
+
+Dashboard password uses hashed local storage in `data/` and HttpOnly CSRF-protected sessions; API `api:read` and `api:sensitive` scopes are separate from MCP `mcp:read`. No arbitrary SQL tool, source write operations, public exposure or raw transcript MCP tool. Queries use parameter binding and PostgreSQL read-only sessions. This is not an OAuth authorization server; remote ChatGPT MCP integration may require additional auth work.
+
+### Development guidelines
+
+Use `uv add <package>`, `uv add --dev <package>`, `uv lock`, `uv sync --locked`, `uv run --locked pytest -q`. Do not use `python3 -m pip` or manually update `requirements.txt`. Keep `pyproject.toml` and `uv.lock` together. CI fails when lock is absent/outdated.
+
+Project decisions and hardening tasks: `docs/PRD.md`, `docs/DECISIONS.md`, `docs/SECURITY.md`, `docs/STATUS.md`.

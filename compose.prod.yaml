@@ -1,16 +1,14 @@
+# Published images from private GHCR packages; no runtime dependency downloads.
 name: panadan
 services:
   vpn:
-    build:
-      context: .
-      dockerfile: Dockerfile.vpn
+    image: ${PANADAN_VPN_IMAGE:-ghcr.io/aliinreallife/panadan-vpn:main}
+    pull_policy: missing
     cap_add: [NET_ADMIN]
-    devices:
-      - /dev/net/tun:/dev/net/tun
+    devices: [/dev/net/tun:/dev/net/tun]
     volumes:
       - ./vpn:/vpn:ro
     ports:
-      # Important: the application is reachable from this machine only.
       - '127.0.0.1:${PANADAN_HTTP_PORT:-8508}:8000'
     healthcheck:
       test: ['CMD-SHELL', "ip -4 addr show dev tun0 | grep -q 'inet ' && ip -4 route get 192.168.3.9 | grep -Eq 'dev tun[[:alnum:]_.-]*'"]
@@ -20,9 +18,8 @@ services:
       start_period: 20s
     restart: unless-stopped
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile.web
+    image: ${PANADAN_WEB_IMAGE:-ghcr.io/aliinreallife/panadan-web:main}
+    pull_policy: missing
     network_mode: service:vpn
     depends_on:
       vpn:
@@ -37,6 +34,5 @@ services:
     volumes:
       - panadan_auth_data:/data
     restart: unless-stopped
-
 volumes:
   panadan_auth_data:

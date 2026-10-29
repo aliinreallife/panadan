@@ -1,4 +1,5 @@
 .git
+**/.git
 .env*
 !*.example
 vpn/
@@ -7,3 +8,6 @@ output/
 *.sqlite*
 __pycache__/
 .pytest_cache/
+.venv/
+wheelhouse/
+**/*.pyc

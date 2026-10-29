@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
         yield
 
 
-app = FastAPI(title='Panadan API', version='0.2.0', docs_url=None,
+app = FastAPI(title='Panadan API', version='0.3.0', docs_url=None,
               redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.mount('/static', StaticFiles(directory='static'), name='static')
 

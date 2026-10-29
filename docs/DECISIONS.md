@@ -7,3 +7,7 @@
 6. PostgreSQL `SoldOut` is labeled as a source-system state; do not claim confirmed sale without business validation.
 7. Keep the current VPN DNS/routing restrictions, review kill-switch and egress before production.
 8. Non-OAuth static MCP bearer tokens are acceptable for compatible clients in the initial private deployment; standards-compliant OAuth will be required for broad client compatibility.
+
+9. Development uses uv on WSL, not system pip. The Docker-local workaround is removed; only VPN and a localhost-only Postgres TCP relay run in Docker for dev.
+10. Production is built from a real committed `uv.lock` by CI, then delivered as private GHCR images.
+11. Preserve existing secrets and VPN profiles with a copy-only migration; no automatic import of the old Docker volume's auth SQLite, so API and MCP tokens must be reissued in the new development instance.

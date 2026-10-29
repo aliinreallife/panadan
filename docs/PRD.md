@@ -15,7 +15,7 @@ Provide an easy read-only interface for call-report data in `odoo.public.vw_dani
 - Scoped API tokens with revocation and expiry
 - MCP Streamable HTTP tools for summarization/analytics
 - Single SQL-view allowlist and parameterized reads, server-enforced read-only sessions
-- VPN inside dedicated network namespace shared by app, local-only HTTP port
+- WSL uv development with a loopback-only PostgreSQL relay inside the isolated VPN network; production web shares VPN network namespace
 
 ## Non-goals
 - Editing Odoo records, raw SQL query execution, bulk customer export, multi-tenant user provisioning, general Odoo administration.

@@ -21,3 +21,5 @@ permissions-report.json
 
 wheelhouse/
 compose.override.yaml
+
+.coverage
