@@ -16,7 +16,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(main.database, 'list_calls',lambda *a,**k:[{'id':5,'CALLDATE':'2026-10-01','aicallinfostate':'Unchecked'}])
     monkeypatch.setattr(main.database, 'get_call',lambda *a,**k:{'id':5,'summary':'synthetic'} if k.get('sensitive') else {'id':5})
     monkeypatch.setattr(main.database, 'stats',lambda *a,**k:{'total':1,'sold_out':0,'avg_ai_score':10,'avg_voice_length':20})
-    monkeypatch.setattr(main.database, 'statuses',lambda *a,**k:['Unchecked'])
+    monkeypatch.setattr(main.database, 'statuses',lambda *a,**k:['Unchecked','System Invalid'])
+    monkeypatch.setattr(main.database, 'call_types',lambda *a,**k:['FollowUp','FirstToch'])
     # Exercise dashboard/API permissions without restarting the singleton MCP
     # session manager, which the MCP SDK permits to run only once per process.
     from contextlib import asynccontextmanager
@@ -73,3 +74,29 @@ def test_stats_only_api_token(client):
     assert c.get('/api/v1/stats',headers=headers).status_code==200
     assert c.get('/api/v1/calls',headers=headers).status_code==401
     assert c.get('/api/v1/calls/5',headers=headers).status_code==401
+
+def test_filters_and_api_guide_require_session_permissions(client):
+    c,main=client
+    assert c.get('/dashboard/api').status_code == 401
+    assert c.get('/dashboard/filter-options').status_code == 401
+    admin = main.store.verify_login('admin','a-long-safe-testing-password')
+    cookie,_=main.store.create_session(admin)
+    c.cookies.set('panadan_session',cookie)
+    guide=c.get('/dashboard/api')
+    assert guide.status_code == 200
+    assert 'Swagger UI' in guide.text
+    assert 'call_type=FollowUp' in guide.text
+    options=c.get('/dashboard/filter-options')
+    assert options.status_code == 200
+    assert options.json()['call_types'] == ['FollowUp','FirstToch']
+    assert 'System Invalid' in options.json()['states']
+    assert c.get('/dashboard/data?call_type=FollowUp&state=Unchecked').status_code == 200
+
+def test_metrics_user_cannot_read_call_filter_values_or_api_guide(client):
+    c,main=client
+    uid=main.store.create_user('metrics-only', 'another-long-password', 'metrics', ['metrics:read'])
+    cookie,_=main.store.create_session(uid)
+    c.cookies.set('panadan_session',cookie)
+    assert c.get('/dashboard/filter-options').status_code == 403
+    assert c.get('/dashboard/api').status_code == 403
+    assert c.get('/dashboard/metrics').status_code == 200
