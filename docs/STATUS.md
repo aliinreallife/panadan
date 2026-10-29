@@ -58,3 +58,13 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Add automated regression tests for read-only queries, HTTP route methods, MCP tools and simulated effective write privileges.
 - [ ] Run `./panadan.sh audit-db` with the actual VPN-connected PostgreSQL login; previous audit indicated CREATE on public.
 - [ ] DBA resolves unnecessary effective CREATE/write grants and verifies the account independently, preferably with a dedicated least-privilege reader.
+
+## Experimental WebMCP browser tools
+
+- [x] Browser-native `document.modelContext.registerTool()` feature detection and abort-on-navigation lifecycle
+- [x] Read-only, same-origin, session-authenticated metrics, filtered calls and metadata-only single call overview
+- [x] Permission-scoped tools with capped pages and input validation; no customer identifiers/transcripts
+- [x] Dedicated `/dashboard/overview/{id}` returns nonsensitive data **without querying** sensitive columns
+- [x] Node mock WebMCP tests and Python session/permission tests
+- [ ] Manual smoke test with supported Chrome WebMCP build and a browser agent
+- [ ] Separate permission-scoped transcript tool with explicit AI disclosure and audit logging
