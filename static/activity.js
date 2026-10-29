@@ -34,6 +34,9 @@ const actionTitles={
   'MCP tools/call:list_recent_calls':'MCP: فهرست تماس‌ها',
   'MCP tools/call:get_available_states':'MCP: وضعیت تماس‌ها',
   'MCP tools/call:get_redacted_call_transcript':'MCP: خواندن متن مکالمه',
+  'POST /login:success':'ورود موفق کاربر',
+  'POST /login:failed':'تلاش ناموفق برای ورود',
+  'POST /logout':'خروج از حساب',
   'MCP unauthorized':'اتصال نامعتبر MCP'
 };
 export const actionLabel=name=>actionTitles[name] || name;
