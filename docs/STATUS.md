@@ -68,3 +68,17 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Node mock WebMCP tests and Python session/permission tests
 - [ ] Manual smoke test with supported Chrome WebMCP build and a browser agent
 - [ ] Separate permission-scoped transcript tool with explicit AI disclosure and audit logging
+
+## Activity analytics and transcript UX (v0.7 draft)
+
+- [x] Admin-only Persian RTL Activity dashboard with charts, filters, recent events and human-readable tool labels
+- [x] Log successful and unsuccessful sign-in attempts and sign-outs
+- [x] Log dashboard/API request metadata and allowlisted MCP tool names, never payloads or access tokens
+- [x] 90-day activity log retention in local SQLite; filter by user, API/MCP channel and errors
+- [x] Separate AI transcript capability and read-only chunk retrieval for long conversations
+- [x] No arbitrary request-count or overall transcript length cap; each chunk remains bounded
+- [x] Best-effort identifier masking and independent transcript access audit
+- [x] Human-friendly Persian role and permission badges in user management
+- [ ] Confirm real MCP SDK request context propagation with an authenticated live tool call
+- [ ] Review browser responsiveness and Jalali date formatting with realistic data
+- [ ] Configure full OAuth authorization-code/PKCE consent and external HTTPS provider (separate future milestone)
