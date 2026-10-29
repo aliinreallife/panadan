@@ -56,3 +56,16 @@ Do not commit `.env.app`, `.env.db`, `.ovpn` files, VPN private keys, SQLite aut
 ## Effective database-role audit
 
 Run `./panadan.sh audit-db` on the connected WSL machine to inspect the **current** reporting account's effective CREATE/INSERT/UPDATE/DELETE/TRUNCATE privileges. This check only queries PostgreSQL catalogs in an explicit READ ONLY transaction; it never changes the source database. See `docs/READ_ONLY.md`. An earlier audit found schema CREATE rights on the reporting login, but that historical finding must be verified on the live server before claiming the account is strictly read-only. For robust least privilege use a dedicated reader role approved by the DBA, not blanket revokes on a shared production account.
+
+## WebMCP (experimental browser integration)
+
+WebMCP tools are registered only on an authenticated dashboard page in supporting
+browsers, never at the remote MCP endpoint. They use same-origin GET requests
+with browser-session permissions; the backend revalidates every request. Returned
+payloads are projected onto a fixed metadata allowlist and omit transcript,
+customer phone/name, and free text. A dedicated metadata-only backend endpoint
+ensures sensitive database columns are not fetched just to provide an overview.
+The WebMCP tool registry is aborted when the page unloads. No arbitrary SQL,
+writes, external network requests or credential exposure is allowed.
+Browser agents themselves have separate security considerations; test with a
+trusted browser/agent before enabling against real call data.
