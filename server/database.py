@@ -93,19 +93,24 @@ def get_call(call_id: int, sensitive: bool = False):
     return normalized(row) if row else None
 
 
-def transcript_excerpt(call_id: int, char_limit: int = 6000) -> dict | None:
-    """Query a limited transcript fragment, never customer contact columns.
+def transcript_excerpt(call_id: int, char_limit: int = 6000,
+                       offset: int = 0) -> dict | None:
+    """Read one numbered fragment of a call, not an artificial full-call truncation.
 
-    Read-only SQL, fixed view, parameterized IDs and fragment size.
+    The complete conversation can be fetched in authorized chunks. We never
+    query the customer contact columns or change the source database.
     """
     if type(call_id) is not int or call_id <= 0:
         raise ValueError('Invalid call ID')
     if type(char_limit) is not int or not 1 <= char_limit <= 6000:
         raise ValueError('Invalid transcript length')
-    query = ('SELECT id, LEFT("transcription", %s) AS transcription, '
-             'LENGTH("transcription") AS total_chars FROM ' + VIEW + ' WHERE id=%s LIMIT 1')
+    if type(offset) is not int or not 0 <= offset <= 1000000:
+        raise ValueError('Invalid transcript offset')
+    query = ('SELECT id, SUBSTRING("transcription" FROM %s FOR %s) AS transcription, '
+             'COALESCE(LENGTH("transcription"), 0) AS total_chars '
+             'FROM ' + VIEW + ' WHERE id=%s LIMIT 1')
     with connect() as conn:
-        row = conn.execute(query, (char_limit, call_id)).fetchone()
+        row = conn.execute(query, (offset + 1, char_limit, call_id)).fetchone()
     return normalized(row) if row else None
 
 
