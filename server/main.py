@@ -407,10 +407,10 @@ def activity_page(request: Request, session: dict = Depends(current_session)):
 @app.get('/dashboard/activity/data', include_in_schema=False)
 def activity_data(days: int = Query(14,ge=1,le=90),
                   user_id: int | None = Query(None,ge=1),
-                  surface: str | None = None,
+                  surface: str | None = None, errors_only: bool = False,
                   session: dict = Depends(current_session)):
     admin_only(session)
-    try: result = store.activity_report(days=days,user_id=user_id,surface=surface)
+    try: result = store.activity_report(days=days,user_id=user_id,surface=surface,errors_only=errors_only)
     except ValueError as e: raise HTTPException(400,str(e)) from e
     return JSONResponse(result,headers={'Cache-Control':'no-store'})
 
