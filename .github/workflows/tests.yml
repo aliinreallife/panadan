@@ -18,7 +18,7 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --dev --python 3.12
       - name: Run tests
-        run: uv run --locked pytest -q
+        run: uv run --locked python -m pytest -q
       - name: Compile sources
         run: uv run --locked python -m compileall -q server tests tools
       - name: Test transcript formatter
