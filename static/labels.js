@@ -9,7 +9,7 @@ const CALL_TYPES = Object.freeze({
   unknown: 'نامشخص'
 });
 const AI_STATES = Object.freeze({
-  soldout: 'برچسب فروش',
+  soldout: 'فروش رفته',
   unchecked: 'بررسی‌نشده',
   inprocess: 'در حال بررسی',
   canceled: 'لغوشده',
