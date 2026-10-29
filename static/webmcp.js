@@ -162,17 +162,24 @@ export function createWebMcpTools({ canReadCalls=false, canReadMetrics=false, ca
       description: 'Read one redacted excerpt of a call transcript with explicit user permission. May contain private spoken information. Use only when the user asks for conversation analysis.',
       inputSchema:{
         type:'object',additionalProperties:false,
-        properties:{call_id:{type:'integer',minimum:1,maximum:2147483647}},
+        properties:{
+          call_id:{type:'integer',minimum:1,maximum:2147483647},
+          offset:{type:'integer',minimum:0,description:'Start of the next chunk; use next_offset from previous response.'}
+        },
         required:['call_id']
       },
       annotations:{readOnlyHint:true,untrustedContentHint:true},
-      execute:guarded(async ({call_id},{signal}={})=>{
+      execute:guarded(async ({call_id,offset=0},{signal}={})=>{
         const id=validate(ensureInteger,call_id,'شناسه تماس',1,2147483647);
-        const response=await request('/dashboard/ai/transcript/'+id,signal);
+        const start=validate(ensureInteger,offset,'شروع متن',0,2147483647);
+        const response=await request('/dashboard/ai/transcript/'+id+'?offset='+start,signal);
         return {
           call_id:response.call_id,
           text:response.text,
           truncated:Boolean(response.truncated),
+          has_more:Boolean(response.has_more),
+          next_offset:response.next_offset,
+          offset:response.offset,
           source_chars:response.source_chars,
           presentation:response.presentation,
           privacy_notice:response.privacy_notice
