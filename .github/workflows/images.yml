@@ -10,6 +10,8 @@ on:
       - 'server/**'
       - 'templates/**'
       - 'static/**'
+      - 'package.json'
+      - 'web/**'
       - 'start-vpn.sh'
       - '.github/workflows/images.yml'
   workflow_dispatch:

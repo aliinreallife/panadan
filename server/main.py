@@ -16,7 +16,7 @@ from starlette import status
 
 from . import database
 from .mcp_tools import mcp
-from .security import Store, SESSION_SECONDS, is_rate_limited, record_failure
+from .security import Store, SESSION_SECONDS, CAPABILITIES, ROLE_GRANTS, permissions, has_capability, is_rate_limited, record_failure
 
 store = Store(os.getenv('PANADAN_AUTH_DB', '/data/auth.sqlite'))
 COOKIE_SECURE = os.getenv('PANADAN_COOKIE_SECURE', 'true').lower() == 'true'
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
         yield
 
 
-app = FastAPI(title='Panadan API', version='0.3.0', docs_url=None,
+app = FastAPI(title='Panadan API', version='0.4.0', docs_url=None,
               redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.mount('/static', StaticFiles(directory='static'), name='static')
 
@@ -43,7 +43,7 @@ def current_session(request: Request) -> dict:
     return session
 
 
-def admin_page(request: Request):
+def logged_in(request: Request):
     try: return current_session(request)
     except HTTPException: return None
 
@@ -57,11 +57,21 @@ def csrf_check(request: Request, csrf: str, session: dict):
         raise HTTPException(403, 'Invalid request origin')
 
 
-def api_auth(request: Request, sensitive: bool = False):
+def required(session: dict, capability: str):
+    if not has_capability(session, capability):
+        raise HTTPException(403, 'Insufficient permissions')
+    return session
+
+
+def admin_only(session: dict):
+    return required(session, 'users:manage')
+
+
+def api_auth(request: Request, sensitive: bool = False, capability: str = "calls:read"):
     authorization = request.headers.get('authorization', '')
     token = authorization[7:] if authorization.startswith('Bearer ') else ''
     expected = 'api:sensitive' if sensitive else 'api:read'
-    if not store.verify_token(token, expected):
+    if not store.verify_token(token, expected, capability):
         raise HTTPException(status_code=401, detail='Invalid or insufficient API token',
                             headers={'WWW-Authenticate':'Bearer'})
 
@@ -71,8 +81,12 @@ bearer_scheme = HTTPBearer(auto_error=False)
 def require_api(request: Request, _credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)):
     api_auth(request)
 
+def require_metrics_api(request: Request, _credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)):
+    api_auth(request, capability='metrics:read')
+
+
 def require_sensitive_api(request: Request, _credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)):
-    api_auth(request, True)
+    api_auth(request, True, capability="calls:sensitive")
 
 
 def json_failure(error: Exception):
@@ -87,12 +101,12 @@ def healthz(): return {'status':'ok'}
 
 @app.get('/', include_in_schema=False)
 def root(request: Request):
-    return RedirectResponse('/dashboard' if admin_page(request) else '/login', status_code=303)
+    return RedirectResponse('/dashboard' if logged_in(request) else '/login', status_code=303)
 
 
 @app.get('/login', response_class=HTMLResponse, include_in_schema=False)
 def login(request: Request):
-    if admin_page(request): return RedirectResponse('/dashboard', status_code=303)
+    if logged_in(request): return RedirectResponse('/dashboard', status_code=303)
     nonce = secrets.token_urlsafe(24)
     response = templates.TemplateResponse(request, 'login.html', {'nonce':nonce, 'error':False})
     response.set_cookie('panadan_login_nonce', nonce, httponly=True, secure=COOKIE_SECURE,
@@ -135,29 +149,31 @@ def logout(request: Request, csrf: str = Form(...), session: dict = Depends(curr
 
 @app.get('/dashboard', response_class=HTMLResponse, include_in_schema=False)
 def dashboard(request: Request):
-    session = admin_page(request)
+    session = logged_in(request)
     if not session: return RedirectResponse('/login', status_code=303)
-    return templates.TemplateResponse(request, 'dashboard.html', {'csrf':session['csrf']})
+    return templates.TemplateResponse(request, 'dashboard.html', {'csrf':session['csrf'], 'session':session, 'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES}})
 
 
 @app.get('/dashboard/tokens', response_class=HTMLResponse, include_in_schema=False)
 def token_page(request: Request):
-    session = admin_page(request)
+    session = logged_in(request)
     if not session: return RedirectResponse('/login', status_code=303)
+    admin_only(session)
     return templates.TemplateResponse(request, 'tokens.html', {
-        'csrf':session['csrf'], 'tokens':store.list_tokens(), 'new_token':None})
+        'session':session, 'csrf':session['csrf'], 'tokens':store.list_tokens(), 'users':store.list_users(), 'new_token':None})
 
 
 @app.post('/dashboard/tokens', response_class=HTMLResponse, include_in_schema=False)
 def create_token(request: Request, name: str = Form(...), scope: str = Form(...),
-                 days: int = Form(30), csrf: str = Form(...),
+                 days: int = Form(30), owner_id: int = Form(0), csrf: str = Form(...),
                  session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
+    admin_only(session)
     if not name.strip() or len(name) > 80: raise HTTPException(400, 'Invalid token name')
-    try: _, token = store.create_token(name.strip(), scope, days)
+    try: _, token = store.create_token(name.strip(), scope, days, owner_id or session['user_id'])
     except ValueError: raise HTTPException(400, 'Invalid token options')
     response = templates.TemplateResponse(request, 'tokens.html', {
-        'csrf':session['csrf'], 'tokens':store.list_tokens(), 'new_token':token},
+        'session':session, 'csrf':session['csrf'], 'tokens':store.list_tokens(), 'users':store.list_users(), 'new_token':token},
         headers={'Cache-Control':'no-store'})
     return response
 
@@ -166,6 +182,7 @@ def create_token(request: Request, name: str = Form(...), scope: str = Form(...)
 def revoke_token(request: Request, tid: int, csrf: str = Form(...),
                  session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
+    admin_only(session)
     store.revoke(tid)
     return RedirectResponse('/dashboard/tokens', status_code=303)
 
@@ -174,14 +191,17 @@ def revoke_token(request: Request, tid: int, csrf: str = Form(...),
 def dashboard_data(request: Request, limit: int = Query(20, ge=1, le=100),
                    offset: int = Query(0, ge=0, le=10000), after: date | None = None,
                    before: date | None = None, state: str | None = None,
+                   created_after: datetime | None = None, created_before: datetime | None = None,
                    session: dict = Depends(current_session)):
-    try: return {'items':database.list_calls(limit,offset,after,before,state)}
+    required(session, 'calls:read')
+    try: return {'items':database.list_calls(limit,offset,after,before,state,created_after,created_before)}
     except Exception as e: json_failure(e)
 
 
 @app.get('/dashboard/data/{call_id}', include_in_schema=False)
 def dashboard_detail(call_id: int, session: dict = Depends(current_session)):
-    try: result = database.get_call(call_id, sensitive=True)
+    required(session,'calls:read')
+    try: result = database.get_call(call_id, sensitive=has_capability(session,'calls:sensitive'))
     except Exception as e: json_failure(e)
     if not result: raise HTTPException(404, 'Call not found')
     return JSONResponse(result, headers={'Cache-Control':'no-store'})
@@ -189,8 +209,10 @@ def dashboard_detail(call_id: int, session: dict = Depends(current_session)):
 
 @app.get('/dashboard/metrics', include_in_schema=False)
 def dashboard_metrics(after: date | None = None, before: date | None = None,
+                      created_after: datetime | None = None, created_before: datetime | None = None,
                       session: dict = Depends(current_session)):
-    try: return database.stats(after, before)
+    required(session,'metrics:read')
+    try: return database.stats(after, before, created_after, created_before)
     except Exception as e: json_failure(e)
 
 
@@ -210,13 +232,13 @@ def api_call(call_id: int, request: Request, include_sensitive: bool = False):
     return JSONResponse(result, headers={'Cache-Control':'no-store'})
 
 
-@app.get('/api/v1/stats', dependencies=[Depends(require_api)], tags=['Analytics'])
+@app.get('/api/v1/stats', dependencies=[Depends(require_metrics_api)], tags=['Analytics'])
 def api_stats(after: date | None = None, before: date | None = None):
     try: return database.stats(after, before)
     except Exception as e: json_failure(e)
 
 
-@app.get('/api/v1/states', dependencies=[Depends(require_api)], tags=['Analytics'])
+@app.get('/api/v1/states', dependencies=[Depends(require_metrics_api)], tags=['Analytics'])
 def api_states():
     try: return {'states':database.statuses()}
     except Exception as e: json_failure(e)
@@ -224,13 +246,58 @@ def api_states():
 
 @app.get('/docs', include_in_schema=False)
 def private_docs(request: Request, session: dict = Depends(current_session)):
+    admin_only(session)
     return get_swagger_ui_html(openapi_url='/openapi.json',title='Panadan API Docs')
 
 
 @app.get('/openapi.json', include_in_schema=False)
 def private_openapi(request: Request, session: dict = Depends(current_session)):
+    admin_only(session)
     from fastapi.openapi.utils import get_openapi
     return get_openapi(title=app.title, version=app.version, routes=app.routes)
+
+
+
+
+@app.get('/dashboard/users', response_class=HTMLResponse, include_in_schema=False)
+def users_page(request: Request, session: dict = Depends(current_session)):
+    admin_only(session)
+    return templates.TemplateResponse(request,'users.html', {
+        'session':session, 'csrf':session['csrf'], 'users':store.list_users(),
+        'roles':ROLE_GRANTS, 'capabilities':CAPABILITIES, 'user_caps':{u['id']:permissions(u['role'],u['grants']) for u in store.list_users()}, 'error':request.query_params.get('error'),
+    })
+
+
+@app.post('/dashboard/users', include_in_schema=False)
+def add_user(request: Request, username: str = Form(...), password: str = Form(...),
+             role: str = Form(...), csrf: str = Form(...),
+             grants: list[str] = Form([]), session: dict = Depends(current_session)):
+    csrf_check(request, csrf, session)
+    admin_only(session)
+    try: store.create_user(username.strip(),password,role,grants if role != 'admin' else None)
+    except (ValueError, __import__('sqlite3').IntegrityError) as exc:
+        raise HTTPException(400, 'Invalid user options or username already exists') from exc
+    return RedirectResponse('/dashboard/users',status_code=303)
+
+
+@app.post('/dashboard/users/{uid}/update', include_in_schema=False)
+def update_user(request: Request, uid: int, role: str = Form(...), csrf: str = Form(...),
+                is_active: bool = Form(False), grants: list[str] = Form([]),
+                session: dict = Depends(current_session)):
+    csrf_check(request, csrf, session)
+    admin_only(session)
+    try: store.update_user(uid,role,grants if role != 'admin' else None,is_active,session['user_id'])
+    except ValueError as exc: raise HTTPException(400,str(exc)) from exc
+    return RedirectResponse('/dashboard/users',status_code=303)
+
+
+@app.get('/dashboard/connect', response_class=HTMLResponse, include_in_schema=False)
+def connect_page(request: Request, session: dict = Depends(current_session)):
+    admin_only(session)
+    return templates.TemplateResponse(request,'connect.html', {
+        'session':session,'csrf':session['csrf'],
+        'mcp_path':'/mcp/', 'base_url':str(request.base_url).rstrip('/'),
+    },headers={'Cache-Control':'no-store'})
 
 
 class MCPBearerGate:

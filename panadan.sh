@@ -36,12 +36,19 @@ case "$cmd" in
     lock_if_needed
     uv sync --locked --dev
     echo 'uv environment ready; uv.lock is the source of truth.'
+    if command -v npm >/dev/null 2>&1; then
+      npm install --no-audit --no-fund && npm run build
+    else
+      echo 'Node 20+ is needed to build Doran and Vazirmatn assets.' >&2
+      exit 1
+    fi
     ;;
   dev)
     check_config; require_uv; lock_if_needed
     for image in danf-v2-vpn:latest danf-v2-python:latest; do
       docker image inspect "$image" >/dev/null 2>&1 || { echo "Local image $image unavailable. See README." >&2; exit 1; }
     done
+    [[ -s static/vendor/panadan-bundle.js && -s static/vendor/panadan-bundle.css ]] || { echo 'Run ./panadan.sh setup to generate dashboard assets.' >&2; exit 1; }
     compose_dev up -d --no-build
     echo 'Using uv-managed Python on WSL; DB via isolated Docker VPN proxy.'
     export PGHOST=127.0.0.1
