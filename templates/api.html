@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>راهنمای API | پانادان</title>
+<link rel="stylesheet" href="/static/vendor/panadan-bundle.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body><div class="shell">
+<aside class="sidebar">
+<a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
+<div class="nav-caption">فضای کاری</div>
+<nav>
+<a href="/dashboard">▦ <span>گزارش تماس‌ها</span></a>
+<a href="/dashboard/connect">◈ <span>اتصال هوش مصنوعی</span></a>
+<a href="/dashboard/tokens">♢ <span>توکن‌های دسترسی</span></a>
+<a class="active" aria-current="page" href="/dashboard/api">⌘ <span>راهنمای API</span></a>
+<a href="/dashboard/users">♙ <span>کاربران و دسترسی‌ها</span></a>
+</nav>
+<div class="side-footer"><span class="status"><span class="dot"></span> فقط خواندنی</span>
+<form method="post" action="/logout"><input type="hidden" name="csrf" value="{{csrf}}"><button class="link-button">خروج</button></form></div>
+</aside>
+<main class="content api-guide">
+<header class="page-head"><div><span class="eyebrow">توسعه‌دهندگان · یکپارچه‌سازی</span>
+<h1>راهنمای REST API</h1><p class="muted">از داده‌های مجاز تماس‌ها در برنامه‌های دیگر استفاده کنید؛ بدون امکان تغییر اطلاعات منبع.</p></div>
+<a class="secondary docs-link" href="/docs">مشاهده مستندات تعاملی ↗</a></header>
+
+<section class="api-intro-grid">
+<article class="api-step"><span class="api-step-number">۱</span><h2>دریافت توکن</h2>
+<p>در <a href="/dashboard/tokens">توکن‌های دسترسی</a>، نوع <code>api:read</code> را انتخاب کنید. برای جزئیات حساس، مجوز و توکن جداگانه لازم است.</p></article>
+<article class="api-step"><span class="api-step-number">۲</span><h2>ارسال درخواست</h2>
+<p>در هدر درخواست، <code>Authorization: Bearer</code> را همراه توکن اختصاصی خود ارسال کنید.</p></article>
+<article class="api-step"><span class="api-step-number">۳</span><h2>دریافت JSON</h2>
+<p>پاسخ‌های API فقط خواندنی‌اند. تاریخ‌ها به‌صورت ISO 8601 هستند، نه شمسی.</p></article>
+</section>
+
+<section class="panel"><div class="panel-head"><div><h2>آدرس پایه</h2><p class="muted small-text">آدرس محلی برای همین دستگاه؛ از اینترنت عمومی در دسترس نیست.</p></div></div>
+<div class="endpoint-line" dir="ltr"><code id="api-base">{{base_url}}/api/v1</code><button type="button" class="secondary" data-copy-id="api-base">کپی آدرس</button></div>
+<p class="source-note">کلید دسترسی را در کد سمت مرورگر، آدرس URL، مخزن Git یا لاگ‌ها قرار ندهید. استفاده در سرور یا ابزار شخصی امن انجام شود.</p></section>
+
+<section class="panel"><div class="panel-head"><h2>مسیرهای قابل استفاده</h2><span class="tag">GET · Read only</span></div>
+<div class="api-routes">
+<div class="api-route"><span class="api-method">GET</span><div><code dir="ltr">/api/v1/calls</code><p>فهرست تماس‌ها با فیلتر تاریخ، نوع، وضعیت و صفحه‌بندی</p></div><span class="api-scope">api:read</span></div>
+<div class="api-route"><span class="api-method">GET</span><div><code dir="ltr">/api/v1/calls/{call_id}</code><p>جزئیات یک تماس؛ افزودن <code>include_sensitive=true</code> نیازمند مجوز بیشتر است.</p></div><span class="api-scope">api:read / api:sensitive</span></div>
+<div class="api-route"><span class="api-method">GET</span><div><code dir="ltr">/api/v1/stats</code><p>آمار تجمیعی تماس‌ها، امتیاز و مدت مکالمه</p></div><span class="api-scope">api:read</span></div>
+<div class="api-route"><span class="api-method">GET</span><div><code dir="ltr">/api/v1/states</code><p>مقادیر خام وضعیت ثبت‌شده در پایگاه گزارش</p></div><span class="api-scope">api:read</span></div>
+</div>
+<p class="source-note">کارکرد واقعی هر توکن علاوه بر Scope به مجوزهای صاحب آن بستگی دارد. مثلاً دسترسی «فقط آمار» نمی‌تواند فهرست تماس‌ها را بخواند.</p></section>
+
+<section class="panel"><div class="panel-head"><h2>نمونه درخواست</h2><span class="tag">ترمینال · curl</span></div>
+<p class="muted small-text">به‌جای <code>YOUR_REST_TOKEN</code> توکن خود را در محیط امن قرار دهید. این مثال برای اجرای محلی است.</p>
+<div class="example-code"><pre id="api-curl" dir="ltr">curl --fail-with-body \
+  -H 'Authorization: Bearer YOUR_REST_TOKEN' \
+  '{{base_url}}/api/v1/calls?limit=20&amp;call_type=FollowUp&amp;state=Unchecked'</pre><button type="button" class="secondary" data-copy-id="api-curl">کپی مثال</button></div>
+<div class="api-params"><h3>پارامترهای پرکاربرد</h3>
+<div class="parameter"><code>limit</code><span>۱ تا ۱۰۰؛ تعداد رکورد</span></div>
+<div class="parameter"><code>offset</code><span>شروع صفحه‌بندی (از صفر)</span></div>
+<div class="parameter"><code>after / before</code><span>تاریخ میلادی ISO مانند 2026-10-29</span></div>
+<div class="parameter"><code>call_type</code><span>مقدار خام نوع تماس مانند <code>FollowUp</code> یا <code>FirstToch</code></span></div>
+<div class="parameter"><code>state</code><span>مقدار خام وضعیت مانند <code>Unchecked</code> یا <code>SoldOut</code></span></div>
+</div>
+<p class="source-note">برچسب‌های فارسی در داشبورد فقط برای نمایش‌اند. در API مقدار خام ارسال می‌شود. برچسب SoldOut لزوماً تأیید فروش قطعی نیست.</p></section>
+
+<section class="panel"><div class="panel-head"><h2>مستندات کامل و MCP</h2></div>
+<div class="api-help-links"><a class="help-link" href="/docs"><strong>Swagger UI</strong><span>مشاهده ساختار درخواست‌ها، پارامترها و مدل پاسخ</span></a>
+<a class="help-link" href="/openapi.json"><strong>OpenAPI JSON</strong><span>مناسب تولید کلاینت و مستندسازی داخلی</span></a>
+<a class="help-link" href="/dashboard/connect"><strong>اتصال MCP</strong><span>راهنمای ابزارهای هوش مصنوعی و محدودیت اتصال ChatGPT</span></a></div>
+<p class="source-note">صفحات مستندات و مدیریت توکن فقط برای مدیران مجاز نمایش داده می‌شوند. برای دسترسی از اینترنت، HTTPS و احراز هویت مناسب باید جداگانه راه‌اندازی شود.</p></section>
+</main></div>
+<script>
+document.querySelectorAll('[data-copy-id]').forEach(button => button.addEventListener('click', async () => {
+  const source=document.getElementById(button.dataset.copyId);
+  if(!source)return;
+  try {
+    await navigator.clipboard.writeText(source.textContent.trim());
+    button.textContent='کپی شد';
+  } catch {
+    button.textContent='کپی خودکار در دسترس نیست';
+  }
+}));
+</script>
+</body></html>
