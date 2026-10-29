@@ -181,6 +181,8 @@ def create_token(request: Request, name: str = Form(...), scope: str = Form(...)
     csrf_check(request, csrf, session)
     admin_only(session)
     if not name.strip() or len(name) > 80: raise HTTPException(400, 'Invalid token name')
+    if oauth_config.mode == 'oauth' and scope == 'mcp:read':
+        raise HTTPException(400, 'Manual MCP tokens are disabled in OAuth mode')
     try: _, token = store.create_token(name.strip(), scope, days, owner_id or session['user_id'])
     except ValueError: raise HTTPException(400, 'Invalid token options')
     response = templates.TemplateResponse(request, 'tokens.html', {
@@ -363,6 +365,7 @@ def connect_page(request: Request, session: dict = Depends(current_session)):
     return templates.TemplateResponse(request,'connect.html', {
         'session':session,'csrf':session['csrf'],
         'mcp_path':'/mcp/', 'base_url':str(request.base_url).rstrip('/'),
+        'oauth': oauth_config,
     },headers={'Cache-Control':'no-store'})
 
 
