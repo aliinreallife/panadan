@@ -1,4 +1,4 @@
-# Panadan v0.5 status
+# Panadan v0.6 status
 
 ## Delivered and merged to main
 
@@ -36,3 +36,16 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Admin-only REST API guide added to sidebar with authenticated Swagger/OpenAPI links and curl examples
 - [x] Removed backend vendor branding from user-facing dashboard status text
 - [ ] Browser visual QA of long Persian transcripts and the mobile layout in the live environment
+
+## v0.6 OAuth integration
+
+- [x] Opt-in MCP resource-server mode with RFC 9728 discovery and WWW-Authenticate challenges
+- [x] Strict external RS256 access-JWT checks for signature, issuer, audience, expiry, issuance and scope
+- [x] Provider subject → Panadan account binding managed by admin; roles checked on every request
+- [x] Manual MCP tokens denied in OAuth mode; REST API token behavior unchanged
+- [x] Account role changes revoke OAuth bindings
+- [x] Offline security tests and a provider setup guide without real secrets
+- [ ] Choose/configure a production identity provider supporting OAuth 2.1 PKCE and CIMD/DCR/static client
+- [ ] Expose secure HTTPS identity and resource endpoints/tunnel with Host/Origin hardening
+- [ ] Verify real ChatGPT OAuth consent, code exchange, callback, refresh and MCP tool discovery
+- [ ] Review production auditing, rate limits, backups and key rotation before public access
