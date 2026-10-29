@@ -81,6 +81,7 @@ If a checkout has lost the executable file mode, `bash ./panadan.sh setup` can r
 | `./panadan.sh test` | Python unit/integration tests (synthetic test data) |
 | `./panadan.sh vpn-up` / `vpn-down` | Manage only the local VPN/relay containers |
 | `./panadan.sh status` / `logs` | Inspect the local Docker services |
+| `./panadan.sh audit-db` | Read-only audit of the effective PostgreSQL role permissions (requires local VPN) |
 | `./panadan.sh diagnose` | Check uv and available development images |
 | `./panadan.sh up` / `down` | Run or stop prebuilt production GHCR images |
 
@@ -112,5 +113,7 @@ If your `gh` authentication lacks `read:packages`, grant the needed scope or use
 - Call details show **Panadan formatted** speaker turns and an unchanged **Raw original** transcript. Ambiguous speakers are not guessed.
 - MCP supports two **mutually exclusive** modes: local/manual bearer by default or RS256 JWT verification from a configured external OAuth 2.1 identity provider. The admin must explicitly link each provider subject to a locally authorized Panadan account. See `docs/MCP_SETUP.md`.
 - Panadan is not an OAuth authorization server. Sign-in, consent, client registration, PKCE, refresh tokens, and issuer metadata belong to the external provider. Live ChatGPT interoperability still needs a provider plus secure HTTPS route/tunnel and end-to-end validation.
+
+To verify that your reporting login cannot **create or change source data**, run `./panadan.sh audit-db` and follow `docs/READ_ONLY.md` for the resulting PASS/FAIL and DBA recommendations. The application runs read-only transactions, but database grants must be independently verified.
 
 Technical details: `docs/PRD.md`, `docs/DECISIONS.md`, `docs/SECURITY.md`, `docs/STATUS.md`, `docs/TRANSCRIPTS.md`.
