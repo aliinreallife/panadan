@@ -282,6 +282,9 @@ function initialize(){
   load();metrics();
   if($('call_type')||$('state'))loadFilterOptions();
   // WebMCP is an opt-in browser API; unsupported browsers behave normally.
-  void registerPanadanWebMcp();
+  void registerPanadanWebMcp().then(result=>{
+    const marker=$('webmcp-status');
+    if(marker && result?.names?.length)marker.hidden=false;
+  }).catch(()=>{ /* Experimental browser API does not affect the dashboard. */ });
 }
 initialize();
