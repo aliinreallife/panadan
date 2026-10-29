@@ -142,6 +142,15 @@ def require_sensitive_api(request: Request, _credentials: HTTPAuthorizationCrede
     api_auth(request, True, capability="calls:sensitive")
 
 
+def audit_auth_event(user_id: int | None, action: str, status_code: int):
+    """Log only the login outcome and account, never password, IP or tokens."""
+    try:
+        store.record_activity(user_id=user_id, surface='auth', action=action,
+                              http_status=status_code, duration_ms=0)
+    except Exception:
+        pass
+
+
 def json_failure(error: Exception):
     # Do not expose the database server details or customer data in HTTP errors.
     if isinstance(error, ValueError): raise HTTPException(400, str(error))
@@ -188,10 +197,12 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     uid = store.verify_login(username, password)
     if not uid:
         record_failure(ip)
+        audit_auth_event(None,'POST /login:failed',401)
         response = RedirectResponse('/login?error=1', status_code=303)
         response.delete_cookie('panadan_login_nonce')
         return response
     raw, _ = store.create_session(uid)
+    audit_auth_event(uid,'POST /login:success',200)
     response = RedirectResponse('/dashboard', status_code=303)
     response.set_cookie(COOKIE_NAME, raw, max_age=SESSION_SECONDS, httponly=True,
                         secure=COOKIE_SECURE, samesite='lax')
@@ -203,6 +214,7 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
 def logout(request: Request, csrf: str = Form(...), session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     store.logout(request.cookies.get(COOKIE_NAME))
+    audit_auth_event(session['user_id'],'POST /logout',200)
     r = RedirectResponse('/login', status_code=303)
     r.delete_cookie(COOKIE_NAME)
     return r
