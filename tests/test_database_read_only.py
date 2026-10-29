@@ -22,3 +22,13 @@ def test_each_query_opens_explicit_read_only_transaction(monkeypatch):
     database.list_calls(limit=1)
     assert db.commands[0] == 'SET TRANSACTION READ ONLY'
     assert db.commands[1].startswith('SELECT ')
+
+def test_call_type_filter_is_parameterized():
+    where, parameters = database.filters(None, None, 'Unchecked', call_type='FollowUp')
+    assert '"tellstate" = %s' in where
+    assert '"aicallinfostate" = %s' in where
+    assert parameters == ['Unchecked','FollowUp']
+
+def test_call_type_filter_rejects_unbounded_values():
+    with pytest.raises(ValueError):
+        database.list_calls(call_type='X' * 61)

@@ -42,7 +42,7 @@ OAuth 2.1 Authorization Code + PKCE / protected-resource metadata contract
 needed for supported user-facing OAuth MCP connection flows. A tunnel alone
 does not implement OAuth. It is **not** accurate to describe this build as a
 one-click ChatGPT OAuth integration. Plan and test OAuth before enabling that
-workflow. No arbitrary public port forwarding is recommended for Odoo data.
+workflow. No arbitrary public port forwarding is recommended for private reporting data.
 
 ## Later: public domain
 
