@@ -115,6 +115,7 @@ function renderTrend(values){
   });
   target.append(svg);
 }
+let allRecent=[];
 function renderEvents(items){
   const tbody=$('activity-events');tbody.replaceChildren();
   if(!items.length){const row=node('tr');const cell=node('td','muted','فعالیتی ثبت نشده است.');cell.colSpan=6;row.append(cell);tbody.append(row);return;}
@@ -133,11 +134,22 @@ function renderEvents(items){
     tbody.append(tr);
   }
 }
+function filterEvents(){
+  const q=$('activity-search').value.trim().toLocaleLowerCase('fa');
+  const matches=q?allRecent.filter(event=>
+    [event.username,event.surface,surfaceLabel[event.surface],event.action,
+     actionLabel(event.action),event.http_status].some(value=>
+      String(value??'').toLocaleLowerCase('fa').includes(q))
+  ):allRecent;
+  renderEvents(matches);
+  $('activity-event-count').textContent=formatNum(matches.length)+' از '+formatNum(allRecent.length)+' رویداد اخیر';
+}
 async function load(){
   $('activity-error').hidden=true;
   const params=new URLSearchParams({days:$('activity-days').value});
   if($('activity-user').value)params.set('user_id',$('activity-user').value);
   if($('activity-surface').value)params.set('surface',$('activity-surface').value);
+  if($('activity-errors-only').checked)params.set('errors_only','true');
   try{
     const response=await fetch('/dashboard/activity/data?'+params,{credentials:'same-origin',cache:'no-store'});
     if(!response.ok)throw Error('unauthorized');
@@ -151,8 +163,9 @@ async function load(){
     renderBars('activity-surfaces',report.surfaces,name=>surfaceLabel[name]||name);
     renderBars('activity-top-users',report.users);
     renderBars('activity-top-actions',report.actions,actionLabel);
-    renderEvents(report.recent||[]);
-    $('activity-event-count').textContent=formatNum((report.recent||[]).length)+' رویداد اخیر';
+    allRecent=report.recent||[];
+    filterEvents();
+    // The table searches the most recent events only, not the full database.
   }catch{
     $('activity-error').textContent='دریافت گزارش فعالیت ممکن نبود. لطفاً دسترسی مدیر و اتصال سرور را بررسی کنید.';
     $('activity-error').hidden=false;
@@ -160,5 +173,6 @@ async function load(){
 }
 if(typeof document!=='undefined'){
   $('activity-filters')?.addEventListener('submit',e=>{e.preventDefault();void load();});
+  $('activity-search')?.addEventListener('input',filterEvents);
   void load();
 }
