@@ -16,9 +16,12 @@ from starlette import status
 
 from . import database
 from .mcp_tools import mcp
+from .oauth_mcp import OAuthConfig, OAuthVerifier
 from .security import Store, SESSION_SECONDS, CAPABILITIES, ROLE_GRANTS, permissions, has_capability, is_rate_limited, record_failure
 
 store = Store(os.getenv('PANADAN_AUTH_DB', '/data/auth.sqlite'))
+oauth_config = OAuthConfig.from_env()
+oauth_verifier = OAuthVerifier(oauth_config) if oauth_config.mode == 'oauth' else None
 COOKIE_SECURE = os.getenv('PANADAN_COOKIE_SECURE', 'true').lower() == 'true'
 COOKIE_NAME = 'panadan_session'
 templates = Jinja2Templates(directory='templates')
@@ -32,7 +35,7 @@ async def lifespan(app: FastAPI):
         yield
 
 
-app = FastAPI(title='Panadan API', version='0.5.0', docs_url=None,
+app = FastAPI(title='Panadan API', version='0.6.0', docs_url=None,
               redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.mount('/static', StaticFiles(directory='static'), name='static')
 
@@ -93,6 +96,14 @@ def json_failure(error: Exception):
     # Do not expose the database server details or customer data in HTTP errors.
     if isinstance(error, ValueError): raise HTTPException(400, str(error))
     raise HTTPException(503, 'Reporting database unavailable or query timed out')
+
+
+@app.get('/.well-known/oauth-protected-resource', include_in_schema=False)
+@app.get('/.well-known/oauth-protected-resource/mcp', include_in_schema=False)
+def oauth_protected_resource_metadata():
+    if oauth_config.mode != 'oauth':
+        raise HTTPException(404, 'OAuth MCP is not enabled')
+    return JSONResponse(oauth_config.metadata(), headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/healthz')
@@ -309,6 +320,43 @@ def api_guide(request: Request, session: dict = Depends(current_session)):
     }, headers={'Cache-Control': 'no-store'})
 
 
+@app.get('/dashboard/oauth', response_class=HTMLResponse, include_in_schema=False)
+def oauth_admin_page(request: Request, session: dict = Depends(current_session)):
+    admin_only(session)
+    return templates.TemplateResponse(request, 'oauth.html', {
+        'session': session,
+        'csrf': session['csrf'],
+        'oauth': oauth_config,
+        'users': store.list_users(),
+        'bindings': store.list_oauth_identities(oauth_config.issuer) if oauth_config.mode == 'oauth' else [],
+    }, headers={'Cache-Control': 'no-store'})
+
+
+@app.post('/dashboard/oauth/link', include_in_schema=False)
+def oauth_admin_link(request: Request, user_id: int = Form(...), subject: str = Form(...),
+                     csrf: str = Form(...), session: dict = Depends(current_session)):
+    csrf_check(request, csrf, session)
+    admin_only(session)
+    if oauth_config.mode != 'oauth':
+        raise HTTPException(400, 'Enable OAuth configuration first')
+    try:
+        store.bind_oauth_identity(oauth_config.issuer, subject, user_id)
+    except (ValueError, __import__('sqlite3').IntegrityError) as exc:
+        raise HTTPException(400, 'Invalid or already-linked identity') from exc
+    return RedirectResponse('/dashboard/oauth', status_code=303)
+
+
+@app.post('/dashboard/oauth/{identity_id}/revoke', include_in_schema=False)
+def oauth_admin_unlink(request: Request, identity_id: int, csrf: str = Form(...),
+                       session: dict = Depends(current_session)):
+    csrf_check(request, csrf, session)
+    admin_only(session)
+    if oauth_config.mode != 'oauth':
+        raise HTTPException(400, 'OAuth is not enabled')
+    store.revoke_oauth_identity(oauth_config.issuer, identity_id)
+    return RedirectResponse('/dashboard/oauth', status_code=303)
+
+
 @app.get('/dashboard/connect', response_class=HTMLResponse, include_in_schema=False)
 def connect_page(request: Request, session: dict = Depends(current_session)):
     admin_only(session)
@@ -319,28 +367,47 @@ def connect_page(request: Request, session: dict = Depends(current_session)):
 
 
 class MCPBearerGate:
-    """ASGI gate protects GET, POST and DELETE before the MCP SDK gets any bytes."""
-    def __init__(self, inner): self.inner = inner
+    """Enforce OAuth OR legacy tokens on every MCP HTTP request.
+
+    The modes are mutually exclusive: once OAuth is enabled, legacy manually
+    issued MCP tokens cannot bypass the identity-provider flow.
+    """
+    def __init__(self, inner):
+        self.inner = inner
 
     async def __call__(self, scope, receive, send):
-        if scope['type'] not in ('http','websocket'):
-            await self.inner(scope,receive,send)
+        if scope['type'] not in ('http', 'websocket'):
+            await self.inner(scope, receive, send)
             return
         if scope['type'] != 'http':
-            await send({'type':'websocket.close','code':1008})
+            await send({'type': 'websocket.close', 'code': 1008})
             return
-        headers = {k.lower():v for k,v in scope.get('headers', [])}
+        headers = {k.lower(): v for k, v in scope.get('headers', [])}
         auth = headers.get(b'authorization', b'').decode('latin1')
         raw = auth[7:] if auth.startswith('Bearer ') else ''
-        if not store.verify_token(raw, 'mcp:read'):
-            body=b'{"error":"unauthorized"}'
-            await send({'type':'http.response.start', 'status':401,'headers':[
-                (b'content-type',b'application/json'),(b'cache-control',b'no-store'),
-                (b'www-authenticate',b'Bearer realm="panadan-mcp"') ]})
-            await send({'type':'http.response.body', 'body':body})
+        if oauth_config.mode == 'oauth':
+            subject = oauth_verifier.verify(raw) if oauth_verifier else None
+            valid = bool(subject and store.oauth_identity_has_mcp_access(oauth_config.issuer, subject))
+        else:
+            valid = store.verify_token(raw, 'mcp:read')
+        if not valid:
+            # Invalid JWTs/unknown identities are denied without DB access.
+            # The OAuth challenge identifies the protected resource metadata
+            # for standards-compatible clients such as ChatGPT and Codex.
+            challenge = 'Bearer realm="panadan-mcp"'
+            if oauth_config.mode == 'oauth':
+                challenge += (f', resource_metadata="{oauth_config.metadata_url}", '
+                              f'scope="{oauth_config.scope}"')
+            body = b'{"error":"unauthorized"}'
+            await send({'type': 'http.response.start', 'status': 401, 'headers': [
+                (b'content-type', b'application/json'),
+                (b'cache-control', b'no-store'),
+                (b'www-authenticate', challenge.encode('ascii')),
+            ]})
+            await send({'type': 'http.response.body', 'body': body})
             return
-        await self.inner(scope,receive,send)
+        await self.inner(scope, receive, send)
 
 
-# Endpoint is /mcp/ (including trailing slash); parent app owns lifespan.
+# /mcp/ always requires authentication, and tools never allow arbitrary SQL.
 app.mount('/mcp', MCPBearerGate(mcp.streamable_http_app()))
