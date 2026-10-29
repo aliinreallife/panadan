@@ -472,10 +472,11 @@ def connect_page(request: Request, session: dict = Depends(current_session)):
 
 
 class MCPBearerGate:
-    """Enforce OAuth OR legacy tokens on every MCP HTTP request.
+    """Authenticate MCP requests, and audit their method/tool without payloads.
 
-    The modes are mutually exclusive: once OAuth is enabled, legacy manually
-    issued MCP tokens cannot bypass the identity-provider flow.
+    We only inspect the first 8 KiB of a JSON-RPC request in memory to discover
+    a known tool name. The request bytes are passed unchanged to the SDK.
+    Never persist tool arguments, transcript text, headers or bearer tokens.
     """
     def __init__(self, inner):
         self.inner = inner
@@ -487,18 +488,29 @@ class MCPBearerGate:
         if scope['type'] != 'http':
             await send({'type': 'websocket.close', 'code': 1008})
             return
+        start = time.monotonic()
         headers = {k.lower(): v for k, v in scope.get('headers', [])}
         auth = headers.get(b'authorization', b'').decode('latin1')
         raw = auth[7:] if auth.startswith('Bearer ') else ''
+        actor = None
         if oauth_config.mode == 'oauth':
             subject = oauth_verifier.verify(raw) if oauth_verifier else None
             valid = bool(subject and store.oauth_identity_has_mcp_access(oauth_config.issuer, subject))
+            if valid: actor=store.actor_for_oauth(oauth_config.issuer,subject)
         else:
             valid = store.verify_token(raw, 'mcp:read')
+            if valid: actor=store.actor_for_token(raw, 'mcp:read')
+        def record(action, status_code):
+            try:
+                store.record_activity(
+                    user_id=actor, surface='mcp', action=action,
+                    http_status=status_code,
+                    duration_ms=int((time.monotonic()-start)*1000),
+                )
+            except Exception:
+                pass
+
         if not valid:
-            # Invalid JWTs/unknown identities are denied without DB access.
-            # The OAuth challenge identifies the protected resource metadata
-            # for standards-compatible clients such as ChatGPT and Codex.
             challenge = 'Bearer realm="panadan-mcp"'
             if oauth_config.mode == 'oauth':
                 challenge += (f', resource_metadata="{oauth_config.metadata_url}", '
@@ -510,8 +522,49 @@ class MCPBearerGate:
                 (b'www-authenticate', challenge.encode('ascii')),
             ]})
             await send({'type': 'http.response.body', 'body': body})
+            record('MCP unauthorized',401)
             return
-        await self.inner(scope, receive, send)
+
+        prefix = bytearray()
+        overflow = False
+        result_status = 500
+        async def inspect_receive():
+            nonlocal overflow
+            message = await receive()
+            if message.get('type') == 'http.request':
+                data = message.get('body', b'')
+                if len(prefix) + len(data) > 8192:
+                    overflow = True
+                elif not overflow:
+                    prefix.extend(data)
+            return message
+
+        async def inspect_send(message):
+            nonlocal result_status
+            if message.get('type') == 'http.response.start':
+                result_status = message.get('status', 500)
+            await send(message)
+
+        try:
+            await self.inner(scope, inspect_receive, inspect_send)
+        finally:
+            action = 'MCP '+scope.get('method','POST').upper()
+            if not overflow and prefix:
+                try:
+                    message=json.loads(prefix)
+                    if isinstance(message, dict):
+                        method=message.get('method','')
+                        if method in ('initialize','tools/list','tools/call',
+                                      'resources/list','ping','notifications/initialized'):
+                            action='MCP '+method
+                            if method=='tools/call':
+                                name=(message.get('params') or {}).get('name')
+                                allowed={tool.name for tool in mcp._tool_manager.list_tools()}
+                                if isinstance(name,str) and name in allowed:
+                                    action+=':'+name
+                except (ValueError, TypeError, AttributeError):
+                    pass
+            record(action, result_status)
 
 
 # /mcp/ always requires authentication, and tools never allow arbitrary SQL.
