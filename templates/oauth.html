@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>اتصال امن OAuth | پانادان</title>
+<link rel="stylesheet" href="/static/vendor/panadan-bundle.css"><link rel="stylesheet" href="/static/style.css"></head>
+<body><div class="shell">
+<aside class="sidebar">
+<a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
+<div class="nav-caption">فضای کاری</div>
+<nav>
+<a href="/dashboard">▦ گزارش تماس‌ها</a>
+<a href="/dashboard/connect">◈ اتصال هوش مصنوعی</a>
+<a href="/dashboard/tokens">♢ توکن‌های دسترسی</a>
+<a href="/dashboard/api">⌘ راهنمای API</a>
+<a class="active" href="/dashboard/oauth" aria-current="page">◉ اتصال امن OAuth</a>
+<a href="/dashboard/users">♙ کاربران و دسترسی‌ها</a>
+</nav><div class="side-footer"><form method="post" action="/logout">
+<input type="hidden" name="csrf" value="{{csrf}}"><button class="link-button">خروج</button></form></div>
+</aside>
+<main class="content"><header class="page-head"><div>
+<span class="eyebrow">امنیت اتصال MCP</span><h1>اتصال امن OAuth</h1>
+<p class="muted">اتصال حساب‌های تأییدشده به دستیارهای هوش مصنوعی، بدون دسترسی نوشتن به گزارش‌ها.</p>
+</div><a class="secondary docs-link" href="/dashboard/connect">بازگشت به راهنمای MCP</a></header>
+
+<section class="panel"><div class="panel-head"><h2>وضعیت اتصال</h2>
+{% if oauth.mode == 'oauth' %}<span class="tag">OAuth resource server فعال</span>
+{% else %}<span class="tag">حالت محلی · Legacy bearer</span>{% endif %}</div>
+{% if oauth.mode == 'oauth' %}
+<p>پانادان توکن‌های امضاشده را از ارائه‌دهندهٔ هویت تأیید می‌کند. احراز هویت، رضایت کاربر، PKCE و تمدید توکن در ارائه‌دهنده انجام می‌شود.</p>
+<dl class="oauth-info">
+<dt>صادرکننده</dt><dd><code dir="ltr">{{ oauth.issuer }}</code></dd>
+<dt>شناسهٔ سرویس MCP</dt><dd><code dir="ltr">{{ oauth.resource }}</code></dd>
+<dt>مجوز OAuth</dt><dd><code dir="ltr">{{ oauth.scope }}</code></dd>
+<dt>آدرس کشف OAuth</dt><dd><code dir="ltr">{{ oauth.metadata_url }}</code></dd>
+</dl>
+<p class="description">صدور توکن‌های MCP دستی در این حالت مجوز دسترسی به MCP نمی‌دهد. توکن‌های REST مستقل باقی می‌مانند.</p>
+{% else %}
+<p>اتصال OAuth فعلاً غیرفعال است. برای آماده‌سازی، از یک سرویس هویت OAuth 2.1 سازگار با Authorization Code + PKCE و ثبت کلاینت (CIMD، DCR یا کلاینت ازپیش‌ثبت‌شده) استفاده کنید.</p>
+<p class="description">تا زمان راه‌اندازی HTTPS و ارائه‌دهندهٔ هویت، اتصال دستی MCP روی همین دستگاه ادامه پیدا می‌کند. فقط تنظیمات ارائه‌دهنده را در فایل خصوصی <code>.env.app</code> قرار دهید؛ هیچ‌گاه رمز، کلید یا توکن را در Git ذخیره نکنید.</p>
+{% endif %}
+<p class="source-note">این صفحه به‌معنای تکمیل اتصال ChatGPT نیست. اتصال نهایی به پیکربندی OAuth ارائه‌دهنده، HTTPS، قابلیت دسترسی خارجی و تست عملی نیاز دارد.</p>
+</section>
+
+<section class="panel"><div class="panel-head"><div><h2>تخصیص حساب‌ها</h2>
+<p class="muted small-text">فقط مدیر می‌تواند شناسهٔ قطعی یک کاربر را به حساب پانادان متصل کند.</p></div></div>
+{% if oauth.mode == 'oauth' %}
+<form action="/dashboard/oauth/link" method="post" class="token-form">
+<input type="hidden" name="csrf" value="{{csrf}}">
+<label>حساب پانادان
+<select name="user_id" required>
+{% for user in users if user.is_active %}
+<option value="{{user.id}}">{{user.username}}</option>
+{% endfor %}
+</select></label>
+<label>شناسهٔ کاربر در ارائه‌دهنده (sub)
+<input name="subject" required maxlength="256" autocomplete="off" placeholder="شناسهٔ دقیق از ارائه‌دهندهٔ هویت" dir="ltr"></label>
+<button class="primary" type="submit">اتصال حساب</button>
+</form>
+<p class="source-note">برای جلوگیری از اعطای دسترسی اشتباه، هیچ حسابی بر اساس ایمیل یا نام مشابه به‌طور خودکار متصل نمی‌شود. فقط کاربر فعال دارای مجوزهای MCP، تماس و آمار قابل اتصال است.</p>
+<div class="table-scroller"><table><thead><tr><th>کاربر</th><th>شناسهٔ ارائه‌دهنده</th><th>وضعیت</th><th></th></tr></thead><tbody>
+{% for item in bindings %}<tr>
+<td>{{item.username}}</td><td><code dir="ltr">{{item.subject}}</code></td>
+<td>{{'فعال' if item.is_active else 'غیرفعال'}}</td>
+<td><form action="/dashboard/oauth/{{item.id}}/revoke" method="post" onsubmit="return confirm('اتصال این هویت لغو شود؟')">
+<input type="hidden" name="csrf" value="{{csrf}}">
+<button type="submit" class="danger-outline">قطع اتصال</button></form></td></tr>
+{% else %}<tr><td colspan="4" class="muted">هیچ هویتی متصل نشده است.</td></tr>{% endfor %}
+</tbody></table></div>
+{% else %}
+<p class="muted">مدیریت اتصال حساب‌ها پس از فعال‌کردن حالت OAuth در دسترس خواهد بود.</p>
+{% endif %}
+</section>
+<section class="panel"><h2>محدودهٔ دسترسی</h2>
+<p>دستیارها فقط ابزارهای گزارش‌گیری غیرحساس را دریافت می‌کنند. متن خام مکالمات، اطلاعات حساس مشتری و عملیات ویرایشی از طریق MCP در دسترس نیستند. نقش و مجوز هر کاربر در هر درخواست دوباره بررسی می‌شود.</p>
+<p class="source-note">مستندات نصب: <a href="https://github.com/aliinreallife/panadan/blob/main/docs/MCP_SETUP.md">راهنمای MCP</a></p></section>
+</main></div></body></html>

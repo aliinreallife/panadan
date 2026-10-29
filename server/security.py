@@ -96,6 +96,18 @@ class Store:
                 existing = {r['name'] for r in c.execute(f'PRAGMA table_info({table})')}
                 if col not in existing:
                     c.execute(f'ALTER TABLE {table} ADD COLUMN {col} {definition}')
+            # OAuth subject bindings are separate from browser sessions and
+            # legacy API tokens. No personal information from the provider
+            # is automatically used to grant reporting permissions.
+            c.execute("""CREATE TABLE IF NOT EXISTS oauth_identities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                issuer TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                UNIQUE(issuer, subject),
+                UNIQUE(issuer, user_id)
+            )""")
             # Previously created tokens were admin-owned; require the existing admin
             # account to remain active for those tokens to work.
             admin = c.execute('SELECT id FROM users WHERE role=? ORDER BY id LIMIT 1', ('admin',)).fetchone()
@@ -176,6 +188,56 @@ class Store:
             # A role change or disable must invalidate all outstanding sessions/tokens.
             c.execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
             c.execute('DELETE FROM access_tokens WHERE owner_id=?', (user_id,))
+            # Reauthorization is required after a role or status update.
+            c.execute('DELETE FROM oauth_identities WHERE user_id=?', (user_id,))
+
+    def bind_oauth_identity(self, issuer: str, subject: str, user_id: int) -> int:
+        """Administrator-approved binding of an IdP subject to a local account.
+
+        Identity provider usernames/emails never determine Panadan permissions.
+        A user must explicitly have permission for the non-sensitive MCP tools.
+        """
+        if not isinstance(subject, str) or not 1 <= len(subject) <= 256 or subject.strip() != subject:
+            raise ValueError('Invalid identity-provider subject')
+        if not issuer or len(issuer) > 512:
+            raise ValueError('Invalid identity-provider issuer')
+        with self.db() as c:
+            row = c.execute('SELECT role,grants,is_active FROM users WHERE id=?', (user_id,)).fetchone()
+            if not row or not row['is_active']:
+                raise ValueError('User must be active')
+            caps = permissions(row['role'], row['grants'])
+            if not {'mcp:use', 'calls:read', 'metrics:read'} <= caps:
+                raise ValueError('User needs MCP, calls and metrics permissions')
+            cursor = c.execute(
+                'INSERT INTO oauth_identities(issuer,subject,user_id,created_at) VALUES(?,?,?,?)',
+                (issuer, subject, user_id, int(time.time())),
+            )
+            return cursor.lastrowid
+
+    def list_oauth_identities(self, issuer: str) -> list[dict]:
+        with self.db() as c:
+            return [dict(row) for row in c.execute(
+                """SELECT i.id, i.subject, i.created_at, u.username, u.is_active
+                   FROM oauth_identities i JOIN users u ON u.id=i.user_id
+                   WHERE i.issuer=? ORDER BY i.id DESC""", (issuer,)
+            )]
+
+    def revoke_oauth_identity(self, issuer: str, identity_id: int) -> None:
+        with self.db() as c:
+            c.execute('DELETE FROM oauth_identities WHERE issuer=? AND id=?',
+                      (issuer, identity_id))
+
+    def oauth_identity_has_mcp_access(self, issuer: str, subject: str) -> bool:
+        with self.db() as c:
+            row = c.execute(
+                """SELECT u.role,u.grants,u.is_active
+                   FROM oauth_identities i JOIN users u ON u.id=i.user_id
+                   WHERE i.issuer=? AND i.subject=?""", (issuer, subject)
+            ).fetchone()
+        if not row or not row['is_active']:
+            return False
+        caps = permissions(row['role'], row['grants'])
+        return {'mcp:use', 'calls:read', 'metrics:read'} <= caps
 
     def create_token(self, name: str, scope: str, days: int = 30, owner_id: int | None = None) -> tuple[int, str]:
         if scope not in ('api:read', 'api:sensitive', 'mcp:read') or not 1 <= days <= 365:

@@ -2,7 +2,7 @@
 
 Private-by-design Persian RTL reporting application for an allowlisted read-only PostgreSQL reporting view: FastAPI, an authenticated dashboard, read-only REST API, and read-only MCP tools.
 
-**Current release: v0.5** — Vazirmatn UI, Doran Jalali date/time filters, capability-based user access, and a formatted transcript reader with an unmodified **Raw original** view.
+**Current release: v0.6** — Vazirmatn UI, Doran Jalali date/time filters, capability-based user access, and a formatted transcript reader with an unmodified **Raw original** view.
 
 ## Requirements
 
@@ -110,6 +110,7 @@ If your `gh` authentication lacks `read:packages`, grant the needed scope or use
 - The PostgreSQL reporting role historically had `CREATE` on `public`; ask the database administrator to revoke unnecessary privileges for defense in depth.
 - User permissions are capability-based (for example metrics, call summaries, sensitive details, MCP use and user administration). MCP tokens are revocable.
 - Call details show **Panadan formatted** speaker turns and an unchanged **Raw original** transcript. Ambiguous speakers are not guessed.
-- Local MCP tools support manually supplied bearer tokens; **ChatGPT hosted OAuth 2.1 connection is not implemented**. See `docs/MCP_SETUP.md`.
+- MCP supports two **mutually exclusive** modes: local/manual bearer by default or RS256 JWT verification from a configured external OAuth 2.1 identity provider. The admin must explicitly link each provider subject to a locally authorized Panadan account. See `docs/MCP_SETUP.md`.
+- Panadan is not an OAuth authorization server. Sign-in, consent, client registration, PKCE, refresh tokens, and issuer metadata belong to the external provider. Live ChatGPT interoperability still needs a provider plus secure HTTPS route/tunnel and end-to-end validation.
 
 Technical details: `docs/PRD.md`, `docs/DECISIONS.md`, `docs/SECURITY.md`, `docs/STATUS.md`, `docs/TRANSCRIPTS.md`.
