@@ -68,9 +68,24 @@ async def audit_http_activity(request: Request, call_next):
         '/dashboard/tokens', '/dashboard/connect', '/dashboard/oauth',
         '/dashboard/activity', '/dashboard/activity/data'
     }
-    action = path if path in approved else re.sub(
-        r'/\\d+(?=/|$)', '/{id}', path
-    )[:100]
+    if path in approved:
+        action = path
+    elif path.startswith('/dashboard/ai/transcript/'):
+        action = '/dashboard/ai/transcript/{id}'
+    elif path.startswith('/dashboard/overview/'):
+        action = '/dashboard/overview/{id}'
+    elif path.startswith('/dashboard/data/'):
+        action = '/dashboard/data/{id}'
+    elif path.startswith('/api/v1/calls/'):
+        action = '/api/v1/calls/{id}'
+    elif path.startswith('/dashboard/tokens/'):
+        action = '/dashboard/tokens/{id}/action'
+    elif path.startswith('/dashboard/users/'):
+        action = '/dashboard/users/{id}/action'
+    elif path.startswith('/dashboard/oauth/'):
+        action = '/dashboard/oauth/{id}/action'
+    else:
+        action = '/dashboard/other' if path.startswith('/dashboard') else '/api/v1/other'
     action = request.method.upper() + ' ' + action
     status_code = 500
     try:
