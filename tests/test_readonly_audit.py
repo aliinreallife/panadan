@@ -31,6 +31,7 @@ class Connection:
     lambda: database.list_calls(),
     lambda: database.get_call(123),
     lambda: database.get_call(123, sensitive=True),
+    lambda: database.transcript_excerpt(123,6000,6000),
     lambda: database.stats(),
     lambda: database.statuses(),
     lambda: database.call_types(),
@@ -53,7 +54,8 @@ def test_every_reporting_operation_is_select_only_and_read_only(monkeypatch, ope
 def test_only_non_sensitive_read_only_mcp_tools_exist():
     names = {tool.name for tool in mcp_tools.mcp._tool_manager.list_tools()}
     assert names == {
-        "list_recent_calls", "get_call_summary", "get_call_metrics", "get_available_states"
+        "list_recent_calls", "get_call_summary", "get_call_metrics", "get_available_states",
+        "get_redacted_call_transcript"
     }
 
 
@@ -61,7 +63,7 @@ def test_rest_reporting_routes_offer_get_only():
     from server.main import app
     for route in app.routes:
         path = getattr(route, "path", "")
-        if path.startswith("/api/v1/") or path.startswith("/dashboard/data") or path == "/dashboard/metrics":
+        if path.startswith("/api/v1/") or path.startswith("/dashboard/data") or path.startswith("/dashboard/ai/") or path == "/dashboard/metrics":
             assert set(route.methods or ()) <= {"GET", "HEAD", "OPTIONS"}, path
 
 
