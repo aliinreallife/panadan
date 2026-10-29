@@ -10,7 +10,7 @@ test('call types map to stable Persian display names', () => {
   assert.equal(callTypeLabel('Unknown'), 'نامشخص');
 });
 test('AI states are translated without inventing sales confirmation', () => {
-  assert.equal(callStateLabel('SoldOut'), 'برچسب فروش');
+  assert.equal(callStateLabel('SoldOut'), 'فروش رفته');
   assert.equal(callStateLabel('Unchecked'), 'بررسی‌نشده');
   assert.equal(callStateLabel('System Invalid'), 'نامعتبر سیستمی');
   assert.equal(callStateLabel('User Invalid'), 'نامعتبر کاربری');
