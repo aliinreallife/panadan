@@ -29,7 +29,7 @@
 <option value="">همه کانال‌ها</option><option value="dashboard">داشبورد</option>
 <option value="api">REST API</option><option value="mcp">MCP</option>
 <option value="auth">احراز هویت</option></select></label>
-<button class="primary" type="submit">نمایش گزارش</button>
+<label class="activity-only-errors"><input id="activity-errors-only" type="checkbox"> فقط درخواست‌های ناموفق</label><button class="primary" type="submit">نمایش گزارش</button>
 </form></section>
 <section class="activity-kpis" aria-label="خلاصه فعالیت">
 <article class="activity-kpi"><span>مجموع درخواست‌ها</span><strong id="activity-total">—</strong><small>بر اساس بازهٔ انتخابی</small></article>
@@ -40,6 +40,7 @@
 <div class="activity-grid">
 <section class="panel activity-panel"><div class="panel-head"><div><h2>روند روزانه</h2><p class="muted small-text">تعداد درخواست و خطا در هر روز</p></div><span class="tag">بر اساس UTC</span></div>
 <div id="activity-trend" class="activity-trend" role="img" aria-label="نمودار فعالیت روزانه"></div>
+<div class="activity-legend"><span><i class="activity-legend-dot requests"></i>درخواست‌ها</span><span><i class="activity-legend-dot errors"></i>خطاها</span></div>
 </section>
 <section class="panel activity-panel"><div class="panel-head"><h2>کانال‌های دسترسی</h2></div>
 <div id="activity-surfaces" class="activity-bars"></div></section>
@@ -49,7 +50,7 @@
 <div id="activity-top-actions" class="activity-bars"></div></section>
 </div>
 <section class="panel"><div class="panel-head"><div><h2>آخرین رویدادها</h2><p class="muted small-text">فقط نام رویداد، کاربر و نتیجه ذخیره می‌شود؛ نه پارامترها، توکن‌ها یا محتوای مکالمه.</p></div>
-<span id="activity-event-count" class="tag">—</span></div>
+<div class="activity-event-tools"><label class="activity-search"><span class="sr-only">جستجو در رویدادهای اخیر</span><input id="activity-search" type="search" placeholder="جستجو در رویدادهای اخیر…" autocomplete="off"></label><span id="activity-event-count" class="tag">—</span></div></div>
 <div class="table-scroller"><table class="activity-table"><thead>
 <tr><th>زمان</th><th>کاربر</th><th>کانال</th><th>درخواست یا ابزار</th><th>وضعیت</th><th>مدت</th></tr>
 </thead><tbody id="activity-events"><tr><td colspan="6">در حال بارگذاری…</td></tr></tbody></table></div>
