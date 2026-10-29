@@ -9,7 +9,7 @@ Do not commit `.env.app`, `.env.db`, `.ovpn` files, VPN private keys, SQLite aut
 - Data access uses `default_transaction_read_only=on`, statement timeout and parameterized queries. The PostgreSQL user still has `CREATE` on `public` as found by the source audit; database admin should revoke that if unnecessary.
 - Logs should never include raw Authorization headers or credentials. No real customer data included in tests/source.
 - API `api:read` and MCP `mcp:read` expose safe structured fields only. `api:sensitive` allows full call details when explicitly requested. UI admin detail includes sensitive data.
-- For full MCP specification client auth, add OAuth 2.1 authorization server and resource metadata; this MVP's manual bearer tokens are for clients that support custom auth headers.
+- OAuth mode is an optional MCP resource server; a separate standards-compliant IdP handles login, consent and token issuance. Only RS256 JWT access tokens from the configured HTTPS JWKS issuer with exact audience, scope and expiry are accepted. OAuth mode never accepts legacy manually issued MCP tokens.
 - Before production: IP-based login throttle store (Redis), account recovery, audited admin management, remote backups, TLS termination, CSP, explicit MCP host allowlist, security review, integration tests, retention policy.
 
 ## uv-native local development (v0.3)
@@ -42,3 +42,13 @@ Do not commit `.env.app`, `.env.db`, `.ovpn` files, VPN private keys, SQLite aut
 - The reporting DB role `report_user` has historically shown `CREATE` on `public`;
   `READ ONLY` transactions protect this application, but the server administrator
   should revoke unnecessary CREATE privileges for stronger isolation.
+
+## v0.6 OAuth boundary
+
+- OAuth is **off by default**. `PANADAN_MCP_AUTH_MODE=oauth` requires explicit HTTPS issuer, JWKS URL, canonical resource URL ending `/mcp/`, and a requested scope. Misconfiguration causes startup to fail closed.
+- The bearer challenge advertises RFC 9728 protected-resource metadata; Panadan does not create JWTs or authorization-server metadata.
+- The admin binds the provider's **immutable subject**, not username/email, to one Panadan account. No auto-provisioning, no privilege inheritance from external token claims.
+- Every MCP request rechecks the linked account's role, activation and `calls:read`, `metrics:read`, `mcp:use` permissions. Account permission changes delete links. The provider itself must manage token revocation and refresh.
+- A short JWT lifetime (at most one hour) is enforced; signing keys are obtained from a preconfigured HTTPS JWKS with bounded caching. No URL supplied by the bearer token is fetched.
+- OAuth does **not** grant sensitive call transcript access or PostgreSQL write access. The database's READ ONLY transaction guard remains unchanged.
+- Remote deployment remains unsupported until hardened HTTPS origin/host policies, auditing, rate limits, the IdP consent/PKCE configuration and ChatGPT callback flow have been tested.
