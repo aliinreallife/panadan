@@ -3,7 +3,7 @@ from datetime import date
 from mcp.server.fastmcp import FastMCP, Context
 from . import database
 
-mcp = FastMCP('Panadan', instructions='Read-only reporting for authorized business users. No raw SQL or private transcripts.', stateless_http=True, json_response=True, streamable_http_path='/')
+mcp = FastMCP('Panadan', instructions='Read-only reporting for authorized business users. Transcript excerpts require separate user permissions. No raw SQL or writes.', stateless_http=True, json_response=True, streamable_http_path='/')
 
 
 @mcp.tool()
@@ -33,12 +33,12 @@ def get_available_states() -> list[str]:
 
 
 @mcp.tool()
-def get_redacted_call_transcript(call_id: int, ctx: Context) -> dict:
-    """Get at most 6000 redacted chars of ONE call. Requires separately granted
+def get_redacted_call_transcript(call_id: int, ctx: Context, offset: int = 0) -> dict:
+    """Get one redacted 6000-character page of a call (use next_offset). Requires separately granted
     calls:transcript:read permission, revalidates caller and records disclosure.
     This tool is READ ONLY and may contain confidential business speech.
     """
-    if type(call_id) is not int or call_id < 1:
+    if type(call_id) is not int or call_id < 1 or type(offset) is not int or not 0 <= offset <= 1000000:
         return {'error': 'invalid_call_id'}
     # Never trust model arguments, MCP _meta or a caller-provided user ID.
     # Re-read the authenticated HTTP credential for this *request* and
@@ -64,6 +64,6 @@ def get_redacted_call_transcript(call_id: int, ctx: Context) -> dict:
         user_id=actor, surface='mcp', call_id=call_id,
         char_limit=MAX_TRANSCRIPT_CHARS,
     ):
-        return {'error': 'transcript_limit_or_permission_denied'}
-    record = database.transcript_excerpt(call_id, MAX_TRANSCRIPT_CHARS)
-    return transcript_for_ai(record) or {'error': 'not_found'}
+        return {'error': 'permission_denied'}
+    record = database.transcript_excerpt(call_id, MAX_TRANSCRIPT_CHARS, offset)
+    return transcript_for_ai(record, offset=offset) or {'error': 'not_found'}
