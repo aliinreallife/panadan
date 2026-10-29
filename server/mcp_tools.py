@@ -38,7 +38,7 @@ def get_redacted_call_transcript(call_id: int, ctx: Context, offset: int = 0) ->
     calls:transcript:read permission, revalidates caller and records disclosure.
     This tool is READ ONLY and may contain confidential business speech.
     """
-    if type(call_id) is not int or call_id < 1 or type(offset) is not int or not 0 <= offset <= 1000000:
+    if type(call_id) is not int or call_id < 1 or type(offset) is not int or not 0 <= offset <= 2147483646:
         return {'error': 'invalid_call_id'}
     # Never trust model arguments, MCP _meta or a caller-provided user ID.
     # Re-read the authenticated HTTP credential for this *request* and
