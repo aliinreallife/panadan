@@ -52,3 +52,7 @@ Do not commit `.env.app`, `.env.db`, `.ovpn` files, VPN private keys, SQLite aut
 - A short JWT lifetime (at most one hour) is enforced; signing keys are obtained from a preconfigured HTTPS JWKS with bounded caching. No URL supplied by the bearer token is fetched.
 - OAuth does **not** grant sensitive call transcript access or PostgreSQL write access. The database's READ ONLY transaction guard remains unchanged.
 - Remote deployment remains unsupported until hardened HTTPS origin/host policies, auditing, rate limits, the IdP consent/PKCE configuration and ChatGPT callback flow have been tested.
+
+## Effective database-role audit
+
+Run `./panadan.sh audit-db` on the connected WSL machine to inspect the **current** reporting account's effective CREATE/INSERT/UPDATE/DELETE/TRUNCATE privileges. This check only queries PostgreSQL catalogs in an explicit READ ONLY transaction; it never changes the source database. See `docs/READ_ONLY.md`. An earlier audit found schema CREATE rights on the reporting login, but that historical finding must be verified on the live server before claiming the account is strictly read-only. For robust least privilege use a dedicated reader role approved by the DBA, not blanket revokes on a shared production account.
