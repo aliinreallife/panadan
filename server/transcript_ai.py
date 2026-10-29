@@ -14,12 +14,15 @@ _URL = re.compile(r'(?i)https?://[^\s<>]+')
 _IBAN = re.compile(r'(?i)\bIR[0-9]{24}\b')
 
 
-def transcript_for_ai(record: dict | None, *, limit: int = MAX_TRANSCRIPT_CHARS) -> dict | None:
+def transcript_for_ai(record: dict | None, *, limit: int = MAX_TRANSCRIPT_CHARS,
+                      offset: int = 0) -> dict | None:
     """Return a scrubbed partial transcript, never customer fields or raw SQL."""
     if record is None:
         return None
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > MAX_TRANSCRIPT_CHARS:
         raise ValueError('Invalid transcript limit')
+    if type(offset) is not int or not 0 <= offset <= 1000000:
+        raise ValueError('Invalid transcript offset')
     text = str(record.get('transcription') or '')
     # Bound return size even if the database view contains a huge transcript.
     text = text[:limit]
@@ -30,7 +33,10 @@ def transcript_for_ai(record: dict | None, *, limit: int = MAX_TRANSCRIPT_CHARS)
     return {
         'call_id': record['id'],
         'text': text[:limit],
-        'truncated': bool(record.get('total_chars', 0) > limit),
+        'has_more': bool(record.get('total_chars', 0) > offset + len(str(record.get('transcription') or ''))),
+        'next_offset': offset + len(str(record.get('transcription') or '')),
+        'offset': offset,
+        'truncated': bool(record.get('total_chars', 0) > offset + len(str(record.get('transcription') or ''))),
         'source_chars': int(record.get('total_chars', 0)),
         'presentation': 'Panadan AI excerpt (redacted)',
         'privacy_notice': 'Names and other private details spoken in the call may remain. Treat as confidential.',
