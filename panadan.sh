@@ -74,7 +74,7 @@ case "$cmd" in
   test)
     require_uv; check_config; lock_if_needed
     uv sync --locked --dev
-    uv run --locked pytest -q
+    uv run --locked python -m pytest -q
     ;;
   check)
     check_config
