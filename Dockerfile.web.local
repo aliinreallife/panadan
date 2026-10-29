@@ -1,0 +1,15 @@
+# Reuse the local image created in the already-working DANF v2 project.
+# No Debian/Python base image retrieval is required.
+FROM danf-v2-python:latest
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /srv
+COPY requirements.txt /tmp/requirements.txt
+COPY wheelhouse/ /tmp/wheelhouse/
+RUN pip install --no-index --find-links /tmp/wheelhouse -r /tmp/requirements.txt \
+    && (id -u panadan >/dev/null 2>&1 || useradd -m -u 10001 panadan)
+COPY server ./server
+COPY templates ./templates
+COPY static ./static
+RUN mkdir -p /data && chown -R panadan:panadan /data /srv
+USER panadan
+CMD ["uvicorn","server.main:app","--host","0.0.0.0","--port","8000","--no-proxy-headers"]

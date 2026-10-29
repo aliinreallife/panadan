@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "panadan": {
+      "type": "http",
+      "url": "http://localhost:8508/mcp/",
+      "headers": {
+        "Authorization": "Bearer REPLACE_WITH_MCP_READ_TOKEN"
+      }
+    }
+  }
+}

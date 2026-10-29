@@ -1,0 +1,9 @@
+.git
+.env*
+!*.example
+vpn/
+data/
+output/
+*.sqlite*
+__pycache__/
+.pytest_cache/

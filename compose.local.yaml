@@ -1,0 +1,39 @@
+# Offline/local-image compose variant: no registry dependencies
+name: panadan
+services:
+  vpn:
+    image: danf-v2-vpn:latest
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ./vpn:/vpn:ro
+    ports:
+      # Important: the application is reachable from this machine only.
+      - '127.0.0.1:${PANADAN_HTTP_PORT:-8508}:8000'
+    healthcheck:
+      test: ['CMD-SHELL', "ip -4 addr show dev tun0 | grep -q 'inet ' && ip -4 route get 192.168.3.9 | grep -Eq 'dev tun[[:alnum:]_.-]*'"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+  web:
+    image: panadan-web:local
+    network_mode: service:vpn
+    depends_on:
+      vpn:
+        condition: service_healthy
+        restart: true
+    env_file:
+      - .env.db
+      - .env.app
+    environment:
+      PGSSLMODE: require
+      PANADAN_AUTH_DB: /data/auth.sqlite
+    volumes:
+      - panadan_auth_data:/data
+    restart: unless-stopped
+
+volumes:
+  panadan_auth_data:
