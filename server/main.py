@@ -221,7 +221,9 @@ def dashboard_filter_options(session: dict = Depends(current_session)):
 
 
 @app.get('/dashboard/ai/transcript/{call_id}', include_in_schema=False)
-def browser_ai_transcript(call_id: int, session: dict = Depends(current_session)):
+def browser_ai_transcript(call_id: int, offset: int = Query(0,ge=0,le=1000000),
+                          limit: int = Query(6000,ge=1,le=6000),
+                          session: dict = Depends(current_session)):
     """Authorized WebMCP retrieval: redacted, bounded, auditable and read-only."""
     required(session,'calls:read')
     required(session,'calls:transcript:read')
@@ -229,15 +231,15 @@ def browser_ai_transcript(call_id: int, session: dict = Depends(current_session)
         raise HTTPException(400, 'Invalid call ID')
     allowed = store.audit_transcript_request(
         user_id=session['user_id'], surface='webmcp',
-        call_id=call_id, char_limit=MAX_TRANSCRIPT_CHARS,
+        call_id=call_id, char_limit=limit,
     )
     if not allowed:
         raise HTTPException(429, 'Transcript access unavailable or hourly limit reached')
-    try: raw = database.transcript_excerpt(call_id, MAX_TRANSCRIPT_CHARS)
+    try: raw = database.transcript_excerpt(call_id, limit, offset)
     except Exception as e: json_failure(e)
     if not raw:
         raise HTTPException(404, 'Call not found')
-    return JSONResponse(transcript_for_ai(raw), headers={'Cache-Control':'no-store'})
+    return JSONResponse(transcript_for_ai(raw, limit=limit, offset=offset), headers={'Cache-Control':'no-store'})
 
 
 @app.get('/dashboard/overview/{call_id}', include_in_schema=False)
