@@ -23,10 +23,10 @@ Do not commit `.env.app`, `.env.db`, `.ovpn` files, VPN private keys, SQLite aut
 
 ## v0.4 defense-in-depth (pending full deployment verification)
 
-- Odoo PostgreSQL: every reporting query runs in `SET TRANSACTION READ ONLY`.
+- the reporting database PostgreSQL: every reporting query runs in `SET TRANSACTION READ ONLY`.
   Database credentials are not available to browser JS, REST callers, or MCP clients.
 - SQLite: accounts, session rotation and token revocation are intentionally writable;
-  this does not give any caller write access to Odoo.
+  this does not give any caller write access to the reporting database.
 - Capabilities: `metrics:read`, `calls:read`, `calls:sensitive`, `mcp:use`,
   `tokens:manage`, and `users:manage`, evaluated on every request. Tokens are
   owned by a user and become invalid when the user is disabled or changed.
