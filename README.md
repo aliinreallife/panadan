@@ -79,3 +79,20 @@ Dashboard password uses hashed local storage in `data/` and HttpOnly CSRF-protec
 Use `uv add <package>`, `uv add --dev <package>`, `uv lock`, `uv sync --locked`, `uv run --locked pytest -q`. Do not use `python3 -m pip` or manually update `requirements.txt`. Keep `pyproject.toml` and `uv.lock` together. CI fails when lock is absent/outdated.
 
 Project decisions and hardening tasks: `docs/PRD.md`, `docs/DECISIONS.md`, `docs/SECURITY.md`, `docs/STATUS.md`.
+
+## v0.4 candidate: Persian dashboard, access control and transcript viewer
+
+This branch adds Doran-based Jalali date/time selection, locally bundled
+Vazirmatn Variable, role-based users, metrics-only API tokens, and a
+**Panadan formatted** transcript view with a **Raw** tab for the exact source.
+No data is modified in Odoo. See `docs/TRANSCRIPTS.md` and `docs/MCP_SETUP.md`.
+
+After pulling this branch, run `./panadan.sh setup` in WSL (requires Node 20+
+and npm for local frontend assets, plus uv for Python), then
+`./panadan.sh dev`. Dashboard stays on `http://127.0.0.1:8508`.
+
+Check scripts: `node --test tests/transcript.test.mjs`,
+`uv run --locked pytest -q`, and `npm run build`.
+The MCP bearer flow is suitable for compatible local HTTP clients, **not yet
+OAuth-compatible for ChatGPT hosted connections**. Never expose the current
+service publicly without completing the security requirements.

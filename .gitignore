@@ -23,3 +23,6 @@ wheelhouse/
 compose.override.yaml
 
 .coverage
+node_modules/
+static/vendor/*.js
+static/vendor/*.css

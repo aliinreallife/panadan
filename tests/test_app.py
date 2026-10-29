@@ -17,7 +17,15 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(main.database, 'get_call',lambda *a,**k:{'id':5,'summary':'synthetic'} if k.get('sensitive') else {'id':5})
     monkeypatch.setattr(main.database, 'stats',lambda *a,**k:{'total':1,'sold_out':0,'avg_ai_score':10,'avg_voice_length':20})
     monkeypatch.setattr(main.database, 'statuses',lambda *a,**k:['Unchecked'])
-    with TestClient(main.app) as c: yield c,main
+    # Exercise dashboard/API permissions without restarting the singleton MCP
+    # session manager, which the MCP SDK permits to run only once per process.
+    from contextlib import asynccontextmanager
+    @asynccontextmanager
+    async def auth_test_lifespan(_app):
+        main.store.bootstrap('admin', 'a-long-safe-testing-password')
+        yield
+    main.app.router.lifespan_context = auth_test_lifespan
+    with TestClient(main.app) as c: yield c, main
 
 
 def test_reject_unauthorized(client):
@@ -45,3 +53,23 @@ def test_login_dashboard_and_revoke(client):
     assert c.post(f'/dashboard/tokens/{tid}/revoke',data={'csrf':'invalid'}).status_code==403
     assert c.post(f'/dashboard/tokens/{tid}/revoke',data={'csrf':csrf},follow_redirects=False).status_code==303
     assert not main.store.list_tokens()
+
+
+def test_dashboard_only_cannot_bypass_sensitive_detail(client):
+    c, main = client
+    uid=main.store.create_user('callreader','another-long-password','reader',['calls:read'])
+    raw,_=main.store.create_session(uid)
+    c.cookies.set('panadan_session',raw)
+    r=c.get('/dashboard/data/5')
+    assert r.status_code==200
+    assert 'summary' not in r.json()
+    assert c.get('/dashboard/users').status_code==403
+
+def test_stats_only_api_token(client):
+    c, main = client
+    uid=main.store.create_user('metricsonly','another-long-password','metrics',['metrics:read'])
+    _, token=main.store.create_token('stats only','api:read',30,uid)
+    headers={'Authorization':'Bearer '+token}
+    assert c.get('/api/v1/stats',headers=headers).status_code==200
+    assert c.get('/api/v1/calls',headers=headers).status_code==401
+    assert c.get('/api/v1/calls/5',headers=headers).status_code==401

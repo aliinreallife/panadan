@@ -2,6 +2,7 @@
 from __future__ import annotations
 from contextlib import contextmanager
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Any
 import os
@@ -39,24 +40,41 @@ def connect():
         options='-c default_transaction_read_only=on -c statement_timeout=12000',
         row_factory=dict_row, autocommit=True,
     ) as conn:
-        yield conn
+        # Defense in depth: every reporting operation is in an explicit
+        # server-enforced READ ONLY transaction, even if the role has broader
+        # grants. Local SQLite auth writes are intentionally separate.
+        with conn.transaction():
+            conn.execute('SET TRANSACTION READ ONLY')
+            yield conn
 
 
-def filters(after: date | None, before: date | None, state: str | None):
+def filters(after: date | None, before: date | None, state: str | None,
+            created_after: datetime | None = None, created_before: datetime | None = None):
     parts, args = [], []
     if after: parts.append('"CALLDATE" >= %s'); args.append(after)
     if before: parts.append('"CALLDATE" <= %s'); args.append(before)
     if state: parts.append('"aicallinfostate" = %s'); args.append(state)
+    # Odoo's create_date is a naive UTC timestamp; display times are Asia/Tehran.
+    # Convert aware ISO inputs to a UTC-naive timestamp for comparisons.
+    from datetime import timezone
+    for op, value in [('>=', created_after), ('<=', created_before)]:
+        if value:
+            if value.tzinfo is None: value = value.replace(tzinfo=ZoneInfo('Asia/Tehran'))
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+            parts.append(f'"create_date" {op} %s')
+            args.append(value)
     return (' WHERE ' + ' AND '.join(parts)) if parts else '', args
 
 
 def list_calls(limit: int = 20, offset: int = 0, after: date | None = None,
-               before: date | None = None, state: str | None = None):
+               before: date | None = None, state: str | None = None,
+               created_after: datetime | None = None, created_before: datetime | None = None):
     limit = max(1, min(int(limit), 100))
     offset = max(0, min(int(offset), 10000))
     if after and before and after > before: raise ValueError('Invalid date range')
     if state and len(state) > 60: raise ValueError('Invalid state')
-    where, params = filters(after, before, state)
+    if created_after and created_before and created_after > created_before: raise ValueError('Invalid time range')
+    where, params = filters(after, before, state, created_after, created_before)
     q = ('SELECT ' + ','.join('"' + c + '"' for c in PUBLIC_COLUMNS) +
          ' FROM ' + VIEW + where + ' ORDER BY "CALLDATE" DESC NULLS LAST, id DESC LIMIT %s OFFSET %s')
     with connect() as c:
@@ -71,8 +89,9 @@ def get_call(call_id: int, sensitive: bool = False):
     return normalized(row) if row else None
 
 
-def stats(after: date | None = None, before: date | None = None):
-    where, params = filters(after, before, None)
+def stats(after: date | None = None, before: date | None = None,
+          created_after: datetime | None = None, created_before: datetime | None = None):
+    where, params = filters(after, before, None, created_after, created_before)
     q = ('SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE "aicallinfostate" = %s) AS sold_out, '
          'ROUND(AVG("possibility_of_sale_ai")::numeric, 1) AS avg_ai_score, '
          'ROUND(AVG("voice_length")::numeric, 1) AS avg_voice_length '

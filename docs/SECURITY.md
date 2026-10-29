@@ -20,3 +20,25 @@ Do not commit `.env.app`, `.env.db`, `.ovpn` files, VPN private keys, SQLite aut
 - Developer admin SQLite database is a local file in `data/`. Previous container-based auth SQLite data/tokens are not automatically migrated; new tokens must be issued.
 - `uv.lock` must be generated and committed on the workstation before pushing. CI and Docker must install with `--locked`.
 - Production images built by GitHub Actions are private GHCR packages; restrict package read access and deploy immutable sha-tagged versions.
+
+## v0.4 defense-in-depth (pending full deployment verification)
+
+- Odoo PostgreSQL: every reporting query runs in `SET TRANSACTION READ ONLY`.
+  Database credentials are not available to browser JS, REST callers, or MCP clients.
+- SQLite: accounts, session rotation and token revocation are intentionally writable;
+  this does not give any caller write access to Odoo.
+- Capabilities: `metrics:read`, `calls:read`, `calls:sensitive`, `mcp:use`,
+  `tokens:manage`, and `users:manage`, evaluated on every request. Tokens are
+  owned by a user and become invalid when the user is disabled or changed.
+- REST: `api:read` can be metrics-only; endpoints independently check required
+  capability. `api:sensitive` is necessary for sensitive call details.
+- MCP: Bearer authentication protects GET/POST/DELETE before SDK dispatch.
+  Tools return only allowlisted non-sensitive columns.
+- Transcript: client-side formatting only for authorized sensitive-detail users;
+  original raw text remains retrievable. Text is rendered without HTML injection.
+- Browser assets: Doran and Vazirmatn bundled locally in production; no external
+  Google Fonts calls on pages containing business data.
+- Do not expose private business data through an unauthenticated proxy or public tunnel.
+- The reporting DB role `report_user` has historically shown `CREATE` on `public`;
+  `READ ONLY` transactions protect this application, but the server administrator
+  should revoke unnecessary CREATE privileges for stronger isolation.

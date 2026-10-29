@@ -11,3 +11,16 @@
 - [ ] Configure private GHCR package access + image deployment
 - [ ] Production: TLS, OAuth 2.1 as needed for remote MCP, external host security review
 - [ ] Clarify `SoldOut`, `voice_length`, and `deal_value` semantics with source owner
+
+## v0.4 in progress (review branch, not merged)
+
+- [x] Distinct local roles and capability-based permissions, API/MCP token ownership
+- [x] Local account lifecycle + session/token invalidation on disable/change
+- [x] Explicit PostgreSQL READ ONLY transaction boundary
+- [x] Panadan-formatted transcript view with exact Raw toggle and parser regression tests
+- [x] Doran Jalali/date-time integration code and self-hosted Vazirmatn build instructions
+- [x] Local MCP setup and ChatGPT/tunnel limitations documented
+- [ ] Generate/install npm frontend dependencies, test the datepicker in a browser
+- [ ] Run full FastAPI/MCP test suite with uv in WSL (needs Python 3.12 dependencies)
+- [ ] OAuth 2.1 authorization-code + PKCE integration for ChatGPT, if required
+- [ ] Security review before exposing any endpoint publicly
