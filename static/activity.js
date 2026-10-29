@@ -13,6 +13,31 @@ const formatWhen=stamp=>{
   }).format(date);
 };
 const surfaceLabel={dashboard:'داشبورد',api:'REST API',mcp:'MCP',auth:'ورود و خروج'};
+const actionTitles={
+  'GET /dashboard':'باز کردن داشبورد',
+  'GET /dashboard/data':'مرور فهرست تماس‌ها',
+  'GET /dashboard/metrics':'مشاهده آمار تماس‌ها',
+  'GET /dashboard/filter-options':'بارگذاری فیلترهای گزارش',
+  'GET /dashboard/activity':'مشاهده فعالیت کاربران',
+  'GET /dashboard/activity/data':'دریافت گزارش فعالیت',
+  'GET /dashboard/overview/{id}':'مرور جزئیات تماس',
+  'GET /dashboard/data/{id}':'مشاهده جزئیات مکالمه',
+  'GET /dashboard/ai/transcript/{id}':'خواندن متن مکالمه برای AI',
+  'GET /api/v1/calls':'API: فهرست تماس‌ها',
+  'GET /api/v1/calls/{id}':'API: جزئیات تماس',
+  'GET /api/v1/stats':'API: گزارش آماری',
+  'GET /api/v1/states':'API: وضعیت‌ها',
+  'MCP initialize':'شروع اتصال MCP',
+  'MCP tools/list':'فهرست ابزارهای AI',
+  'MCP tools/call:get_call_metrics':'MCP: مشاهده آمار تماس',
+  'MCP tools/call:get_call_summary':'MCP: خلاصه تماس',
+  'MCP tools/call:list_recent_calls':'MCP: فهرست تماس‌ها',
+  'MCP tools/call:get_available_states':'MCP: وضعیت تماس‌ها',
+  'MCP tools/call:get_redacted_call_transcript':'MCP: خواندن متن مکالمه',
+  'MCP unauthorized':'اتصال نامعتبر MCP'
+};
+export const actionLabel=name=>actionTitles[name] || name;
+
 const node=(tag,cl,text)=>{
   const element=document.createElement(tag);
   if(cl)element.className=cl;
@@ -21,7 +46,7 @@ const node=(tag,cl,text)=>{
 };
 export const totals=report=>{
   const total=Number(report.total||0),errors=Number(report.errors||0);
-  return {total,errors,users:(report.users||[]).filter(u=>u.name!=='ناشناس').length,
+  return {total,errors,users:Number(report.active_users ?? 0),
     success:total?Math.max(0,Math.round((total-errors)*100/total)):100};
 };
 export function barScale(rows){
@@ -95,8 +120,9 @@ function renderEvents(items){
   if(!items.length){const row=node('tr');const cell=node('td','muted','فعالیتی ثبت نشده است.');cell.colSpan=6;row.append(cell);tbody.append(row);return;}
   for(const event of items){
     const tr=node('tr');
+    tr.title=event.action;
     for(const val of [formatWhen(event.created_at),event.username,
-      surfaceLabel[event.surface]||event.surface,event.action]){
+      surfaceLabel[event.surface]||event.surface,actionLabel(event.action)]){
       tr.append(node('td','',val));
     }
     const status=node('td');
@@ -124,7 +150,7 @@ async function load(){
     renderTrend(report.days);
     renderBars('activity-surfaces',report.surfaces,name=>surfaceLabel[name]||name);
     renderBars('activity-top-users',report.users);
-    renderBars('activity-top-actions',report.actions);
+    renderBars('activity-top-actions',report.actions,actionLabel);
     renderEvents(report.recent||[]);
     $('activity-event-count').textContent=formatNum((report.recent||[]).length)+' رویداد اخیر';
   }catch{
