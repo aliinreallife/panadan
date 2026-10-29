@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
         yield
 
 
-app = FastAPI(title='Panadan API', version='0.4.0', docs_url=None,
+app = FastAPI(title='Panadan API', version='0.5.0', docs_url=None,
               redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.mount('/static', StaticFiles(directory='static'), name='static')
 
@@ -191,10 +191,18 @@ def revoke_token(request: Request, tid: int, csrf: str = Form(...),
 def dashboard_data(request: Request, limit: int = Query(20, ge=1, le=100),
                    offset: int = Query(0, ge=0, le=10000), after: date | None = None,
                    before: date | None = None, state: str | None = None,
-                   created_after: datetime | None = None, created_before: datetime | None = None,
+                   call_type: str | None = None, created_after: datetime | None = None, created_before: datetime | None = None,
                    session: dict = Depends(current_session)):
     required(session, 'calls:read')
-    try: return {'items':database.list_calls(limit,offset,after,before,state,created_after,created_before)}
+    try: return {'items':database.list_calls(limit,offset,after,before,state,created_after,created_before,call_type)}
+    except Exception as e: json_failure(e)
+
+
+@app.get('/dashboard/filter-options', include_in_schema=False)
+def dashboard_filter_options(session: dict = Depends(current_session)):
+    required(session, 'calls:read')
+    try:
+        return {'states': database.statuses(), 'call_types': database.call_types()}
     except Exception as e: json_failure(e)
 
 
@@ -218,8 +226,9 @@ def dashboard_metrics(after: date | None = None, before: date | None = None,
 
 @app.get('/api/v1/calls', dependencies=[Depends(require_api)], tags=['Calls'])
 def api_calls(limit: int = Query(20,ge=1,le=100), offset: int = Query(0,ge=0,le=10000),
-              after: date | None = None, before: date | None = None, state: str | None = None):
-    try: return {'items':database.list_calls(limit,offset,after,before,state)}
+              after: date | None = None, before: date | None = None, state: str | None = None,
+              call_type: str | None = None):
+    try: return {'items':database.list_calls(limit,offset,after,before,state,call_type=call_type)}
     except Exception as e: json_failure(e)
 
 
@@ -289,6 +298,15 @@ def update_user(request: Request, uid: int, role: str = Form(...), csrf: str = F
     try: store.update_user(uid,role,grants if role != 'admin' else None,is_active,session['user_id'])
     except ValueError as exc: raise HTTPException(400,str(exc)) from exc
     return RedirectResponse('/dashboard/users',status_code=303)
+
+
+@app.get('/dashboard/api', response_class=HTMLResponse, include_in_schema=False)
+def api_guide(request: Request, session: dict = Depends(current_session)):
+    admin_only(session)
+    return templates.TemplateResponse(request, 'api.html', {
+        'session': session, 'csrf': session['csrf'],
+        'base_url': str(request.base_url).rstrip('/'),
+    }, headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/dashboard/connect', response_class=HTMLResponse, include_in_schema=False)

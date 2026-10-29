@@ -49,11 +49,13 @@ def connect():
 
 
 def filters(after: date | None, before: date | None, state: str | None,
-            created_after: datetime | None = None, created_before: datetime | None = None):
+            created_after: datetime | None = None, created_before: datetime | None = None,
+            call_type: str | None = None):
     parts, args = [], []
     if after: parts.append('"CALLDATE" >= %s'); args.append(after)
     if before: parts.append('"CALLDATE" <= %s'); args.append(before)
     if state: parts.append('"aicallinfostate" = %s'); args.append(state)
+    if call_type: parts.append('"tellstate" = %s'); args.append(call_type)
     # Odoo's create_date is a naive UTC timestamp; display times are Asia/Tehran.
     # Convert aware ISO inputs to a UTC-naive timestamp for comparisons.
     from datetime import timezone
@@ -68,13 +70,15 @@ def filters(after: date | None, before: date | None, state: str | None,
 
 def list_calls(limit: int = 20, offset: int = 0, after: date | None = None,
                before: date | None = None, state: str | None = None,
-               created_after: datetime | None = None, created_before: datetime | None = None):
+               created_after: datetime | None = None, created_before: datetime | None = None,
+               call_type: str | None = None):
     limit = max(1, min(int(limit), 100))
     offset = max(0, min(int(offset), 10000))
     if after and before and after > before: raise ValueError('Invalid date range')
     if state and len(state) > 60: raise ValueError('Invalid state')
+    if call_type and len(call_type) > 60: raise ValueError('Invalid call type')
     if created_after and created_before and created_after > created_before: raise ValueError('Invalid time range')
-    where, params = filters(after, before, state, created_after, created_before)
+    where, params = filters(after, before, state, created_after, created_before, call_type)
     q = ('SELECT ' + ','.join('"' + c + '"' for c in PUBLIC_COLUMNS) +
          ' FROM ' + VIEW + where + ' ORDER BY "CALLDATE" DESC NULLS LAST, id DESC LIMIT %s OFFSET %s')
     with connect() as c:
@@ -107,6 +111,13 @@ def statuses():
                          ' WHERE "aicallinfostate" IS NOT NULL ORDER BY value LIMIT 100').fetchall()
     return [r['value'] for r in rows]
 
+
+def call_types():
+    """Distinct reporting values for filter controls; no sensitive text."""
+    with connect() as c:
+        rows = c.execute('SELECT DISTINCT "tellstate" AS value FROM ' + VIEW +
+                         ' WHERE "tellstate" IS NOT NULL ORDER BY value LIMIT 100').fetchall()
+    return [r['value'] for r in rows]
 
 def health():
     with connect() as c:
