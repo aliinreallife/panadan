@@ -104,7 +104,7 @@ class OAuthVerifier:
             config.jwks_url,
             cache_jwk_set=True,
             lifespan=300,
-            cache_keys=True,
+            cache_keys=False,
             timeout=4,
         )
 
