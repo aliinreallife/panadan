@@ -1,4 +1,5 @@
 import {parseTranscript} from './transcript.js';
+import {registerPanadanWebMcp} from './webmcp.js';
 import {callTypeLabel, callStateLabel, knownTypeOptions, knownStateOptions} from './labels.js';
 'use strict';
 const $ = id => document.getElementById(id);
@@ -280,5 +281,7 @@ function initialize(){
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('veil'))$('veil').hidden=true});
   load();metrics();
   if($('call_type')||$('state'))loadFilterOptions();
+  // WebMCP is an opt-in browser API; unsupported browsers behave normally.
+  void registerPanadanWebMcp();
 }
 initialize();
