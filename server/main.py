@@ -171,7 +171,7 @@ def token_page(request: Request):
     if not session: return RedirectResponse('/login', status_code=303)
     admin_only(session)
     return templates.TemplateResponse(request, 'tokens.html', {
-        'session':session, 'csrf':session['csrf'], 'tokens':store.list_tokens(), 'users':store.list_users(), 'new_token':None})
+        'session':session, 'csrf':session['csrf'], 'tokens':store.list_tokens(), 'users':store.list_users(), 'new_token':None, 'oauth_mode': oauth_config.mode})
 
 
 @app.post('/dashboard/tokens', response_class=HTMLResponse, include_in_schema=False)
@@ -186,7 +186,7 @@ def create_token(request: Request, name: str = Form(...), scope: str = Form(...)
     try: _, token = store.create_token(name.strip(), scope, days, owner_id or session['user_id'])
     except ValueError: raise HTTPException(400, 'Invalid token options')
     response = templates.TemplateResponse(request, 'tokens.html', {
-        'session':session, 'csrf':session['csrf'], 'tokens':store.list_tokens(), 'users':store.list_users(), 'new_token':token},
+        'session':session, 'csrf':session['csrf'], 'tokens':store.list_tokens(), 'users':store.list_users(), 'new_token':token, 'oauth_mode': oauth_config.mode},
         headers={'Cache-Control':'no-store'})
     return response
 
