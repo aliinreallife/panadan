@@ -104,6 +104,19 @@ If your `gh` authentication lacks `read:packages`, grant the needed scope or use
 
 `compose.prod.yaml` publishes dashboard port 8508 on **127.0.0.1 only**. The application is not ready to be exposed publicly: TLS termination, secure cookies, proxy host/origin validation, audit/abuse controls, and OAuth 2.1 for hosted MCP clients still require implementation and security review. A public domain is **not** required for local development.
 
+## Experimental WebMCP browser integration
+
+For WebMCP-capable Chromium browsers, the authenticated dashboard optionally
+registers **three browser-native read-only tools** using
+`document.modelContext.registerTool()`: aggregate metrics, paginated call
+metadata, and a single metadata-only call overview. This is separate from the
+remote `/mcp/` endpoint; it is not a ChatGPT OAuth connection.
+
+WebMCP is an early-preview browser feature. Unsupported browsers ignore it.
+Permissions are enforced server-side, no third-party JavaScript is loaded, and
+no transcript or customer-identifying data is returned to the page tools.
+See `docs/WEBMCP.md` for testing steps and constraints.
+
 ## Data access and security
 
 - Dashboard/API/MCP can query only explicit read-only PostgreSQL transactions and allowlisted reporting columns; they cannot execute arbitrary user SQL or modify the reporting database.
