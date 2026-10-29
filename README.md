@@ -1,8 +1,8 @@
 # Panadan · پانادان
 
-Private-by-design Persian RTL reporting application for the allowlisted PostgreSQL view `odoo.public.vw_danix_call_info_report`: FastAPI, an authenticated dashboard, read-only REST API, and read-only MCP tools.
+Private-by-design Persian RTL reporting application for an allowlisted read-only PostgreSQL reporting view: FastAPI, an authenticated dashboard, read-only REST API, and read-only MCP tools.
 
-**Current release: v0.4** — Vazirmatn UI, Doran Jalali date/time filters, capability-based user access, and a formatted transcript reader with an unmodified **Raw original** view.
+**Current release: v0.5** — Vazirmatn UI, Doran Jalali date/time filters, capability-based user access, and a formatted transcript reader with an unmodified **Raw original** view.
 
 ## Requirements
 
@@ -105,8 +105,8 @@ If your `gh` authentication lacks `read:packages`, grant the needed scope or use
 
 ## Data access and security
 
-- Dashboard/API/MCP can query only explicit read-only PostgreSQL transactions and allowlisted reporting columns; they cannot execute arbitrary user SQL or modify Odoo.
-- Panadan's own SQLite store *does* write accounts, permissions, sessions and token records. This is independent of Odoo.
+- Dashboard/API/MCP can query only explicit read-only PostgreSQL transactions and allowlisted reporting columns; they cannot execute arbitrary user SQL or modify the reporting database.
+- Panadan's own SQLite store *does* write accounts, permissions, sessions and token records. This is independent of the reporting database.
 - The PostgreSQL reporting role historically had `CREATE` on `public`; ask the database administrator to revoke unnecessary privileges for defense in depth.
 - User permissions are capability-based (for example metrics, call summaries, sensitive details, MCP use and user administration). MCP tokens are revocable.
 - Call details show **Panadan formatted** speaker turns and an unchanged **Raw original** transcript. Ambiguous speakers are not guessed.
