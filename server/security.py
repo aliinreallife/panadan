@@ -12,7 +12,7 @@ from pathlib import Path
 
 SESSION_SECONDS = 8 * 3600
 LOGIN_FAILURES: dict[str, list[float]] = {}
-CAPABILITIES = ('calls:read', 'calls:sensitive', 'metrics:read', 'tokens:manage', 'mcp:use', 'users:manage')
+CAPABILITIES = ('calls:read', 'calls:sensitive', 'calls:transcript:read', 'metrics:read', 'tokens:manage', 'mcp:use', 'users:manage')
 ROLE_GRANTS = {
     'admin': CAPABILITIES,
     'analyst': ('calls:read', 'metrics:read', 'mcp:use'),
@@ -108,6 +108,26 @@ class Store:
                 UNIQUE(issuer, subject),
                 UNIQUE(issuer, user_id)
             )""")
+            c.execute("""CREATE TABLE IF NOT EXISTS transcript_access_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                surface TEXT NOT NULL CHECK (surface IN ('mcp', 'webmcp')),
+                call_id INTEGER NOT NULL,
+                char_limit INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            )""")
+            c.execute('CREATE INDEX IF NOT EXISTS transcript_audit_user_time ON transcript_access_audit(user_id,created_at)')
+            c.execute("""CREATE TABLE IF NOT EXISTS activity_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                surface TEXT NOT NULL CHECK(surface IN ('dashboard','api','mcp','auth')),
+                action TEXT NOT NULL,
+                http_status INTEGER NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            )""")
+            c.execute('CREATE INDEX IF NOT EXISTS activity_events_time ON activity_events(created_at)')
+            c.execute('CREATE INDEX IF NOT EXISTS activity_events_user_time ON activity_events(user_id,created_at)')
             # Previously created tokens were admin-owned; require the existing admin
             # account to remain active for those tokens to work.
             admin = c.execute('SELECT id FROM users WHERE role=? ORDER BY id LIMIT 1', ('admin',)).fetchone()
@@ -238,6 +258,167 @@ class Store:
             return False
         caps = permissions(row['role'], row['grants'])
         return {'mcp:use', 'calls:read', 'metrics:read'} <= caps
+
+    def authorized_transcript_actor(self, *, oauth_issuer: str | None = None,
+                                    oauth_subject: str | None = None,
+                                    legacy_token: str | None = None) -> int | None:
+        """Re-check one specific MCP caller from trusted credentials, never client-supplied IDs."""
+        if bool(legacy_token) == bool(oauth_subject):
+            return None
+        with self.db() as c:
+            if oauth_subject is not None:
+                row = c.execute(
+                    """SELECT u.id,u.role,u.grants,u.is_active
+                       FROM oauth_identities i JOIN users u ON u.id=i.user_id
+                       WHERE i.issuer=? AND i.subject=?""",
+                    (oauth_issuer, oauth_subject),
+                ).fetchone()
+            else:
+                if not legacy_token or len(legacy_token) > 256:
+                    return None
+                row = c.execute(
+                    """SELECT u.id,u.role,u.grants,u.is_active
+                       FROM access_tokens t JOIN users u ON u.id=t.owner_id
+                       WHERE t.token_hash=? AND t.scope='mcp:read'
+                       AND t.expires_at>?""",
+                    (digest(legacy_token), int(time.time())),
+                ).fetchone()
+        if not row or not row['is_active']:
+            return None
+        caps = permissions(row['role'], row['grants'])
+        if not {'mcp:use', 'calls:read', 'metrics:read', 'calls:transcript:read'} <= caps:
+            return None
+        return int(row['id'])
+
+    def audit_transcript_request(self, *, user_id: int, surface: str,
+                                 call_id: int, char_limit: int) -> bool:
+        """Log every authorized transcript retrieval, without arbitrary quotas.
+
+        The per-request chunk size protects HTTP performance. The user may
+        fetch all remaining chunks, regardless of conversation length.
+        """
+        if surface not in ('mcp', 'webmcp') or call_id < 1 or not 1 <= char_limit <= 6000:
+            return False
+        now = int(time.time())
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            row = c.execute('SELECT role,grants,is_active FROM users WHERE id=?',(user_id,)).fetchone()
+            caps = permissions(row['role'], row['grants']) if row and row['is_active'] else set()
+            if not {'calls:read', 'calls:transcript:read'} <= caps:
+                return False
+            c.execute(
+                'INSERT INTO transcript_access_audit(user_id,surface,call_id,char_limit,created_at) VALUES(?,?,?,?,?)',
+                (user_id, surface, call_id, char_limit, now)
+            )
+            return True
+
+    def actor_for_token(self, raw: str, scope: str) -> int | None:
+        """Resolve owner from an already-authenticated service token, or None."""
+        if not raw or len(raw) > 256 or scope not in ('mcp:read','api:read','api:sensitive'):
+            return None
+        with self.db() as c:
+            row = c.execute(
+                """SELECT u.id,u.role,u.grants,u.is_active,t.scope
+                   FROM access_tokens t JOIN users u ON u.id=t.owner_id
+                   WHERE t.token_hash=? AND t.expires_at>?""",
+                (digest(raw),int(time.time())),
+            ).fetchone()
+        if not row or not row['is_active'] or (
+            row['scope'] != scope and not (scope == 'api:read' and row['scope'] == 'api:sensitive')
+        ):
+            return None
+        return int(row['id'])
+
+    def actor_for_oauth(self, issuer: str, subject: str) -> int | None:
+        if not issuer or not subject:
+            return None
+        with self.db() as c:
+            row=c.execute(
+                """SELECT u.id,u.role,u.grants,u.is_active
+                   FROM oauth_identities i JOIN users u ON u.id=i.user_id
+                   WHERE i.issuer=? AND i.subject=?""",
+                (issuer,subject),
+            ).fetchone()
+        return int(row['id']) if row and row['is_active'] else None
+
+    def record_activity(self, *, user_id: int | None, surface: str, action: str,
+                        http_status: int, duration_ms: int) -> None:
+        """Append safe request metadata only. No body, URL params or secrets."""
+        if surface not in ('dashboard','api','mcp','auth') or not 1 <= len(action) <= 120:
+            raise ValueError('Invalid audit event')
+        if not 100 <= http_status <= 599:
+            raise ValueError('Invalid HTTP status')
+        with self.db() as c:
+            c.execute(
+                """INSERT INTO activity_events
+                   (user_id,surface,action,http_status,duration_ms,created_at)
+                   VALUES(?,?,?,?,?,?)""",
+                (user_id,surface,action,http_status,max(0,min(duration_ms,600000)),int(time.time())),
+            )
+            # 90-day retention prevents unbounded growth; no customer data stored.
+            c.execute('DELETE FROM activity_events WHERE created_at<?',
+                      (int(time.time())-90*86400,))
+
+    def activity_report(self, *, days: int = 14, user_id: int | None = None,
+                        surface: str | None = None, errors_only: bool = False,
+                        limit: int = 100) -> dict:
+        if not 1 <= days <= 90 or not 1 <= limit <= 250:
+            raise ValueError('Invalid report range')
+        if surface and surface not in ('dashboard','api','mcp','auth'):
+            raise ValueError('Invalid activity surface')
+        where=['a.created_at>=?']
+        params=[int(time.time())-days*86400]
+        if user_id is not None:
+            where.append('a.user_id=?');params.append(user_id)
+        if surface:
+            where.append('a.surface=?');params.append(surface)
+        if errors_only:
+            where.append('a.http_status>=400')
+        clause=' WHERE '+' AND '.join(where)
+        with self.db() as c:
+            daily=[dict(row) for row in c.execute(
+                """SELECT strftime('%Y-%m-%d',a.created_at,'unixepoch') AS day,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN a.http_status>=400 THEN 1 ELSE 0 END) AS errors
+                   FROM activity_events a""" + clause + " GROUP BY day ORDER BY day", params
+            )]
+            surfaces=[dict(row) for row in c.execute(
+                """SELECT a.surface AS name,COUNT(*) AS total
+                   FROM activity_events a""" + clause + " GROUP BY a.surface ORDER BY total DESC", params
+            )]
+            actions=[dict(row) for row in c.execute(
+                """SELECT a.action AS name,COUNT(*) AS total
+                   FROM activity_events a""" + clause + " GROUP BY a.action ORDER BY total DESC LIMIT 8", params
+            )]
+            users=[dict(row) for row in c.execute(
+                """SELECT COALESCE(u.username,'ناشناس') AS name,COUNT(*) AS total
+                   FROM activity_events a LEFT JOIN users u ON u.id=a.user_id""" +
+                clause + " GROUP BY a.user_id ORDER BY total DESC LIMIT 8",params
+            )]
+            active_users=c.execute(
+                'SELECT COUNT(DISTINCT a.user_id) FROM activity_events a' +
+                clause + ' AND a.user_id IS NOT NULL',params
+            ).fetchone()[0]
+            recent=[dict(row) for row in c.execute(
+                """SELECT a.id,COALESCE(u.username,'ناشناس') AS username,a.surface,
+                   a.action,a.http_status,a.duration_ms,a.created_at
+                   FROM activity_events a LEFT JOIN users u ON u.id=a.user_id""" +
+                clause + " ORDER BY a.id DESC LIMIT ?",(*params,limit)
+            )]
+        total=sum(item['total'] for item in surfaces)
+        failed=sum(item['errors'] for item in daily)
+        return {'total':total,'errors':failed,'active_users':active_users,
+                'days':daily,'surfaces':surfaces,
+                'actions':actions,'users':users,'recent':recent}
+
+    def list_transcript_audit(self, limit: int = 100) -> list[dict]:
+        with self.db() as c:
+            return [dict(r) for r in c.execute(
+                """SELECT a.id,u.username,a.surface,a.call_id,a.char_limit,a.created_at
+                   FROM transcript_access_audit a JOIN users u ON u.id=a.user_id
+                   ORDER BY a.id DESC LIMIT ?""",
+                (max(1,min(int(limit),500)),)
+            )]
 
     def create_token(self, name: str, scope: str, days: int = 30, owner_id: int | None = None) -> tuple[int, str]:
         if scope not in ('api:read', 'api:sensitive', 'mcp:read') or not 1 <= days <= 365:

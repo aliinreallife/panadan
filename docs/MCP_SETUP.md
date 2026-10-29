@@ -8,7 +8,7 @@ Panadan exposes **read-only** MCP tools. It has two mutually exclusive auth mode
 | `oauth` | Authenticated remote MCP with individual user identities | An **external OAuth 2.1 identity provider** with Authorization Code + PKCE |
 
 The REST API and browser session authentication do not change when MCP switches modes.
-Raw transcripts, arbitrary SQL, write operations, and sensitive call records are **not** exposed by MCP.
+Raw transcripts are **not** exposed. A separate explicitly granted `calls:transcript:read` capability can enable redacted, paginated excerpts via `get_redacted_call_transcript`. Arbitrary SQL and write operations remain unavailable.
 
 ## 1. Local setup without a domain (default)
 
@@ -133,3 +133,17 @@ Provider / ChatGPT documentation:
 - https://developers.openai.com/plugins/build/auth
 - https://modelcontextprotocol.io/specification/latest/basic/authorization
 - https://www.rfc-editor.org/rfc/rfc9728
+
+## Authorized AI conversation analysis
+
+The MCP tool `get_redacted_call_transcript(call_id, offset=0)` returns up to
+6,000 **redacted** characters plus `next_offset` and `has_more`.
+Use `next_offset` to fetch the next part until `has_more=false`. The total
+conversation and number of requests are **not capped**. Only a linked, active
+user whose Panadan role explicitly allows `calls:transcript:read` may read
+these excerpts. Every request is recorded in the local audit store.
+
+The redaction masks common phone numbers, email addresses, links and IBANs;
+**it is not anonymization**. Spoken personal names, addresses and sensitive
+facts may remain. Obtain appropriate authorization before sending transcripts
+to an external AI provider. No transcript contents are written to the audit log.

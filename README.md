@@ -2,7 +2,7 @@
 
 Private-by-design Persian RTL reporting application for an allowlisted read-only PostgreSQL reporting view: FastAPI, an authenticated dashboard, read-only REST API, and read-only MCP tools.
 
-**Current release: v0.6** — Vazirmatn UI, Doran Jalali date/time filters, capability-based user access, and a formatted transcript reader with an unmodified **Raw original** view.
+**Current release: v0.7 (draft)** — Vazirmatn UI, Doran Jalali date/time filters, capability-based user access, and a formatted transcript reader with an unmodified **Raw original** view.
 
 ## Requirements
 
@@ -116,6 +116,27 @@ WebMCP is an early-preview browser feature. Unsupported browsers ignore it.
 Permissions are enforced server-side, no third-party JavaScript is loaded, and
 no transcript or customer-identifying data is returned to the page tools.
 See `docs/WEBMCP.md` for testing steps and constraints.
+
+## Activity & AI transcript access
+
+Admin **فعالیت کاربران**: `/dashboard/activity` provides an RTL dashboard with
+user, API, MCP and authentication activity, daily charts, error-only filters
+and a searchable recent-event list. Logs store **metadata only** (account,
+canonical endpoint or MCP tool name, result status and duration)—never tokens,
+request bodies, query parameters or call text. Activity events are retained
+for 90 days in the separate local SQLite store.
+
+AI transcript access is **disabled for non-admin users unless explicitly granted**
+`calls:transcript:read` alongside their call-reading permission. Approved
+MCP and WebMCP clients may request redacted transcript chunks (up to 6,000
+characters **per response**, not per conversation); each response provides the
+next offset until the call is complete. No arbitrary hourly total or whole-call
+limit is imposed. Every transcript retrieval is recorded without its text.
+Masking is best-effort and **does not guarantee anonymization**.
+
+The source reporting database remains strictly **read-only at the application
+level**. An external IdP and HTTPS endpoint are still required to complete
+the one-click OAuth consent experience.
 
 ## Data access and security
 

@@ -5,6 +5,9 @@ from datetime import date, datetime, timezone
 import hmac
 import os
 import secrets
+import time
+import re
+import json
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -15,6 +18,7 @@ from fastapi.templating import Jinja2Templates
 from starlette import status
 
 from . import database
+from .transcript_ai import transcript_for_ai, MAX_TRANSCRIPT_CHARS
 from .mcp_tools import mcp
 from .oauth_mcp import OAuthConfig, OAuthVerifier
 from .security import Store, SESSION_SECONDS, CAPABILITIES, ROLE_GRANTS, permissions, has_capability, is_rate_limited, record_failure
@@ -38,6 +42,67 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title='Panadan API', version='0.6.0', docs_url=None,
               redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.mount('/static', StaticFiles(directory='static'), name='static')
+# Activity logs contain ONLY a route category, actor, status and duration.
+# Query strings, token headers, request bodies and response bodies are omitted.
+@app.middleware('http')
+async def audit_http_activity(request: Request, call_next):
+    path = request.url.path
+    if not (path.startswith('/dashboard') or path.startswith('/api/v1/')):
+        return await call_next(request)
+    start = time.monotonic()
+    user_id = None
+    if path.startswith('/dashboard'):
+        session = store.session(request.cookies.get(COOKIE_NAME))
+        user_id = session['user_id'] if session else None
+        surface = 'dashboard'
+    else:
+        auth = request.headers.get('authorization', '')
+        token = auth[7:] if auth.startswith('Bearer ') else ''
+        user_id = store.actor_for_token(token, 'api:read')
+        surface = 'api'
+    # Prevent raw IDs, external names and query parameters entering the log.
+    # Only known route families and sanitized method are recorded.
+    approved = {
+        '/dashboard', '/dashboard/data', '/dashboard/metrics',
+        '/dashboard/filter-options', '/dashboard/api', '/dashboard/users',
+        '/dashboard/tokens', '/dashboard/connect', '/dashboard/oauth',
+        '/dashboard/activity', '/dashboard/activity/data'
+    }
+    if path in approved:
+        action = path
+    elif path.startswith('/dashboard/ai/transcript/'):
+        action = '/dashboard/ai/transcript/{id}'
+    elif path.startswith('/dashboard/overview/'):
+        action = '/dashboard/overview/{id}'
+    elif path.startswith('/dashboard/data/'):
+        action = '/dashboard/data/{id}'
+    elif path.startswith('/api/v1/calls/'):
+        action = '/api/v1/calls/{id}'
+    elif path.startswith('/dashboard/tokens/'):
+        action = '/dashboard/tokens/{id}/action'
+    elif path.startswith('/dashboard/users/'):
+        action = '/dashboard/users/{id}/action'
+    elif path.startswith('/dashboard/oauth/'):
+        action = '/dashboard/oauth/{id}/action'
+    else:
+        action = '/dashboard/other' if path.startswith('/dashboard') else '/api/v1/other'
+    action = request.method.upper() + ' ' + action
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        elapsed = int((time.monotonic()-start)*1000)
+        try:
+            store.record_activity(user_id=user_id, surface=surface,
+                                  action=action, http_status=status_code,
+                                  duration_ms=elapsed)
+        except Exception:
+            # Auditing failure must not turn an authorized read into a 500.
+            # Production monitoring should separately alert on SQLite failures.
+            pass
+
 
 
 def current_session(request: Request) -> dict:
@@ -92,6 +157,15 @@ def require_sensitive_api(request: Request, _credentials: HTTPAuthorizationCrede
     api_auth(request, True, capability="calls:sensitive")
 
 
+def audit_auth_event(user_id: int | None, action: str, status_code: int):
+    """Log only the login outcome and account, never password, IP or tokens."""
+    try:
+        store.record_activity(user_id=user_id, surface='auth', action=action,
+                              http_status=status_code, duration_ms=0)
+    except Exception:
+        pass
+
+
 def json_failure(error: Exception):
     # Do not expose the database server details or customer data in HTTP errors.
     if isinstance(error, ValueError): raise HTTPException(400, str(error))
@@ -138,10 +212,12 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     uid = store.verify_login(username, password)
     if not uid:
         record_failure(ip)
+        audit_auth_event(None,'POST /login:failed',401)
         response = RedirectResponse('/login?error=1', status_code=303)
         response.delete_cookie('panadan_login_nonce')
         return response
     raw, _ = store.create_session(uid)
+    audit_auth_event(uid,'POST /login:success',200)
     response = RedirectResponse('/dashboard', status_code=303)
     response.set_cookie(COOKIE_NAME, raw, max_age=SESSION_SECONDS, httponly=True,
                         secure=COOKIE_SECURE, samesite='lax')
@@ -153,6 +229,7 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
 def logout(request: Request, csrf: str = Form(...), session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     store.logout(request.cookies.get(COOKIE_NAME))
+    audit_auth_event(session['user_id'],'POST /logout',200)
     r = RedirectResponse('/login', status_code=303)
     r.delete_cookie(COOKIE_NAME)
     return r
@@ -217,6 +294,28 @@ def dashboard_filter_options(session: dict = Depends(current_session)):
     try:
         return {'states': database.statuses(), 'call_types': database.call_types()}
     except Exception as e: json_failure(e)
+
+
+@app.get('/dashboard/ai/transcript/{call_id}', include_in_schema=False)
+def browser_ai_transcript(call_id: int, offset: int = Query(0,ge=0,le=2147483646),
+                          limit: int = Query(6000,ge=1,le=6000),
+                          session: dict = Depends(current_session)):
+    """Authorized WebMCP retrieval: redacted, bounded, auditable and read-only."""
+    required(session,'calls:read')
+    required(session,'calls:transcript:read')
+    if call_id <= 0:
+        raise HTTPException(400, 'Invalid call ID')
+    allowed = store.audit_transcript_request(
+        user_id=session['user_id'], surface='webmcp',
+        call_id=call_id, char_limit=limit,
+    )
+    if not allowed:
+        raise HTTPException(429, 'Transcript access unavailable or hourly limit reached')
+    try: raw = database.transcript_excerpt(call_id, limit, offset)
+    except Exception as e: json_failure(e)
+    if not raw:
+        raise HTTPException(404, 'Call not found')
+    return JSONResponse(transcript_for_ai(raw, limit=limit, offset=offset), headers={'Cache-Control':'no-store'})
 
 
 @app.get('/dashboard/overview/{call_id}', include_in_schema=False)
@@ -296,7 +395,18 @@ def users_page(request: Request, session: dict = Depends(current_session)):
     admin_only(session)
     return templates.TemplateResponse(request,'users.html', {
         'session':session, 'csrf':session['csrf'], 'users':store.list_users(),
-        'roles':ROLE_GRANTS, 'capabilities':CAPABILITIES, 'user_caps':{u['id']:permissions(u['role'],u['grants']) for u in store.list_users()}, 'error':request.query_params.get('error'),
+        'roles':ROLE_GRANTS, 'capabilities':CAPABILITIES, 'user_caps':{u['id']:permissions(u['role'],u['grants']) for u in store.list_users()},
+        'cap_labels': {
+            'calls:read':'دیدن فهرست تماس‌ها',
+            'calls:sensitive':'جزئیات حساس',
+            'calls:transcript:read':'تحلیل مکالمات توسط AI',
+            'metrics:read':'گزارش‌های آماری',
+            'mcp:use':'اتصال MCP',
+            'users:manage':'مدیریت کاربران',
+            'tokens:manage':'مدیریت توکن‌ها',
+        },
+        'role_labels':{'admin':'مدیر کل','analyst':'تحلیل‌گر','reader':'خواننده','metrics':'فقط آمار'},
+        'error':request.query_params.get('error'),
     })
 
 
@@ -321,6 +431,26 @@ def update_user(request: Request, uid: int, role: str = Form(...), csrf: str = F
     try: store.update_user(uid,role,grants if role != 'admin' else None,is_active,session['user_id'])
     except ValueError as exc: raise HTTPException(400,str(exc)) from exc
     return RedirectResponse('/dashboard/users',status_code=303)
+
+
+@app.get('/dashboard/activity', response_class=HTMLResponse, include_in_schema=False)
+def activity_page(request: Request, session: dict = Depends(current_session)):
+    admin_only(session)
+    return templates.TemplateResponse(request, 'activity.html', {
+        'session':session, 'csrf':session['csrf'],
+        'users':store.list_users(),
+    },headers={'Cache-Control':'no-store'})
+
+
+@app.get('/dashboard/activity/data', include_in_schema=False)
+def activity_data(days: int = Query(14,ge=1,le=90),
+                  user_id: int | None = Query(None,ge=1),
+                  surface: str | None = None, errors_only: bool = False,
+                  session: dict = Depends(current_session)):
+    admin_only(session)
+    try: result = store.activity_report(days=days,user_id=user_id,surface=surface,errors_only=errors_only)
+    except ValueError as e: raise HTTPException(400,str(e)) from e
+    return JSONResponse(result,headers={'Cache-Control':'no-store'})
 
 
 @app.get('/dashboard/api', response_class=HTMLResponse, include_in_schema=False)
@@ -380,10 +510,11 @@ def connect_page(request: Request, session: dict = Depends(current_session)):
 
 
 class MCPBearerGate:
-    """Enforce OAuth OR legacy tokens on every MCP HTTP request.
+    """Authenticate MCP requests, and audit their method/tool without payloads.
 
-    The modes are mutually exclusive: once OAuth is enabled, legacy manually
-    issued MCP tokens cannot bypass the identity-provider flow.
+    We only inspect the first 8 KiB of a JSON-RPC request in memory to discover
+    a known tool name. The request bytes are passed unchanged to the SDK.
+    Never persist tool arguments, transcript text, headers or bearer tokens.
     """
     def __init__(self, inner):
         self.inner = inner
@@ -395,18 +526,29 @@ class MCPBearerGate:
         if scope['type'] != 'http':
             await send({'type': 'websocket.close', 'code': 1008})
             return
+        start = time.monotonic()
         headers = {k.lower(): v for k, v in scope.get('headers', [])}
         auth = headers.get(b'authorization', b'').decode('latin1')
         raw = auth[7:] if auth.startswith('Bearer ') else ''
+        actor = None
         if oauth_config.mode == 'oauth':
             subject = oauth_verifier.verify(raw) if oauth_verifier else None
             valid = bool(subject and store.oauth_identity_has_mcp_access(oauth_config.issuer, subject))
+            if valid: actor=store.actor_for_oauth(oauth_config.issuer,subject)
         else:
             valid = store.verify_token(raw, 'mcp:read')
+            if valid: actor=store.actor_for_token(raw, 'mcp:read')
+        def record(action, status_code):
+            try:
+                store.record_activity(
+                    user_id=actor, surface='mcp', action=action,
+                    http_status=status_code,
+                    duration_ms=int((time.monotonic()-start)*1000),
+                )
+            except Exception:
+                pass
+
         if not valid:
-            # Invalid JWTs/unknown identities are denied without DB access.
-            # The OAuth challenge identifies the protected resource metadata
-            # for standards-compatible clients such as ChatGPT and Codex.
             challenge = 'Bearer realm="panadan-mcp"'
             if oauth_config.mode == 'oauth':
                 challenge += (f', resource_metadata="{oauth_config.metadata_url}", '
@@ -418,8 +560,49 @@ class MCPBearerGate:
                 (b'www-authenticate', challenge.encode('ascii')),
             ]})
             await send({'type': 'http.response.body', 'body': body})
+            record('MCP unauthorized',401)
             return
-        await self.inner(scope, receive, send)
+
+        prefix = bytearray()
+        overflow = False
+        result_status = 500
+        async def inspect_receive():
+            nonlocal overflow
+            message = await receive()
+            if message.get('type') == 'http.request':
+                data = message.get('body', b'')
+                if len(prefix) + len(data) > 8192:
+                    overflow = True
+                elif not overflow:
+                    prefix.extend(data)
+            return message
+
+        async def inspect_send(message):
+            nonlocal result_status
+            if message.get('type') == 'http.response.start':
+                result_status = message.get('status', 500)
+            await send(message)
+
+        try:
+            await self.inner(scope, inspect_receive, inspect_send)
+        finally:
+            action = 'MCP '+scope.get('method','POST').upper()
+            if not overflow and prefix:
+                try:
+                    message=json.loads(prefix)
+                    if isinstance(message, dict):
+                        method=message.get('method','')
+                        if method in ('initialize','tools/list','tools/call',
+                                      'resources/list','ping','notifications/initialized'):
+                            action='MCP '+method
+                            if method=='tools/call':
+                                name=(message.get('params') or {}).get('name')
+                                allowed={tool.name for tool in mcp._tool_manager.list_tools()}
+                                if isinstance(name,str) and name in allowed:
+                                    action+=':'+name
+                except (ValueError, TypeError, AttributeError):
+                    pass
+            record(action, result_status)
 
 
 # /mcp/ always requires authentication, and tools never allow arbitrary SQL.

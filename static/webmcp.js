@@ -73,7 +73,7 @@ const validate = (fn, ...args) => {
   try {return fn(...args);} catch(error){throw invalid(error.message);}
 };
 
-export function createWebMcpTools({ canReadCalls=false, canReadMetrics=false, request }) {
+export function createWebMcpTools({ canReadCalls=false, canReadMetrics=false, canReadTranscripts=false, request }) {
   if (typeof request !== 'function') throw new TypeError('request must be a function');
   const tools = [];
   if (canReadMetrics) {
@@ -156,6 +156,37 @@ export function createWebMcpTools({ canReadCalls=false, canReadMetrics=false, re
       })
     });
   }
+  if (canReadCalls && canReadTranscripts) {
+    tools.push({
+      name: 'panadan_get_redacted_transcript',
+      description: 'Read one redacted excerpt of a call transcript with explicit user permission. May contain private spoken information. Use only when the user asks for conversation analysis.',
+      inputSchema:{
+        type:'object',additionalProperties:false,
+        properties:{
+          call_id:{type:'integer',minimum:1,maximum:2147483647},
+          offset:{type:'integer',minimum:0,description:'Start of the next chunk; use next_offset from previous response.'}
+        },
+        required:['call_id']
+      },
+      annotations:{readOnlyHint:true,untrustedContentHint:true},
+      execute:guarded(async ({call_id,offset=0},{signal}={})=>{
+        const id=validate(ensureInteger,call_id,'شناسه تماس',1,2147483647);
+        const start=validate(ensureInteger,offset,'شروع متن',0,2147483647);
+        const response=await request('/dashboard/ai/transcript/'+id+'?offset='+start,signal);
+        return {
+          call_id:response.call_id,
+          text:response.text,
+          truncated:Boolean(response.truncated),
+          has_more:Boolean(response.has_more),
+          next_offset:response.next_offset,
+          offset:response.offset,
+          source_chars:response.source_chars,
+          presentation:response.presentation,
+          privacy_notice:response.privacy_notice
+        };
+      })
+    });
+  }
   return tools;
 }
 
@@ -164,13 +195,14 @@ export async function registerPanadanWebMcp({page=globalThis.document, fetchImpl
   if (!page || typeof page.modelContext?.registerTool !== 'function') return null;
   const canReadCalls=Boolean(page.getElementById('rows'));
   const canReadMetrics=Boolean(page.getElementById('metric-total'));
+  const canReadTranscripts=Boolean(page.getElementById('webmcp-transcript-permission'));
   if (!canReadCalls && !canReadMetrics) return null;
   const fetchSameOrigin=async (url,signal) => {
     const response=await fetchImpl(url,{method:'GET',credentials:'same-origin',cache:'no-store',signal});
     if (!response.ok) throw new Error('Not authorized or unavailable');
     return response.json();
   };
-  const tools=createWebMcpTools({canReadCalls,canReadMetrics,request:fetchSameOrigin});
+  const tools=createWebMcpTools({canReadCalls,canReadMetrics,canReadTranscripts,request:fetchSameOrigin});
   const controller=new AbortController();
   try {
     for (const tool of tools) {

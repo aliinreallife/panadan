@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>فعالیت کاربران | پانادان</title>
+<link rel="stylesheet" href="/static/vendor/panadan-bundle.css">
+<link rel="stylesheet" href="/static/style.css">
+</head><body><div class="shell">
+<aside class="sidebar">
+<a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
+<div class="nav-caption">مدیریت پانادان</div><nav>
+<a href="/dashboard">▦ گزارش تماس‌ها</a>
+<a href="/dashboard/connect">◈ اتصال هوش مصنوعی</a>
+<a href="/dashboard/tokens">♢ توکن‌های دسترسی</a>
+<a href="/dashboard/api">⌘ راهنمای API</a>
+<a href="/dashboard/oauth">◉ اتصال امن OAuth</a>
+<a href="/dashboard/users">♙ کاربران و دسترسی‌ها</a>
+<a class="active" aria-current="page" href="/dashboard/activity">▤ فعالیت کاربران</a>
+</nav><div class="side-footer"><div class="status"><span class="dot"></span> فقط مدیران</div><form action="/logout" method="post"><input type="hidden" name="csrf" value="{{csrf}}"><button class="link-button" type="submit">خروج</button></form></div>
+</aside>
+<main class="content activity-content">
+<header class="page-head"><div><span class="eyebrow">نظارت و امنیت</span><h1>فعالیت کاربران</h1>
+<p class="muted">چه کسی از داشبورد، REST API یا MCP استفاده کرده؟ چه زمانی، چقدر و با چه نتیجه‌ای؟</p></div>
+<span class="tag">۹۰ روز نگهداری سوابق</span></header>
+<section class="panel activity-filter-panel">
+<form id="activity-filters" class="filters">
+<label>بازهٔ زمانی<select id="activity-days"><option value="7">۷ روز گذشته</option><option value="14" selected>۱۴ روز گذشته</option><option value="30">۳۰ روز گذشته</option><option value="90">۹۰ روز گذشته</option></select></label>
+<label>کاربر<select id="activity-user"><option value="">همه کاربران</option>
+{% for user in users %}<option value="{{user.id}}">{{user.username}}</option>{% endfor %}</select></label>
+<label>کانال دسترسی<select id="activity-surface">
+<option value="">همه کانال‌ها</option><option value="dashboard">داشبورد</option>
+<option value="api">REST API</option><option value="mcp">MCP</option>
+<option value="auth">احراز هویت</option></select></label>
+<label class="activity-only-errors"><input id="activity-errors-only" type="checkbox"> فقط درخواست‌های ناموفق</label><button class="primary" type="submit">نمایش گزارش</button>
+</form></section>
+<section class="activity-kpis" aria-label="خلاصه فعالیت">
+<article class="activity-kpi"><span>مجموع درخواست‌ها</span><strong id="activity-total">—</strong><small>بر اساس بازهٔ انتخابی</small></article>
+<article class="activity-kpi"><span>درخواست‌های ناموفق</span><strong id="activity-failed">—</strong><small>HTTP 4xx / 5xx</small></article>
+<article class="activity-kpi"><span>کاربران دارای فعالیت</span><strong id="activity-users">—</strong><small>در همین بازه</small></article>
+<article class="activity-kpi"><span>نرخ پاسخ موفق</span><strong id="activity-success">—</strong><small>بر مبنای کد HTTP</small></article>
+</section>
+<div class="activity-grid">
+<section class="panel activity-panel"><div class="panel-head"><div><h2>روند روزانه</h2><p class="muted small-text">تعداد درخواست و خطا در هر روز</p></div><span class="tag">بر اساس UTC</span></div>
+<div id="activity-trend" class="activity-trend" role="img" aria-label="نمودار فعالیت روزانه"></div>
+<div class="activity-legend"><span><i class="activity-legend-dot requests"></i>درخواست‌ها</span><span><i class="activity-legend-dot errors"></i>خطاها</span></div>
+</section>
+<section class="panel activity-panel"><div class="panel-head"><h2>کانال‌های دسترسی</h2></div>
+<div id="activity-surfaces" class="activity-bars"></div></section>
+<section class="panel activity-panel"><div class="panel-head"><h2>کاربران پرتکرار</h2></div>
+<div id="activity-top-users" class="activity-bars"></div></section>
+<section class="panel activity-panel"><div class="panel-head"><h2>درخواست‌های پرتکرار</h2></div>
+<div id="activity-top-actions" class="activity-bars"></div></section>
+</div>
+<section class="panel"><div class="panel-head"><div><h2>آخرین رویدادها</h2><p class="muted small-text">فقط نام رویداد، کاربر و نتیجه ذخیره می‌شود؛ نه پارامترها، توکن‌ها یا محتوای مکالمه.</p></div>
+<div class="activity-event-tools"><label class="activity-search"><span class="sr-only">جستجو در رویدادهای اخیر</span><input id="activity-search" type="search" placeholder="جستجو در رویدادهای اخیر…" autocomplete="off"></label><span id="activity-event-count" class="tag">—</span></div></div>
+<div class="table-scroller"><table class="activity-table"><thead>
+<tr><th>زمان</th><th>کاربر</th><th>کانال</th><th>درخواست یا ابزار</th><th>وضعیت</th><th>مدت</th></tr>
+</thead><tbody id="activity-events"><tr><td colspan="6">در حال بارگذاری…</td></tr></tbody></table></div>
+<p class="source-note">این گزارش، نتیجهٔ HTTP را نشان می‌دهد؛ پاسخ ۲۰۰ لزوماً به معنی موفقیت در تمام مراحل اجرای یک ابزار هوش مصنوعی نیست. گزارش‌ها ۹۰ روز نگهداری می‌شوند و دسترسی فقط برای مدیران است.</p>
+</section>
+<p id="activity-error" class="error" role="alert" hidden></p>
+</main></div><script type="module" src="/static/activity.js"></script></body></html>

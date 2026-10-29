@@ -50,7 +50,7 @@ Do not commit `.env.app`, `.env.db`, `.ovpn` files, VPN private keys, SQLite aut
 - The admin binds the provider's **immutable subject**, not username/email, to one Panadan account. No auto-provisioning, no privilege inheritance from external token claims.
 - Every MCP request rechecks the linked account's role, activation and `calls:read`, `metrics:read`, `mcp:use` permissions. Account permission changes delete links. The provider itself must manage token revocation and refresh.
 - A short JWT lifetime (at most one hour) is enforced; signing keys are obtained from a preconfigured HTTPS JWKS with bounded caching. No URL supplied by the bearer token is fetched.
-- OAuth does **not** grant sensitive call transcript access or PostgreSQL write access. The database's READ ONLY transaction guard remains unchanged.
+- OAuth alone does **not** grant sensitive call transcript access or PostgreSQL write access. The database's READ ONLY transaction guard remains unchanged.
 - Remote deployment remains unsupported until hardened HTTPS origin/host policies, auditing, rate limits, the IdP consent/PKCE configuration and ChatGPT callback flow have been tested.
 
 ## Effective database-role audit
@@ -69,3 +69,18 @@ The WebMCP tool registry is aborted when the page unloads. No arbitrary SQL,
 writes, external network requests or credential exposure is allowed.
 Browser agents themselves have separate security considerations; test with a
 trusted browser/agent before enabling against real call data.
+
+## AI transcript permission and audit (v0.7)
+
+- Non-admin accounts require explicit `calls:transcript:read` in addition to
+  their call viewing permission. MCP callers are authenticated per request and
+  their linked Panadan roles are rechecked before transcript disclosure.
+- Only fixed, read-only SQL extracts bounded transcript portions. Each chunk
+  is at most 6,000 characters; `offset` permits complete long transcripts
+  without an arbitrary whole-conversation cap or an hourly use quota.
+- Phone numbers, email addresses, links and IBANs are masked heuristically.
+  Spoken sensitive information can remain: **redaction != anonymization**.
+- Activity logs retain metadata (canonical endpoint or allowed MCP tool name,
+  user ID, result, duration, timestamp), not request bodies or tokens. The
+  admin activity screen presents 90-day aggregates and recent events. These
+  logs themselves are sensitive admin data; protect SQLite backups.
