@@ -26,14 +26,14 @@ SELECT current_user AS role,
        has_database_privilege(current_database(), 'CREATE') AS can_create_database_objects,
        has_database_privilege(current_database(), 'TEMPORARY') AS can_create_temporary_objects
 """
-SCHEMA_SQL = """
+SCHEMA_SQL = r"""
 SELECT COUNT(*)::integer AS writable_schemas
 FROM pg_catalog.pg_namespace n
 WHERE n.nspname <> 'information_schema'
   AND n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'
   AND has_schema_privilege(n.oid, 'CREATE')
 """
-RELATION_SQL = """
+RELATION_SQL = r"""
 SELECT COUNT(*)::integer AS writable_relations
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
