@@ -219,6 +219,16 @@ def dashboard_filter_options(session: dict = Depends(current_session)):
     except Exception as e: json_failure(e)
 
 
+@app.get('/dashboard/overview/{call_id}', include_in_schema=False)
+def dashboard_public_call_overview(call_id: int, session: dict = Depends(current_session)):
+    """Metadata-only lookup for browser agents; never fetch sensitive columns."""
+    required(session, 'calls:read')
+    try: result = database.get_call(call_id, sensitive=False)
+    except Exception as e: json_failure(e)
+    if not result: raise HTTPException(404, 'Call not found')
+    return JSONResponse(result, headers={'Cache-Control': 'no-store'})
+
+
 @app.get('/dashboard/data/{call_id}', include_in_schema=False)
 def dashboard_detail(call_id: int, session: dict = Depends(current_session)):
     required(session,'calls:read')
