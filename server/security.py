@@ -392,6 +392,10 @@ class Store:
                    FROM activity_events a LEFT JOIN users u ON u.id=a.user_id""" +
                 clause + " GROUP BY a.user_id ORDER BY total DESC LIMIT 8",params
             )]
+            active_users=c.execute(
+                'SELECT COUNT(DISTINCT a.user_id) FROM activity_events a' +
+                clause + ' AND a.user_id IS NOT NULL',params
+            ).fetchone()[0]
             recent=[dict(row) for row in c.execute(
                 """SELECT a.id,COALESCE(u.username,'ناشناس') AS username,a.surface,
                    a.action,a.http_status,a.duration_ms,a.created_at
@@ -400,7 +404,8 @@ class Store:
             )]
         total=sum(item['total'] for item in surfaces)
         failed=sum(item['errors'] for item in daily)
-        return {'total':total,'errors':failed,'days':daily,'surfaces':surfaces,
+        return {'total':total,'errors':failed,'active_users':active_users,
+                'days':daily,'surfaces':surfaces,
                 'actions':actions,'users':users,'recent':recent}
 
     def list_transcript_audit(self, limit: int = 100) -> list[dict]:
