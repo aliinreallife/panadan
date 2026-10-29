@@ -39,8 +39,8 @@ JavaScript is modified. All WebMCP data requests are `GET` and `no-store`.
 No arbitrary SQL, insert/update/delete, token creation, user-management action,
 or cross-origin network requests are registered.
 
-**Important privacy design:** Neither transcripts nor customer names/phone
-numbers are returned. Overview uses the dedicated
+**Important privacy design:** Basic metadata tools never return transcripts or customer names/phone
+numbers. Overview uses the dedicated
 `GET /dashboard/overview/{call_id}` endpoint with `sensitive=False`, avoiding
 even an unnecessary server response containing a transcript. AI-facing tool
 output is explicitly marked `readOnlyHint` and `untrustedContentHint`.
@@ -67,9 +67,11 @@ tested against a supported agent and browser.
 
 ## Next upgrade
 
-Add explicitly approved **AI transcript analysis** behind a new permission,
-separate from `calls:read`, for both remote MCP and WebMCP. Limit large
-transcript batches, redact customer identifiers where possible, and audit
-every disclosure. This is not part of the initial WebMCP integration.
+The `panadan_get_redacted_transcript` browser tool is registered only when
+`calls:transcript:read` is explicitly granted alongside `calls:read`. It
+retrieves one redacted chunk at a time and returns a `next_offset` so the
+entire long conversation remains accessible. Accesses are logged without
+transcript contents. This remains experimental until tested in a supporting
+WebMCP browser agent.
 
 For remote, cross-client OAuth authorization, see `docs/MCP_SETUP.md`.
