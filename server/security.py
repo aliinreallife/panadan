@@ -360,7 +360,8 @@ class Store:
                       (int(time.time())-90*86400,))
 
     def activity_report(self, *, days: int = 14, user_id: int | None = None,
-                        surface: str | None = None, limit: int = 100) -> dict:
+                        surface: str | None = None, errors_only: bool = False,
+                        limit: int = 100) -> dict:
         if not 1 <= days <= 90 or not 1 <= limit <= 250:
             raise ValueError('Invalid report range')
         if surface and surface not in ('dashboard','api','mcp','auth'):
@@ -371,6 +372,8 @@ class Store:
             where.append('a.user_id=?');params.append(user_id)
         if surface:
             where.append('a.surface=?');params.append(surface)
+        if errors_only:
+            where.append('a.http_status>=400')
         clause=' WHERE '+' AND '.join(where)
         with self.db() as c:
             daily=[dict(row) for row in c.execute(
