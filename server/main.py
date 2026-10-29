@@ -380,7 +380,18 @@ def users_page(request: Request, session: dict = Depends(current_session)):
     admin_only(session)
     return templates.TemplateResponse(request,'users.html', {
         'session':session, 'csrf':session['csrf'], 'users':store.list_users(),
-        'roles':ROLE_GRANTS, 'capabilities':CAPABILITIES, 'user_caps':{u['id']:permissions(u['role'],u['grants']) for u in store.list_users()}, 'error':request.query_params.get('error'),
+        'roles':ROLE_GRANTS, 'capabilities':CAPABILITIES, 'user_caps':{u['id']:permissions(u['role'],u['grants']) for u in store.list_users()},
+        'cap_labels': {
+            'calls:read':'دیدن فهرست تماس‌ها',
+            'calls:sensitive':'جزئیات حساس',
+            'calls:transcript:read':'تحلیل مکالمات توسط AI',
+            'metrics:read':'گزارش‌های آماری',
+            'mcp:use':'اتصال MCP',
+            'users:manage':'مدیریت کاربران',
+            'tokens:manage':'مدیریت توکن‌ها',
+        },
+        'role_labels':{'admin':'مدیر کل','analyst':'تحلیل‌گر','reader':'خواننده','metrics':'فقط آمار'},
+        'error':request.query_params.get('error'),
     })
 
 
