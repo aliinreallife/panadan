@@ -17,7 +17,15 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(main.database, 'get_call',lambda *a,**k:{'id':5,'summary':'synthetic'} if k.get('sensitive') else {'id':5})
     monkeypatch.setattr(main.database, 'stats',lambda *a,**k:{'total':1,'sold_out':0,'avg_ai_score':10,'avg_voice_length':20})
     monkeypatch.setattr(main.database, 'statuses',lambda *a,**k:['Unchecked'])
-    with TestClient(main.app) as c: yield c,main
+    # Exercise dashboard/API permissions without restarting the singleton MCP
+    # session manager, which the MCP SDK permits to run only once per process.
+    from contextlib import asynccontextmanager
+    @asynccontextmanager
+    async def auth_test_lifespan(_app):
+        main.store.bootstrap('admin', 'a-long-safe-testing-password')
+        yield
+    main.app.router.lifespan_context = auth_test_lifespan
+    with TestClient(main.app) as c: yield c, main
 
 
 def test_reject_unauthorized(client):
