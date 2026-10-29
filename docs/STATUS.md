@@ -49,3 +49,12 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [ ] Expose secure HTTPS identity and resource endpoints/tunnel with Host/Origin hardening
 - [ ] Verify real ChatGPT OAuth consent, code exchange, callback, refresh and MCP tool discovery
 - [ ] Review production auditing, rate limits, backups and key rotation before public access
+
+## Reporting-database read-only audit
+
+- [x] Source reporting methods issue only parameterized SELECT queries within explicit READ ONLY transactions.
+- [x] Dashboard and REST reporting endpoints expose GET, and MCP exposes only the four reviewed read-only tools.
+- [x] Add a non-mutating local permissions checker: `./panadan.sh audit-db`.
+- [x] Add automated regression tests for read-only queries, HTTP route methods, MCP tools and simulated effective write privileges.
+- [ ] Run `./panadan.sh audit-db` with the actual VPN-connected PostgreSQL login; previous audit indicated CREATE on public.
+- [ ] DBA resolves unnecessary effective CREATE/write grants and verifies the account independently, preferably with a dedicated least-privilege reader.
