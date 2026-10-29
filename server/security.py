@@ -379,16 +379,7 @@ class Store:
             where.append('a.surface=?');params.append(surface)
         clause=' WHERE '+' AND '.join(where)
         with self.db() as c:
-            def grouped(sql):
-                return [dict(row) for row in c.execute(sql+clause,params)]
-            daily=grouped(
-                """SELECT strftime('%Y-%m-%d',a.created_at,'unixepoch') AS day,
-                   COUNT(*) AS total,
-                   SUM(CASE WHEN a.http_status>=400 THEN 1 ELSE 0 END) AS errors
-                   FROM activity_events a"""
-                # GROUP BY is appended after WHERE.
-                + '' 
-            ) if False else [dict(row) for row in c.execute(
+            daily=[dict(row) for row in c.execute(
                 """SELECT strftime('%Y-%m-%d',a.created_at,'unixepoch') AS day,
                    COUNT(*) AS total,
                    SUM(CASE WHEN a.http_status>=400 THEN 1 ELSE 0 END) AS errors
