@@ -188,6 +188,8 @@ class Store:
             # A role change or disable must invalidate all outstanding sessions/tokens.
             c.execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
             c.execute('DELETE FROM access_tokens WHERE owner_id=?', (user_id,))
+            # Reauthorization is required after a role or status update.
+            c.execute('DELETE FROM oauth_identities WHERE user_id=?', (user_id,))
 
     def bind_oauth_identity(self, issuer: str, subject: str, user_id: int) -> int:
         """Administrator-approved binding of an IdP subject to a local account.
