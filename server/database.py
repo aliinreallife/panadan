@@ -93,6 +93,22 @@ def get_call(call_id: int, sensitive: bool = False):
     return normalized(row) if row else None
 
 
+def transcript_excerpt(call_id: int, char_limit: int = 6000) -> dict | None:
+    """Query a limited transcript fragment, never customer contact columns.
+
+    Read-only SQL, fixed view, parameterized IDs and fragment size.
+    """
+    if type(call_id) is not int or call_id <= 0:
+        raise ValueError('Invalid call ID')
+    if type(char_limit) is not int or not 1 <= char_limit <= 6000:
+        raise ValueError('Invalid transcript length')
+    query = ('SELECT id, LEFT("transcription", %s) AS transcription, '
+             'LENGTH("transcription") AS total_chars FROM ' + VIEW + ' WHERE id=%s LIMIT 1')
+    with connect() as conn:
+        row = conn.execute(query, (char_limit, call_id)).fetchone()
+    return normalized(row) if row else None
+
+
 def stats(after: date | None = None, before: date | None = None,
           created_after: datetime | None = None, created_before: datetime | None = None):
     where, params = filters(after, before, None, created_after, created_before)
