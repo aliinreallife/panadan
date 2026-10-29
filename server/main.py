@@ -270,7 +270,7 @@ def dashboard_filter_options(session: dict = Depends(current_session)):
 
 
 @app.get('/dashboard/ai/transcript/{call_id}', include_in_schema=False)
-def browser_ai_transcript(call_id: int, offset: int = Query(0,ge=0,le=1000000),
+def browser_ai_transcript(call_id: int, offset: int = Query(0,ge=0,le=2147483646),
                           limit: int = Query(6000,ge=1,le=6000),
                           session: dict = Depends(current_session)):
     """Authorized WebMCP retrieval: redacted, bounded, auditable and read-only."""
