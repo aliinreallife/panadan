@@ -151,7 +151,7 @@ export function createWebMcpTools({ canReadCalls=false, canReadMetrics=false, re
       annotations:{readOnlyHint:true,untrustedContentHint:true},
       execute:guarded(async ({call_id},{signal}={})=>{
         const id=validate(ensureInteger,call_id,'شناسه تماس',1,2147483647);
-        const response=await request('/dashboard/data/'+id,signal);
+        const response=await request('/dashboard/overview/'+id,signal);
         return publicCall(response);
       })
     });
