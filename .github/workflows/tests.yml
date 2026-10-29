@@ -13,6 +13,11 @@ jobs:
         with:
           enable-cache: true
           version: "0.13.6"
+      - name: Check executable file modes
+        run: |
+          test -x panadan.sh
+          test -x migrate-from-danf.sh
+          test -x start-vpn.sh
       - name: Confirm lockfile exists
         run: test -s uv.lock
       - name: Install locked dependencies
