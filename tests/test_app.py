@@ -100,3 +100,31 @@ def test_metrics_user_cannot_read_call_filter_values_or_api_guide(client):
     assert c.get('/dashboard/filter-options').status_code == 403
     assert c.get('/dashboard/api').status_code == 403
     assert c.get('/dashboard/metrics').status_code == 200
+
+
+def test_browser_overview_only_uses_public_columns(client, monkeypatch):
+    c, main = client
+    invocations = []
+    def get_call(call_id, sensitive=False):
+        invocations.append((call_id, sensitive))
+        return {'id': call_id, 'CALLDATE': '2026-10-29'} if not sensitive else {
+            'id': call_id, 'transcription': 'PRIVATE TEST TRANSCRIPT'
+        }
+    monkeypatch.setattr(main.database,'get_call',get_call)
+    assert c.get('/dashboard/overview/5').status_code == 401
+    user_id = main.store.create_user('readerwebmcp','another-long-password','reader',['calls:read'])
+    raw, _ = main.store.create_session(user_id)
+    c.cookies.set('panadan_session',raw)
+    response=c.get('/dashboard/overview/5')
+    assert response.status_code == 200
+    assert response.json() == {'id':5,'CALLDATE':'2026-10-29'}
+    assert response.headers['cache-control'] == 'no-store'
+    assert invocations[-1] == (5,False)
+    assert all(not sensitive for _,sensitive in invocations)
+
+def test_browser_overview_denies_metrics_only_users(client):
+    c, main = client
+    user_id=main.store.create_user('onlymetricsweb','another-long-password','metrics',['metrics:read'])
+    raw, _ = main.store.create_session(user_id)
+    c.cookies.set('panadan_session',raw)
+    assert c.get('/dashboard/overview/5').status_code == 403
