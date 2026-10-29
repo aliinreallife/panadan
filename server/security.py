@@ -12,7 +12,7 @@ from pathlib import Path
 
 SESSION_SECONDS = 8 * 3600
 LOGIN_FAILURES: dict[str, list[float]] = {}
-CAPABILITIES = ('calls:read', 'calls:sensitive', 'metrics:read', 'tokens:manage', 'mcp:use', 'users:manage')
+CAPABILITIES = ('calls:read', 'calls:sensitive', 'calls:transcript:read', 'metrics:read', 'tokens:manage', 'mcp:use', 'users:manage')
 ROLE_GRANTS = {
     'admin': CAPABILITIES,
     'analyst': ('calls:read', 'metrics:read', 'mcp:use'),
@@ -108,6 +108,15 @@ class Store:
                 UNIQUE(issuer, subject),
                 UNIQUE(issuer, user_id)
             )""")
+            c.execute("""CREATE TABLE IF NOT EXISTS transcript_access_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                surface TEXT NOT NULL CHECK (surface IN ('mcp', 'webmcp')),
+                call_id INTEGER NOT NULL,
+                char_limit INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            )""")
+            c.execute('CREATE INDEX IF NOT EXISTS transcript_audit_user_time ON transcript_access_audit(user_id,created_at)')
             # Previously created tokens were admin-owned; require the existing admin
             # account to remain active for those tokens to work.
             admin = c.execute('SELECT id FROM users WHERE role=? ORDER BY id LIMIT 1', ('admin',)).fetchone()
@@ -238,6 +247,74 @@ class Store:
             return False
         caps = permissions(row['role'], row['grants'])
         return {'mcp:use', 'calls:read', 'metrics:read'} <= caps
+
+    def authorized_transcript_actor(self, *, oauth_issuer: str | None = None,
+                                    oauth_subject: str | None = None,
+                                    legacy_token: str | None = None) -> int | None:
+        """Re-check one specific MCP caller from trusted credentials, never client-supplied IDs."""
+        if bool(legacy_token) == bool(oauth_subject):
+            return None
+        with self.db() as c:
+            if oauth_subject is not None:
+                row = c.execute(
+                    """SELECT u.id,u.role,u.grants,u.is_active
+                       FROM oauth_identities i JOIN users u ON u.id=i.user_id
+                       WHERE i.issuer=? AND i.subject=?""",
+                    (oauth_issuer, oauth_subject),
+                ).fetchone()
+            else:
+                if not legacy_token or len(legacy_token) > 256:
+                    return None
+                row = c.execute(
+                    """SELECT u.id,u.role,u.grants,u.is_active
+                       FROM access_tokens t JOIN users u ON u.id=t.owner_id
+                       WHERE t.token_hash=? AND t.scope='mcp:read'
+                       AND t.expires_at>?""",
+                    (digest(legacy_token), int(time.time())),
+                ).fetchone()
+        if not row or not row['is_active']:
+            return None
+        caps = permissions(row['role'], row['grants'])
+        if not {'mcp:use', 'calls:read', 'metrics:read', 'calls:transcript:read'} <= caps:
+            return None
+        return int(row['id'])
+
+    def audit_transcript_request(self, *, user_id: int, surface: str,
+                                 call_id: int, char_limit: int) -> bool:
+        """Reserve a bounded transcript disclosure and log only metadata.
+
+        Atomic SQLite quota: at most 20 requests per account per rolling hour
+        across browser and remote MCP. Denials and errors disclose no transcript.
+        """
+        if surface not in ('mcp', 'webmcp') or call_id < 1 or not 1 <= char_limit <= 6000:
+            return False
+        now = int(time.time())
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            row = c.execute('SELECT role,grants,is_active FROM users WHERE id=?',(user_id,)).fetchone()
+            caps = permissions(row['role'], row['grants']) if row and row['is_active'] else set()
+            if not {'calls:read', 'calls:transcript:read'} <= caps:
+                return False
+            count = c.execute(
+                'SELECT COUNT(*) FROM transcript_access_audit WHERE user_id=? AND created_at>?',
+                (user_id, now-3600)
+            ).fetchone()[0]
+            if count >= 20:
+                return False
+            c.execute(
+                'INSERT INTO transcript_access_audit(user_id,surface,call_id,char_limit,created_at) VALUES(?,?,?,?,?)',
+                (user_id, surface, call_id, char_limit, now)
+            )
+            return True
+
+    def list_transcript_audit(self, limit: int = 100) -> list[dict]:
+        with self.db() as c:
+            return [dict(r) for r in c.execute(
+                """SELECT a.id,u.username,a.surface,a.call_id,a.char_limit,a.created_at
+                   FROM transcript_access_audit a JOIN users u ON u.id=a.user_id
+                   ORDER BY a.id DESC LIMIT ?""",
+                (max(1,min(int(limit),500)),)
+            )]
 
     def create_token(self, name: str, scope: str, days: int = 30, owner_id: int | None = None) -> tuple[int, str]:
         if scope not in ('api:read', 'api:sensitive', 'mcp:read') or not 1 <= days <= 365:
