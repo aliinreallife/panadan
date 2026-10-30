@@ -32,3 +32,27 @@ def test_call_type_filter_is_parameterized():
 def test_call_type_filter_rejects_unbounded_values():
     with pytest.raises(ValueError):
         database.list_calls(call_type='X' * 61)
+
+
+def test_operator_and_group_filters_are_parameterized():
+    where,params=database.filters(None,None,None,operator="Test Operator")
+    assert '"vw_danix_base_info_users_name" = %s' in where
+    assert params==['Test Operator']
+    where,params=database.filters(None,None,None,operator_names=['Test Operator','Other'])
+    assert '"vw_danix_base_info_users_name" = ANY(%s)' in where
+    assert params==[['Test Operator','Other']]
+    where,params=database.filters(None,None,None,operator_names=[])
+    assert 'FALSE' in where
+    assert params==[]
+
+
+def test_unspecified_operator_includes_missing_and_blank_rows():
+    where,params=database.filters(None,None,None,operator=database.UNSPECIFIED)
+    assert '"vw_danix_base_info_users_name" IS NULL' in where
+    assert 'BTRIM' in where
+    assert params==[]
+    where,params=database.filters(None,None,None,
+                                 operator_names=[database.UNSPECIFIED,'Test'])
+    assert 'IS NULL' in where
+    assert 'ANY(%s)' in where
+    assert params==[['Test']]
