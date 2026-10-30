@@ -216,3 +216,245 @@ label{color:#496059;font-weight:650}.filters{row-gap:14px}.filters>label{min-wid
 .role-pill[data-role=metrics]{background:#f5f4ec;color:#8e763e}
 .management-form .permissions label{line-height:1.7}
 .management-form input[type=password]{font-family:inherit}
+
+
+/* v0.7.2 — shared dropdowns and resilient mobile navigation.
+   Native select stays available without JavaScript. */
+:root{
+  --control-border:#cddfd4;
+  --control-focus:#168465;
+  --control-bg:#ffffff;
+  --control-hover:#f5faf7;
+  --control-ink:#213e34;
+  --control-muted:#698176;
+}
+select:not(.ui-select-native){
+  appearance:none;
+  -webkit-appearance:none;
+  background-color:#fff;
+  color:var(--control-ink);
+  border:1px solid var(--control-border);
+  border-radius:12px;
+  min-height:46px;
+  padding:10px 14px;
+  padding-inline-end:38px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23507461' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-size:17px 17px;
+  background-position:left 13px center;
+  transition:border-color .14s,box-shadow .14s,background-color .14s;
+}
+select:not(.ui-select-native):hover{border-color:#8ab5a0;background-color:var(--control-hover)}
+select:not(.ui-select-native):focus-visible{outline:0;border-color:var(--control-focus);box-shadow:0 0 0 3px #16846525}
+.ui-select-native{
+  position:absolute!important;
+  width:1px!important;
+  height:1px!important;
+  opacity:0!important;
+  overflow:hidden!important;
+  clip-path:inset(50%)!important;
+  pointer-events:none!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+}
+.ui-select{
+  position:relative;
+  display:flex;
+  width:100%;
+  min-width:0;
+  align-items:stretch;
+  line-height:1.6;
+  direction:rtl;
+}
+.ui-select-trigger{
+  display:flex;
+  width:100%;
+  min-height:46px;
+  min-width:0;
+  gap:12px;
+  align-items:center;
+  justify-content:space-between;
+  text-align:right;
+  font-size:13px;
+  font-weight:600;
+  color:var(--control-ink);
+  background:var(--control-bg);
+  border:1px solid var(--control-border);
+  border-radius:12px;
+  padding:10px 13px;
+  transition:background .15s,border-color .15s,box-shadow .15s;
+}
+.ui-select-trigger:hover{background:var(--control-hover);border-color:#8ab5a0}
+.ui-select-trigger:focus-visible{outline:0;box-shadow:0 0 0 3px #16846528;border-color:var(--control-focus)}
+.ui-select-open .ui-select-trigger{background:#f8fcfa;border-color:var(--control-focus);box-shadow:0 0 0 3px #16846524}
+.ui-select-value{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.ui-select-caret{
+  width:9px;height:9px;flex:none;
+  border-bottom:1.8px solid #56796b;
+  border-left:1.8px solid #56796b;
+  transform:translateY(-2px) rotate(-45deg);
+  transition:transform .15s;
+  margin-inline-end:3px;
+}
+.ui-select-open .ui-select-caret{transform:translateY(2px) rotate(135deg)}
+.ui-select-has-value .ui-select-trigger{border-color:#b7d6c5}
+.ui-select-has-value .ui-select-value{color:#205e49}
+.ui-select-clear{
+  position:absolute;
+  inset-inline-end:35px;
+  top:50%;
+  transform:translateY(-50%);
+  background:transparent;
+  color:#91a69a;
+  width:28px;
+  height:28px;
+  padding:0;
+  display:grid;
+  place-items:center;
+  border-radius:8px;
+  line-height:1;
+  font-family:system-ui;
+  font-size:19px;
+}
+.ui-select-clear:hover{background:#e9f3ec;color:#215943}
+.ui-select-clear[hidden]{display:none!important}
+.ui-select:has(.ui-select-clear:not([hidden])) .ui-select-trigger{padding-inline-end:40px}
+.ui-select-menu{
+  position:fixed;
+  z-index:3000;
+  min-width:200px;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  border-radius:16px;
+  border:1px solid #cfdfd5;
+  background:#fff;
+  box-shadow:0 18px 48px #092e1f29,0 4px 12px #092e1f13;
+  direction:rtl;
+  padding:6px;
+  animation:ui-select-enter .13s ease-out;
+}
+.ui-select-menu[hidden]{display:none!important}
+.ui-select-search-wrap{padding:6px 7px 10px;flex:none;border-bottom:1px solid #e9f0ec}
+.ui-select-search{
+  min-height:41px;
+  width:100%;
+  font-size:12px;
+  border-radius:10px;
+  background:#f7faf8;
+  border:1px solid #dce9e1;
+  padding:8px 12px;
+  font-weight:450;
+  outline:0;
+}
+.ui-select-search:focus{border-color:#5cac88;box-shadow:0 0 0 3px #1684651c;background:#fff}
+.ui-select-options{overflow-y:auto;overscroll-behavior:contain;padding:3px;min-height:20px;max-height:100%}
+.ui-select-option{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:10px 12px;
+  gap:12px;
+  border-radius:9px;
+  min-height:40px;
+  color:#334e42;
+  font-size:12px;
+  cursor:pointer;
+  scroll-margin:6px;
+  line-height:1.7;
+  user-select:none;
+}
+.ui-select-option:hover,.ui-select-option.ui-select-focused{background:#edf8f1;color:#0c7355}
+.ui-select-option[aria-selected=true]{background:#e4f4e9;color:#0b7152;font-weight:750}
+.ui-select-option[aria-selected=true].ui-select-focused{background:#d9f2e3}
+.ui-select-option.ui-select-disabled{opacity:.45;cursor:not-allowed}
+.ui-select-option-label{min-width:0;white-space:normal;overflow-wrap:anywhere}
+.ui-select-check{color:#158463;font-size:17px;line-height:1;font-weight:800}
+.ui-select-empty{padding:19px 12px;color:#788c82;font-size:12px;text-align:center;margin:0}
+@keyframes ui-select-enter{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+
+/* Consistent form hierarchy and compact, meaningful spacing. */
+.filters>label,.token-form>label,.management-form>label,.activity-filter-panel .filters>label{gap:8px}
+.filters label,.token-form label,.activity-filter-panel label{min-width:0}
+.filters .ui-select,.token-form .ui-select,.management-form .ui-select{width:100%}
+.panel-head{gap:14px}
+.panel-head h2{line-height:1.5}
+.sidebar nav a{transition:background .16s,color .16s,transform .16s;align-items:center}
+.sidebar nav a:hover{transform:translateX(-2px)}
+.sidebar nav a:focus-visible{outline:2px solid #8ce0b5;outline-offset:2px}
+.form-hint{font-size:11px;color:#758c7e;font-weight:450;line-height:1.8}
+
+/* Tables with inline user-role selects must never clip the dropdown layer. */
+.row-grants summary{border-radius:8px;padding:7px 10px}
+.row-grants summary:hover{background:#eff8f2}
+.row-grants summary:focus-visible{outline:2px solid #218568;outline-offset:2px}
+
+/* Mobile navigation: all destinations remain reachable and their labels stay visible. */
+@media(max-width:800px){
+  .sidebar{
+    width:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    gap:10px;
+    padding:13px 14px 10px;
+    border-radius:0;
+    background:#102e2a;
+  }
+  .sidebar .logo{padding:0;justify-content:flex-start;font-size:17px;gap:9px}
+  .sidebar .logo .brand-mark{width:32px;height:32px}
+  .sidebar .nav-caption{display:none}
+  .sidebar nav{
+    display:flex;
+    min-width:0;
+    width:100%;
+    overflow-x:auto;
+    overflow-y:hidden;
+    gap:6px;
+    padding:2px 0 7px;
+    margin:0;
+    scrollbar-width:thin;
+    scrollbar-color:#618d7c transparent;
+    -webkit-overflow-scrolling:touch;
+  }
+  .sidebar nav a{
+    white-space:nowrap;
+    flex:none;
+    padding:9px 12px;
+    font-size:12px;
+    border:1px solid #275448;
+    border-radius:11px;
+  }
+  .sidebar nav a span{display:inline}
+  .sidebar nav a:hover{transform:none}
+  .sidebar .side-footer{
+    display:flex;
+    margin:0;
+    padding:0;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    font-size:10px;
+  }
+  .sidebar .side-footer .status{font-size:10px}
+  .sidebar .side-footer .link-button{margin:0;padding:5px 10px;border:1px solid #3d6b59;border-radius:9px}
+  .content{padding:24px 14px 45px}
+  .page-head{flex-wrap:wrap;gap:12px}
+  .page-head h1{font-size:26px}
+  .panel{padding:18px}
+  .panel-head{align-items:flex-start;flex-wrap:wrap}
+  .filters>label,.activity-filter-panel .filters>label{flex:1 1 170px;min-width:0}
+  .ui-select-trigger{min-height:46px;font-size:13px}
+}
+@media(max-width:480px){
+  .filters>label,.activity-filter-panel .filters>label{flex-basis:calc(50% - 8px)}
+  .activity-filter-panel .filters>label:has(#activity-user){flex-basis:100%}
+  .activity-filter-panel .filters .primary{width:100%}
+  .panel-head .muted{font-size:11px}
+  .metrics{gap:8px}
+}
+@media(prefers-reduced-motion:reduce){
+  .ui-select-menu{animation:none}
+  .ui-select-trigger,.ui-select-caret,.sidebar nav a{transition:none}
+}

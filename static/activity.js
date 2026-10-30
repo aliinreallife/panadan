@@ -1,4 +1,5 @@
 /* Panadan Activity — plain JS charts, no third-party telemetry or libraries. */
+import {enhanceSelects} from './selects.js';
 const $=id=>document.getElementById(id);
 const formatNum=v=>new Intl.NumberFormat('fa-IR').format(Number(v||0));
 const formatDay=day=>{
@@ -188,6 +189,7 @@ async function load(){
   }
 }
 if(typeof document!=='undefined'){
+  enhanceSelects();
   $('activity-filters')?.addEventListener('submit',e=>{e.preventDefault();void load();});
   $('activity-search')?.addEventListener('input',filterEvents);
   void load();

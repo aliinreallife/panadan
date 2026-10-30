@@ -5,8 +5,8 @@
 <section class="panel filter-panel"><div class="panel-head"><div><h2>فیلتر گزارش</h2><p class="muted small-text">تاریخ شمسی نمایش داده می‌شود؛ فیلترهای سمت سرور استاندارد ISO هستند.</p></div><span class="tag">منطقهٔ زمانی تهران</span></div><form id="filters" class="filters">
 <label>از تاریخ تماس<input type="date" id="after" hidden><doran-datepicker id="after-doran" editable="false" mode="auto" placeholder="انتخاب تاریخ شروع" show-holidays></doran-datepicker></label>
 <label>تا تاریخ تماس<input type="date" id="before" hidden><doran-datepicker id="before-doran" editable="false" mode="auto" placeholder="انتخاب تاریخ پایان" show-holidays></doran-datepicker></label>
-<label>نوع تماس<select id="call_type" aria-label="فیلتر نوع تماس"><option value="">همه نوع تماس‌ها</option></select></label>
-<label>وضعیت ثبت‌شده<select id="state" aria-label="فیلتر وضعیت"><option value="">همه وضعیت‌ها</option></select></label>
+<label>نوع تماس<select id="call_type" data-searchable aria-label="فیلتر نوع تماس"><option value="">همه نوع تماس‌ها</option></select></label>
+<label>وضعیت ثبت‌شده<select id="state" data-searchable aria-label="فیلتر وضعیت"><option value="">همه وضعیت‌ها</option></select></label>
 <details class="advanced-filters"><summary>فیلتر زمان ثبت (اختیاری)</summary><div class="filters"><label>از تاریخ و ساعت ثبت<input id="created_after" type="datetime-local" hidden><doran-datepicker id="created_after-doran" with-time editable="false" mode="auto" placeholder="شروع زمان ثبت"></doran-datepicker></label><label>تا تاریخ و ساعت ثبت<input id="created_before" type="datetime-local" hidden><doran-datepicker id="created_before-doran" with-time editable="false" mode="auto" placeholder="پایان زمان ثبت"></doran-datepicker></label></div></details>
 <button class="primary" type="submit">اعمال فیلتر</button><button type="button" class="secondary" id="reset">پاک کردن</button></form></section>
 {% if abilities['calls:transcript:read'] and abilities['calls:read'] %}<span id="webmcp-transcript-permission" hidden></span>{% endif %}

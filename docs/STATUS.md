@@ -93,3 +93,22 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [ ] Exercise the flow against a live authorized test call in WSL and review
   masking quality on realistic Persian/English transcripts.
 - [ ] Verify PostgreSQL role permissions with `./panadan.sh audit-db`.
+
+## v0.7.2 dropdown and mobile UX
+
+- [x] Reusable progressive enhancement for native selects, preserving exact
+  original form values and backend permission checks
+- [x] Consistent Persian RTL dropdown styling with focus, hover, selected,
+  disabled and empty-search states
+- [x] Search by Persian display text or original source value for larger lists;
+  Persian/Arabic letter forms and digit shapes normalized
+- [x] Escape, Enter, Arrow, Home/End, click-outside, scroll placement and
+  selection clearing support
+- [x] Option lists are rendered above overflow-hidden panels and table scrollers,
+  without clipping; Doran Jalali datepicker remains unchanged
+- [x] Apply controls to reporting filters, Activity, token ownership,
+  OAuth identity binding and user role management
+- [x] Mobile navigation shows all sections in horizontally scrollable tabs and
+  retains the sign-out action
+- [x] Unit tests of filtering, raw value preservation and keyboard movement
+- [ ] Real browser visual QA including keyboard, screen-reader and mobile touch

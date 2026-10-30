@@ -23,7 +23,7 @@
 <section class="panel activity-filter-panel">
 <form id="activity-filters" class="filters">
 <label>بازهٔ زمانی<select id="activity-days"><option value="7">۷ روز گذشته</option><option value="14" selected>۱۴ روز گذشته</option><option value="30">۳۰ روز گذشته</option><option value="90">۹۰ روز گذشته</option></select></label>
-<label>کاربر<select id="activity-user"><option value="">همه کاربران</option>
+<label>کاربر<select id="activity-user" data-searchable><option value="">همه کاربران</option>
 {% for user in users %}<option value="{{user.id}}">{{user.username}}</option>{% endfor %}</select></label>
 <label>کانال دسترسی<select id="activity-surface">
 <option value="">همه کانال‌ها</option><option value="dashboard">داشبورد</option>
