@@ -12,6 +12,15 @@ from fastapi.testclient import TestClient
 
 
 def unwrap(result):
+    # TestClient returns an HTTP Response; MCP can use JSON or SSE framing.
+    if hasattr(result, 'headers'):
+        if 'text/event-stream' in result.headers.get('content-type',''):
+            lines=[line.removeprefix('data: ').strip()
+                   for line in result.text.splitlines() if line.startswith('data: ')]
+            assert lines, result.text
+            result=json.loads(lines[-1])
+        else:
+            result=result.json()
     assert isinstance(result, dict), result
     if "error" in result:
         raise AssertionError(result)
