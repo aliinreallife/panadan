@@ -147,3 +147,18 @@ The redaction masks common phone numbers, email addresses, links and IBANs;
 **it is not anonymization**. Spoken personal names, addresses and sensitive
 facts may remain. Obtain appropriate authorization before sending transcripts
 to an external AI provider. No transcript contents are written to the audit log.
+
+## MCP Python SDK v2 transport and trusted proxy hosts
+
+Panadan v0.8 uses the **official MCP Python SDK v2.3.0** with `MCPServer`, mounted at `/mcp/` in FastAPI. The SDK supports both older initialize-based clients and the 2026-07-28 MCP protocol. The HTTP transport remains JSON-response and stateless, and the per-request bearer gate and local transcript permissions are unchanged.
+
+MCP SDK v2 enables DNS-rebinding protection with an explicit Host/Origin allowlist. By default only local loopback hosts are allowed. When operating behind a trusted HTTPS endpoint, configure these **private** `.env.app` values:
+
+```ini
+PANADAN_MCP_ALLOWED_HOSTS=reports.example.org,reports.example.org:443
+PANADAN_MCP_ALLOWED_ORIGINS=https://reports.example.org
+```
+
+Replace placeholders with a real domain and exact origin. Wildcard public hosts/origins are rejected. Ensure the proxy forwards the correct Host value. Missing public host configuration causes blocked MCP requests rather than silently disabling protection. Continue to require HTTPS, independent role checks and an actual OAuth provider before Internet exposure.
+
+For local development after this upgrade: `uv python install 3.13`, then `./panadan.sh setup` and `./panadan.sh test`. The source database remains READ ONLY. New modern-protocol and legacy HTTP integration tests are exercised in CI, as are web and VPN Docker builds.

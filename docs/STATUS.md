@@ -129,3 +129,14 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [ ] Add **real** operator/team/destination RBAC after confirming a stable
   operator ID in source data and enforcing the scope in every API/MCP path
   (see docs/OPERATOR_SCOPES.md).
+
+## v0.8 preproduction stack modernization
+
+- [x] Migrate the official Python MCP SDK from FastMCP v1 to MCPServer v2.3.0
+- [x] Keep the authenticated stateless `/mcp/` transport and read-only tools
+- [x] Upgrade the runtime to Python 3.13 and Node 24 LTS
+- [x] Refresh `uv.lock` and add npm `package-lock.json` with `npm ci`
+- [x] Upgrade compatible FastAPI, psycopg, Pydantic, esbuild and other dependencies through lockfile resolution
+- [x] Add explicit MCP transport Host/Origin allowlists and v2-native protocol tests
+- [x] Build both Docker images in PR CI without publishing them
+- [ ] Verify on the user's local WSL/VPN installation, and complete one-click OAuth login/consent
