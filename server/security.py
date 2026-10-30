@@ -128,6 +128,14 @@ class Store:
             )""")
             c.execute('CREATE INDEX IF NOT EXISTS activity_events_time ON activity_events(created_at)')
             c.execute('CREATE INDEX IF NOT EXISTS activity_events_user_time ON activity_events(user_id,created_at)')
+            # Operator directory contains only administrative metadata.
+            # It is NOT a reporting-data copy and is NOT yet used to grant access.
+            c.execute("""CREATE TABLE IF NOT EXISTS operator_directory (
+                operator_name TEXT PRIMARY KEY,
+                destination TEXT,
+                team TEXT,
+                updated_at INTEGER NOT NULL
+            )""")
             # Previously created tokens were admin-owned; require the existing admin
             # account to remain active for those tokens to work.
             admin = c.execute('SELECT id FROM users WHERE role=? ORDER BY id LIMIT 1', ('admin',)).fetchone()
@@ -176,6 +184,38 @@ class Store:
     def list_users(self):
         with self.db() as c:
             return [dict(r) for r in c.execute('SELECT id,username,role,grants,is_active FROM users ORDER BY id')]
+
+    def operator_assignments(self) -> dict[str, dict]:
+        with self.db() as c:
+            return {row['operator_name']: {
+                'destination':row['destination'] or 'نامشخص',
+                'team':row['team'] or 'نامشخص',
+            } for row in c.execute(
+                'SELECT operator_name,destination,team FROM operator_directory'
+            )}
+
+    def set_operator_assignment(self, operator_name: str, destination: str,
+                                team: str) -> None:
+        """Manage local metadata; never change the source reporting database."""
+        if (not operator_name or len(operator_name)>180
+                or any(ord(ch)<32 for ch in operator_name)):
+            raise ValueError('Invalid operator')
+        for field in (destination,team):
+            if len(field)>80 or any(ord(ch)<32 for ch in field):
+                raise ValueError('Invalid destination or team')
+        destination = destination.strip()
+        team = team.strip()
+        with self.db() as c:
+            if not destination and not team:
+                c.execute('DELETE FROM operator_directory WHERE operator_name=?',(operator_name,))
+            else:
+                c.execute(
+                    """INSERT INTO operator_directory(operator_name,destination,team,updated_at)
+                    VALUES(?,?,?,?) ON CONFLICT(operator_name)
+                    DO UPDATE SET destination=excluded.destination,
+                    team=excluded.team,updated_at=excluded.updated_at""",
+                    (operator_name,destination or None,team or None,int(time.time()))
+                )
 
     def create_user(self, username: str, password: str, role: str, caps: list[str] | None = None):
         if not username or len(username) > 80 or not username.replace('_','').replace('-','').isalnum():
