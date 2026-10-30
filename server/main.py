@@ -436,8 +436,14 @@ def dashboard_metrics(after: date | None = None, before: date | None = None,
 @app.get('/api/v1/calls', dependencies=[Depends(require_api)], tags=['Calls'])
 def api_calls(limit: int = Query(20,ge=1,le=100), offset: int = Query(0,ge=0,le=10000),
               after: date | None = None, before: date | None = None, state: str | None = None,
-              call_type: str | None = None):
-    try: return {'items':database.list_calls(limit,offset,after,before,state,call_type=call_type)}
+              call_type: str | None = None,
+              operator: str | None = Query(None,max_length=180),
+              destination: str | None = Query(None,max_length=80),
+              team: str | None = Query(None,max_length=80)):
+    try:
+        return {'items':database.list_calls(limit,offset,after,before,state,call_type=call_type,
+                                            operator=operator,
+                                            operator_names=directory_operator_names(destination,team))}
     except Exception as e: json_failure(e)
 
 
@@ -451,8 +457,12 @@ def api_call(call_id: int, request: Request, include_sensitive: bool = False):
 
 
 @app.get('/api/v1/stats', dependencies=[Depends(require_metrics_api)], tags=['Analytics'])
-def api_stats(after: date | None = None, before: date | None = None):
-    try: return database.stats(after, before)
+def api_stats(after: date | None = None, before: date | None = None,
+              operator: str | None = Query(None,max_length=180),
+              destination: str | None = Query(None,max_length=80),
+              team: str | None = Query(None,max_length=80)):
+    try: return database.stats(after,before,operator=operator,
+                               operator_names=directory_operator_names(destination,team))
     except Exception as e: json_failure(e)
 
 
