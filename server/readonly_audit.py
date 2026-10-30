@@ -26,20 +26,20 @@ SELECT current_user AS role,
        has_database_privilege(current_database(), 'CREATE') AS can_create_database_objects,
        has_database_privilege(current_database(), 'TEMPORARY') AS can_create_temporary_objects
 """
-SCHEMA_SQL = r"""
+SCHEMA_SQL = """
 SELECT COUNT(*)::integer AS writable_schemas
 FROM pg_catalog.pg_namespace n
 WHERE n.nspname <> 'information_schema'
-  AND n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'
+  AND LEFT(n.nspname, 3) <> 'pg_'
   AND has_schema_privilege(n.oid, 'CREATE')
 """
-RELATION_SQL = r"""
+RELATION_SQL = """
 SELECT COUNT(*)::integer AS writable_relations
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
   AND n.nspname <> 'information_schema'
-  AND n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'
+  AND LEFT(n.nspname, 3) <> 'pg_'
   AND (
     has_table_privilege(c.oid, 'INSERT')
     OR has_table_privilege(c.oid, 'UPDATE')
@@ -78,8 +78,16 @@ def inspect_permissions() -> dict:
 def main() -> int:
     try:
         result = inspect_permissions()
-    except Exception:
-        print("Unable to inspect effective database permissions; check the VPN, credentials and reporting view.", file=sys.stderr)
+    except Exception as exc:
+        # Do not print exception text: it may include connection details or SQL.
+        sqlstate = getattr(exc, "sqlstate", None)
+        code = f" SQLSTATE={sqlstate}" if sqlstate else ""
+        print(
+            f"Unable to inspect effective database permissions "
+            f"({type(exc).__name__}{code}). Check the VPN, reporting view and "
+            "database permissions. No credentials or queries were logged.",
+            file=sys.stderr,
+        )
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result["blocking"]:
