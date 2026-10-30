@@ -1,9 +1,9 @@
 """MCP tools are deliberately restricted to safe, non-transcript fields."""
 from datetime import date
-from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.mcpserver import MCPServer, Context
 from . import database
 
-mcp = FastMCP('Panadan', instructions='Read-only reporting for authorized business users. Transcript excerpts require separate user permissions. No raw SQL or writes.', stateless_http=True, json_response=True, streamable_http_path='/')
+mcp = MCPServer('Panadan', version='0.8.0', instructions='Read-only reporting for authorized business users. Transcript excerpts require separate user permissions. No raw SQL or writes.')
 
 
 @mcp.tool()
@@ -54,10 +54,11 @@ def get_redacted_call_transcript(call_id: int, ctx: Context, offset: int = 0) ->
     from .main import store, oauth_config, oauth_verifier
     from .transcript_ai import transcript_for_ai, MAX_TRANSCRIPT_CHARS
 
-    http_request = getattr(ctx.request_context, 'request', None)
-    if http_request is None or not hasattr(http_request, 'headers'):
-        return {'error': 'permission_denied'}
-    authorization = http_request.headers.get('authorization', '')
+    # MCP SDK v2 supplies transport headers through its injected Context.
+    # Never trust these as identity on their own: the HTTP bearer gate validates
+    # every request, and the account/token checks below run again here.
+    request_headers = ctx.headers or {}
+    authorization = request_headers.get('authorization', '')
     token = authorization[7:] if authorization.startswith('Bearer ') else ''
     if oauth_config.mode == 'oauth':
         subject = oauth_verifier.verify(token) if oauth_verifier else None
