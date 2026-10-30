@@ -18,6 +18,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(main.database, 'stats',lambda *a,**k:{'total':1,'sold_out':0,'avg_ai_score':10,'avg_voice_length':20})
     monkeypatch.setattr(main.database, 'statuses',lambda *a,**k:['Unchecked','System Invalid'])
     monkeypatch.setattr(main.database, 'call_types',lambda *a,**k:['FollowUp','FirstToch'])
+    monkeypatch.setattr(main.database, 'operators',lambda *a,**k:['__unspecified__','Test Op','Other Op'])
     # Exercise dashboard/API permissions without restarting the singleton MCP
     # session manager, which the MCP SDK permits to run only once per process.
     from contextlib import asynccontextmanager
@@ -178,3 +179,76 @@ def test_ai_transcripts_are_separately_permissioned_and_paged(client,monkeypatch
     logs=main.store.list_transcript_audit()
     assert logs[0]['surface']=='webmcp'
     assert logs[0]['call_id']==8
+
+
+def test_operator_directory_filter_and_profile(client, monkeypatch):
+    c,main=client
+    admin=main.store.verify_login('admin','a-long-safe-testing-password')
+    cookie,csrf=main.store.create_session(admin)
+    c.cookies.set('panadan_session',cookie)
+    assert c.get('/dashboard/operator?name=Test%20Op').status_code==200
+    profile=c.get('/dashboard/operator?name=Test%20Op').text
+    assert 'Test Op' in profile
+    assert 'data-profile-operator="Test Op"' in profile
+    directory=c.get('/dashboard/operators')
+    assert directory.status_code==200
+    assert 'کارشناسان و مقاصد' in directory.text
+    assert 'نامشخص' in directory.text
+    assert c.post('/dashboard/operators/assign',data={
+        'csrf':'wrong','name':'Test Op','destination':'مشهد','team':'غرب آسیا'
+    }).status_code==403
+    response=c.post('/dashboard/operators/assign',data={
+        'csrf':csrf,'name':'Test Op','destination':'مشهد','team':'غرب آسیا'
+    },follow_redirects=False)
+    assert response.status_code==303
+    options=c.get('/dashboard/filter-options').json()
+    assert {'value':'Test Op','label':'Test Op','destination':'مشهد','team':'غرب آسیا'} in options['operators']
+    assert 'مشهد' in options['destinations']
+    assert 'غرب آسیا' in options['teams']
+    assert 'نامشخص' in options['destinations']
+    seen={}
+    def list_calls(*args,**kwargs):
+        seen['args']=args
+        return []
+    monkeypatch.setattr(main.database,'list_calls',list_calls)
+    response=c.get('/dashboard/data?operator=Test%20Op&destination=مشهد')
+    assert response.status_code==200
+    assert seen['args'][8]=='Test Op'
+    assert seen['args'][9]==['Test Op']
+    assert c.get('/dashboard/data?destination=نامشخص').status_code==200
+    assert '__unspecified__' in seen['args'][9]
+    assert 'Other Op' in seen['args'][9]
+    assert 'Test Op' not in seen['args'][9]
+
+
+def test_operator_assignment_admin_only_and_unknown_source_rejected(client):
+    c,main=client
+    uid=main.store.create_user('operator-reader','a-very-long-reader-password','reader',['calls:read'])
+    token,csrf=main.store.create_session(uid)
+    c.cookies.set('panadan_session',token)
+    assert c.get('/dashboard/operators').status_code==200
+    assert c.post('/dashboard/operators/assign',data={
+        'name':'Test Op','team':'A','destination':'B','csrf':csrf
+    }).status_code==403
+    admin=main.store.verify_login('admin','a-long-safe-testing-password')
+    token,csrf=main.store.create_session(admin)
+    c.cookies.set('panadan_session',token)
+    assert c.post('/dashboard/operators/assign',data={
+        'name':'Not from database','team':'A','destination':'B','csrf':csrf
+    }).status_code==400
+
+
+def test_operator_rest_filter_retains_raw_values(client,monkeypatch):
+    c,main=client
+    uid=main.store.create_user('api_operator','another-long-password','analyst',
+                               ['calls:read','metrics:read'])
+    _,token=main.store.create_token('api operator','api:read',30,uid)
+    seen={}
+    def spy_list(*args,**kwargs):
+        seen.update(kwargs)
+        return []
+    monkeypatch.setattr(main.database,'list_calls',spy_list)
+    res=c.get('/api/v1/calls?operator=Test%20Op',headers={'Authorization':'Bearer '+token})
+    assert res.status_code==200
+    assert seen['operator']=='Test Op'
+    assert seen['operator_names'] is None
