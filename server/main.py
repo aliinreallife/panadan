@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
         yield
 
 
-app = FastAPI(title='Panadan API', version='0.6.0', docs_url=None,
+app = FastAPI(title='Panadan API', version='0.8.0', docs_url=None,
               redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.mount('/static', StaticFiles(directory='static'), name='static')
 # Activity logs contain ONLY a route category, actor, status and duration.
