@@ -185,19 +185,35 @@ const priorityFields=['summary','outcome','ai_recommendation','tell_state_desc']
 const heroFields=new Set(['id','CALLDATE','tellstate','aicallinfostate','possibility_of_sale_ai','vw_danix_base_info_users_name']);
 function longTextSection(key, value){
   const section=el('article','detail-analysis');
-  section.append(el('h3','detail-section-title',labels[key]||key));
+  const heading=el('h3','detail-section-title',labels[key]||key);
+  section.append(heading);
   const content=String(value);
-  if(content.length>620){
-    const preview=el('p','detail-analysis-text',content.slice(0,420)+'…');
-    const expand=el('details','inline-expand');
-    const label=el('summary','','خواندن متن کامل');
-    const complete=el('p','detail-analysis-text',content);
-    expand.append(label,complete);
-    section.append(preview,expand);
-    expand.addEventListener('toggle',()=>{preview.hidden=expand.open;});
-  }else section.append(el('p','detail-analysis-text',content));
+  if(content.length<=620){
+    section.append(el('p','detail-analysis-text',content));
+    return section;
+  }
+  const preview=el('p','detail-analysis-text',content.slice(0,360).trimEnd()+'…');
+  const full=el('p','detail-analysis-text',content);
+  const toggle=el('button','analysis-read-more');
+  toggle.type='button';
+  toggle.setAttribute('aria-expanded','false');
+  const target='analysis-full-'+Math.random().toString(36).slice(2,10);
+  full.id=target;toggle.setAttribute('aria-controls',target);
+  full.hidden=true;
+  const icon=el('span','analysis-toggle-icon','⌄');icon.setAttribute('aria-hidden','true');
+  const caption=el('span','','نمایش متن کامل');
+  toggle.append(caption,icon);
+  toggle.addEventListener('click',()=>{
+    const expanded=toggle.getAttribute('aria-expanded')!=='true';
+    toggle.setAttribute('aria-expanded',String(expanded));
+    preview.hidden=expanded;
+    full.hidden=!expanded;
+    caption.textContent=expanded?'بستن متن':'نمایش متن کامل';
+  });
+  section.append(preview,full,toggle);
   return section;
 }
+
 function metaValue(key,value){
   if(key==='CALLDATE')return dateFormat(value);
   if(key==='tellstate')return callTypeLabel(value);
@@ -210,19 +226,32 @@ function metaValue(key,value){
 function conversationSection(raw){
   const section=el('details','conversation-section');
   const summary=el('summary','conversation-opener');
-  const title=el('span','conversation-opener-title','متن کامل مکالمه');
-  const stats=el('span','conversation-opener-info',numberFormat(raw.length)+' نویسه · برای مشاهده باز کنید');
+  const icon=el('span','conversation-icon');
+  icon.textContent='☷';
+  icon.setAttribute('aria-hidden','true');
+  const titleBlock=el('span','conversation-title-block');
+  titleBlock.append(
+    el('strong','conversation-opener-title','متن کامل مکالمه'),
+    el('span','conversation-preview','نسخهٔ خوانا، تفکیک گوینده و متن اصلی')
+  );
+  const meta=el('span','conversation-opener-info',numberFormat(raw.length)+' نویسه');
+  const toggle=el('span','conversation-toggle');
+  const toggleText=el('span','conversation-toggle-label','باز کردن مکالمه');
   const arrow=el('span','conversation-chevron','⌄');
-  summary.append(title,stats,arrow);
+  arrow.setAttribute('aria-hidden','true');
+  toggle.append(toggleText,arrow);
+  summary.append(icon,titleBlock,meta,toggle);
   section.append(summary);
   let rendered=false;
   section.addEventListener('toggle',()=>{
+    toggleText.textContent=section.open?'بستن مکالمه':'باز کردن مکالمه';
     if(!section.open||rendered)return;
     rendered=true;
     section.append(transcriptPanel(raw));
   });
   return section;
 }
+
 async function detail(id){
   $('veil').hidden=false;
   const drawer=$('veil').querySelector('.drawer');
