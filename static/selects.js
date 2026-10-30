@@ -95,6 +95,7 @@ function enhanceSelect(select) {
   search.autocomplete='off';
   search.placeholder='جستجو میان گزینه‌ها…';
   search.setAttribute('aria-label','جستجو در '+label);
+  search.setAttribute('aria-controls',id+'-menu');
   search.spellcheck=false;
   const list=doc.createElement('div');
   list.className='ui-select-options';
@@ -267,6 +268,8 @@ function enhanceSelect(select) {
   observer.observe(select,{attributes:true,childList:true,subtree:true,characterData:true});
   select.form?.addEventListener('reset',()=>queueMicrotask(sync));
   select.dataset.selectReady='true';
+  select.tabIndex=-1;
+  select.setAttribute('aria-hidden','true');
   select.classList.add('ui-select-native');
   sync();
 }
