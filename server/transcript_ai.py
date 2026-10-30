@@ -43,13 +43,15 @@ def transcript_for_ai(record: dict | None, *, limit: int = MAX_TRANSCRIPT_CHARS,
         raise ValueError('Invalid transcript window start')
     before = offset - window_start
     raw_window = str(record.get('transcription') or '')
-    if before > len(raw_window):
+    total = int(record.get('total_chars') or 0)
+    # A caller may seek beyond EOF. Return an empty terminal page; never error
+    # or compute a negative page length.
+    if before > len(raw_window) and offset < total:
         raise ValueError('Invalid transcript window')
-    page_length = min(limit, len(raw_window) - before)
+    page_length = max(0, min(limit, len(raw_window) - before))
     # Redact *before* clipping: tokens split over two pages are still detected.
     safe_window = _mask(raw_window)
     excerpt = safe_window[before:before + page_length]
-    total = int(record.get('total_chars') or 0)
     next_offset = offset + page_length
 
     return {
