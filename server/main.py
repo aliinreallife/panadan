@@ -725,8 +725,8 @@ def mcp_transport_settings() -> TransportSecuritySettings:
                         parsed.username or parsed.password or parsed.path not in ('','/') or
                         parsed.query or parsed.fragment):
                     raise ValueError(f'{name} must contain specific HTTPS origins')
-            elif '/' in value or '@' in value or ':' not in value:
-                raise ValueError(f'{name} must contain exact host:port values')
+            elif any(ch in value for ch in '/@?#') or value.startswith(':'):
+                raise ValueError(f'{name} must contain exact public hostnames or host:port values')
         return items
     hosts=['localhost:*','127.0.0.1:*','[::1]:*'] + extras('PANADAN_MCP_ALLOWED_HOSTS')
     origins=['http://localhost:*','http://127.0.0.1:*'] + extras('PANADAN_MCP_ALLOWED_ORIGINS',origin=True)
