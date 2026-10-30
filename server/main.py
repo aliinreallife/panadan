@@ -20,6 +20,7 @@ from starlette import status
 from . import database
 from .transcript_ai import transcript_for_ai, MAX_TRANSCRIPT_CHARS
 from .mcp_tools import mcp
+from mcp.server.transport_security import TransportSecuritySettings
 from .oauth_mcp import OAuthConfig, OAuthVerifier
 from .security import Store, SESSION_SECONDS, CAPABILITIES, ROLE_GRANTS, permissions, has_capability, is_rate_limited, record_failure
 
@@ -705,4 +706,33 @@ class MCPBearerGate:
 
 
 # /mcp/ always requires authentication, and tools never allow arbitrary SQL.
-app.mount('/mcp', MCPBearerGate(mcp.streamable_http_app()))
+def mcp_transport_settings() -> TransportSecuritySettings:
+    """Require explicit host/origin allowlists for SDK v2 MCP transport.
+
+    Default hosts/origins are loopback-only. Public proxy hostnames must be
+    added explicitly before exposing the MCP route. Do not use wildcards.
+    """
+    def extras(name: str) -> list[str]:
+        items=[value.strip() for value in os.getenv(name,'').split(',') if value.strip()]
+        if any('*' in value or '/' in value or len(value)>253 or
+               any(ch.isspace() for ch in value) for value in items):
+            raise ValueError(f'{name} must contain specific host:port or HTTPS origins')
+        return items
+    hosts=['localhost:*','127.0.0.1:*','[::1]:*'] + extras('PANADAN_MCP_ALLOWED_HOSTS')
+    origins=['http://localhost:*','http://127.0.0.1:*'] + extras('PANADAN_MCP_ALLOWED_ORIGINS')
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
+
+
+# SDK v2 requires stateless/JSON and transport path on the ASGI factory,
+# not on MCPServer's constructor. Keep the source reporting tools read-only.
+app.mount('/mcp', MCPBearerGate(mcp.streamable_http_app(
+    streamable_http_path='/',
+    stateless_http=True,
+    json_response=True,
+    host='0.0.0.0',
+    transport_security=mcp_transport_settings(),
+)))
