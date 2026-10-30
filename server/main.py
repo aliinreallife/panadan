@@ -235,11 +235,77 @@ def logout(request: Request, csrf: str = Form(...), session: dict = Depends(curr
     return r
 
 
+def directory_operator_names(destination: str | None = None,
+                             team: str | None = None) -> list[str] | None:
+    """Destination/team are filters, NOT access-control rules."""
+    if not destination and not team: return None
+    if any(len(x)>80 for x in (destination,team) if x):
+        raise ValueError('Invalid directory filter')
+    entries=store.operator_assignments()
+    return [name for name in database.operators()
+            if (not destination or entries.get(name,{}).get('destination','نامشخص') == destination)
+            and (not team or entries.get(name,{}).get('team','نامشخص') == team)]
+
+
+def operator_display(name: str) -> str:
+    return 'نامشخص' if name == database.UNSPECIFIED else name
+
+
 @app.get('/dashboard', response_class=HTMLResponse, include_in_schema=False)
 def dashboard(request: Request):
     session = logged_in(request)
     if not session: return RedirectResponse('/login', status_code=303)
-    return templates.TemplateResponse(request, 'dashboard.html', {'csrf':session['csrf'], 'session':session, 'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES}})
+    return templates.TemplateResponse(request, 'dashboard.html', {
+        'csrf':session['csrf'],'session':session,
+        'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
+        'selected_operator':None, 'operator_title':None,
+    })
+
+
+@app.get('/dashboard/operator', response_class=HTMLResponse, include_in_schema=False)
+def operator_profile(request: Request, name: str = Query(...,min_length=1,max_length=180),
+                     session: dict = Depends(current_session)):
+    required(session,'calls:read')
+    return templates.TemplateResponse(request,'dashboard.html',{
+        'csrf':session['csrf'],'session':session,
+        'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
+        'selected_operator':name,'operator_title':operator_display(name),
+    },headers={'Cache-Control':'no-store'})
+
+
+@app.get('/dashboard/operators', response_class=HTMLResponse, include_in_schema=False)
+def operators_page(request: Request, session: dict = Depends(current_session)):
+    required(session,'calls:read')
+    try: names=database.operators()
+    except Exception as e: json_failure(e)
+    assignments=store.operator_assignments()
+    entries=[{
+        'name':name, 'label':operator_display(name),
+        'destination':assignments.get(name,{}).get('destination','نامشخص'),
+        'team':assignments.get(name,{}).get('team','نامشخص'),
+    } for name in names]
+    return templates.TemplateResponse(request,'operators.html',{
+        'session':session,'csrf':session['csrf'],
+        'entries':entries,'can_manage':has_capability(session,'users:manage'),
+    },headers={'Cache-Control':'no-store'})
+
+
+@app.post('/dashboard/operators/assign', include_in_schema=False)
+def assign_operator(request: Request, name: str = Form(...),
+                    destination: str = Form(''), team: str = Form(''),
+                    csrf: str = Form(...),
+                    session: dict = Depends(current_session)):
+    admin_only(session)
+    csrf_check(request,csrf,session)
+    try:
+        if name not in database.operators():
+            raise ValueError('Operator not in reporting source')
+        store.set_operator_assignment(name,destination,team)
+    except ValueError as e:
+        raise HTTPException(400,str(e)) from e
+    except Exception as e:
+        json_failure(e)
+    return RedirectResponse('/dashboard/operators',status_code=303)
 
 
 @app.get('/dashboard/tokens', response_class=HTMLResponse, include_in_schema=False)
