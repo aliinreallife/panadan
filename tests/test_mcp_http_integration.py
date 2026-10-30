@@ -25,6 +25,8 @@ def unwrap(result):
     if "error" in result:
         raise AssertionError(result)
     body=result.get("result",{})
+    if 'tools' in body:
+        return body
     if "structuredContent" in body:
         return body["structuredContent"]
     text=body.get("content",[])
