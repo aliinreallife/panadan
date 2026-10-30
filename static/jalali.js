@@ -15,10 +15,44 @@ window.PanadanDate = (() => {
     const pad = x => String(x).padStart(2, '0');
     return `${jsDate.getFullYear()}-${pad(jsDate.getMonth()+1)}-${pad(jsDate.getDate())}`;
   }
+  // Doran is a Web Component: its internal inputs and calendar may live in
+  // shadow DOM, where dashboard CSS selectors do not apply.
+  const calendarFont = "'Vazirmatn Variable', Vazirmatn, Tahoma, sans-serif";
+  function applyCalendarFont(host) {
+    if (!host) return;
+    host.style.setProperty('font-family',calendarFont,'important');
+    host.style.setProperty('--font-family',calendarFont);
+    host.style.setProperty('--doran-font-family',calendarFont);
+    const root=host.shadowRoot;
+    if(root && !root.getElementById('panadan-doran-font')){
+      const style=document.createElement('style');
+      style.id='panadan-doran-font';
+      style.textContent=`
+        :host {font-family:${calendarFont} !important;font-synthesis:none}
+        input,button,select,textarea,[role="dialog"],[role="grid"],[role="gridcell"],
+        [role="button"],[role="textbox"],[part] {
+          font-family:${calendarFont} !important;
+          font-synthesis:none;
+        }
+      `;
+      root.append(style);
+    }
+  }
+  function installFont(host) {
+    if(!host)return;
+    applyCalendarFont(host);
+    window.customElements.whenDefined('doran-datepicker').then(()=>{
+      applyCalendarFont(host);
+      requestAnimationFrame(()=>applyCalendarFont(host));
+    });
+    host.addEventListener('focusin',()=>applyCalendarFont(host));
+    host.addEventListener('click',()=>applyCalendarFont(host));
+  }
   const attach = (id) => {
     const host = document.getElementById(id + '-doran');
     const hidden = document.getElementById(id);
     if (!hidden) return;
+    installFont(host);
     // Without the self-hosted component, native date inputs remain usable.
     if (!window.customElements.get('doran-datepicker')) {
       hidden.type = 'date'; hidden.hidden = false;
@@ -36,6 +70,7 @@ window.PanadanDate = (() => {
     const host = document.getElementById(id + '-doran');
     const hidden = document.getElementById(id);
     if (!hidden) return;
+    installFont(host);
     if (!window.customElements.get('doran-datepicker')) {
       hidden.type='datetime-local'; hidden.hidden=false;
       if(host)host.hidden=true;

@@ -117,6 +117,20 @@ Permissions are enforced server-side, no third-party JavaScript is loaded, and
 no transcript or customer-identifying data is returned to the page tools.
 See `docs/WEBMCP.md` for testing steps and constraints.
 
+## Operator profiles and directory
+
+Use the operator filter on the dashboard, or click an operator name in the
+call table to open `/dashboard/operator?name=...` for the operator's own
+statistics and calls. `/dashboard/operators` lists known operators and lets
+admins assign local destinations and teams, with `نامشخص` for unassigned
+values. These labels can be used as additional dashboard, REST, MCP and WebMCP
+filters without modifying the source reporting view.
+
+**Team/destination filtering is not team-based authorization.** Restricted
+access by destination, team and operator needs stable source operator IDs and
+a single verified scope check across all reading surfaces. See
+`docs/OPERATOR_SCOPES.md`.
+
 ## Activity & AI transcript access
 
 Admin **فعالیت کاربران**: `/dashboard/activity` provides an RTL dashboard with

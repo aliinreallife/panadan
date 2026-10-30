@@ -112,3 +112,20 @@ test('registration aborts and returns null when browser API rejects a tool', asy
   assert.equal(result,null);
   assert.equal(signal.aborted,true);
 });
+
+test('WebMCP operator/team/destination filters preserve source values', async () => {
+  const paths=[];
+  const tools=createWebMcpTools({
+    canReadCalls:true,canReadMetrics:true,
+    request:async path=>{paths.push(path);return {items:[],total:0};}
+  });
+  await find(tools,'panadan_find_calls').execute({
+    operator:'کارشناس مشهد',destination:'مشهد',team:'غرب آسیا',limit:5
+  });
+  const url=new URL('http://localhost'+paths[0]);
+  assert.equal(url.searchParams.get('operator'),'کارشناس مشهد');
+  assert.equal(url.searchParams.get('destination'),'مشهد');
+  assert.equal(url.searchParams.get('team'),'غرب آسیا');
+  await find(tools,'panadan_get_call_metrics').execute({operator:'کارشناس مشهد'});
+  assert.equal(new URL('http://localhost'+paths[1]).searchParams.get('operator'),'کارشناس مشهد');
+});

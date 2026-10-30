@@ -1,0 +1,36 @@
+<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>کارشناسان و مقاصد | پانادان</title><link rel="stylesheet" href="/static/vendor/panadan-bundle.css"><link rel="stylesheet" href="/static/style.css"></head>
+<body><div class="shell">
+<aside class="sidebar"><a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
+<nav><a href="/dashboard">▦ گزارش تماس‌ها</a><a class="active" href="/dashboard/operators">♙ کارشناسان و مقاصد</a>
+{% if can_manage %}<a href="/dashboard/users">♙ کاربران و دسترسی‌ها</a><a href="/dashboard/activity">▤ فعالیت کاربران</a>{% endif %}</nav>
+<div class="side-footer"><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{csrf}}"><button class="link-button">خروج</button></form></div>
+</aside>
+<main class="content">
+<header class="page-head"><div><span class="eyebrow">دایرکتوری تیم فروش</span><h1>کارشناسان و مقاصد</h1><p class="muted">هر کارشناس یک صفحهٔ اختصاصی برای آمار و تماس‌هایش دارد.</p></div><span class="tag">{{entries|length}} کارشناس</span></header>
+<section class="panel"><div class="panel-head"><h2>جستجوی کارشناسان</h2><span class="tag">فقط خواندنی</span></div>
+<label class="operator-directory-search">جستجو بر اساس نام، تیم یا مقصد
+<input type="search" id="operator-search" placeholder="نام کارشناس، مشهد، غرب آسیا…" autocomplete="off"></label>
+<p class="description">تیم و مقصد هنوز برای محدودکردن دسترسی کاربران استفاده نمی‌شوند؛ تا زمانی که محدودیت‌ها در REST API، MCP و همهٔ مسیرهای گزارش enforced شوند، این بخش فقط دسته‌بندی و فیلتر است.</p>
+<div class="table-scroller"><table class="operator-directory-table"><thead><tr><th>کارشناس</th><th>مقصد</th><th>تیم</th>{% if can_manage %}<th>دسته‌بندی</th>{% endif %}</tr></thead><tbody id="operator-directory">
+{% for entry in entries %}
+<tr data-search="{{entry.label}} {{entry.destination}} {{entry.team}}">
+<td><a class="operator-name-link" href="/dashboard/operator?name={{entry.name|urlencode}}">{{entry.label}}</a></td>
+<td><span class="operator-directory-tag">{{entry.destination}}</span></td>
+<td><span class="operator-directory-tag">{{entry.team}}</span></td>
+{% if can_manage %}<td>
+<form method="post" action="/dashboard/operators/assign" class="operator-assignment-form">
+<input type="hidden" name="csrf" value="{{csrf}}"><input type="hidden" name="name" value="{{entry.name}}">
+<label>مقصد<input name="destination" maxlength="80" value="{{'' if entry.destination=='نامشخص' else entry.destination}}" placeholder="نامشخص"></label>
+<label>تیم<input name="team" maxlength="80" value="{{'' if entry.team=='نامشخص' else entry.team}}" placeholder="نامشخص"></label>
+<button type="submit" class="secondary">ذخیره</button>
+</form></td>{% endif %}
+</tr>
+{% else %}<tr><td colspan="{{4 if can_manage else 3}}" class="muted">کارشناسی در گزارش‌ها ثبت نشده است.</td></tr>{% endfor %}
+</tbody></table></div>
+<p id="operator-empty" class="muted" hidden>کارشناسی با این عبارت پیدا نشد.</p>
+</section></main></div>
+<script type="module">
+import {normalizeSearch} from '/static/selects.js';
+const search=document.getElementById('operator-search'), rows=[...document.querySelectorAll('#operator-directory tr[data-search]')];
+search?.addEventListener('input',()=>{const q=normalizeSearch(search.value);let visible=0;for(const row of rows){const match=normalizeSearch(row.dataset.search).includes(q);row.hidden=!match;if(match)visible++;}document.getElementById('operator-empty').hidden=visible>0||!q;});
+</script></body></html>

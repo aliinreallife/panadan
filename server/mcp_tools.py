@@ -7,10 +7,14 @@ mcp = FastMCP('Panadan', instructions='Read-only reporting for authorized busine
 
 
 @mcp.tool()
-def list_recent_calls(limit: int = 10, offset: int = 0, after: str = '', before: str = '', state: str = '') -> list[dict]:
+def list_recent_calls(limit: int = 10, offset: int = 0, after: str = '', before: str = '',
+                      state: str = '', operator: str = '', destination: str = '', team: str = '') -> list[dict]:
     """List summary metadata for calls; no customer phone numbers or transcripts."""
-    return database.list_calls(limit, offset, date.fromisoformat(after) if after else None,
-                               date.fromisoformat(before) if before else None, state or None)
+    from .main import directory_operator_names
+    names=directory_operator_names(destination or None,team or None)
+    return database.list_calls(limit,offset,date.fromisoformat(after) if after else None,
+                               date.fromisoformat(before) if before else None,
+                               state or None,operator=operator or None,operator_names=names)
 
 
 @mcp.tool()
@@ -20,10 +24,14 @@ def get_call_summary(call_id: int) -> dict:
 
 
 @mcp.tool()
-def get_call_metrics(after: str = '', before: str = '') -> dict:
+def get_call_metrics(after: str = '', before: str = '', operator: str = '',
+                     destination: str = '', team: str = '') -> dict:
     """Aggregate counts, reported SoldOut states and averages for a date range."""
+    from .main import directory_operator_names
     return database.stats(date.fromisoformat(after) if after else None,
-                          date.fromisoformat(before) if before else None)
+                          date.fromisoformat(before) if before else None,
+                          operator=operator or None,
+                          operator_names=directory_operator_names(destination or None,team or None))
 
 
 @mcp.tool()

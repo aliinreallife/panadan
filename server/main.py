@@ -66,7 +66,8 @@ async def audit_http_activity(request: Request, call_next):
         '/dashboard', '/dashboard/data', '/dashboard/metrics',
         '/dashboard/filter-options', '/dashboard/api', '/dashboard/users',
         '/dashboard/tokens', '/dashboard/connect', '/dashboard/oauth',
-        '/dashboard/activity', '/dashboard/activity/data'
+        '/dashboard/activity', '/dashboard/activity/data',
+        '/dashboard/operator', '/dashboard/operators', '/dashboard/operators/assign'
     }
     if path in approved:
         action = path
@@ -235,11 +236,78 @@ def logout(request: Request, csrf: str = Form(...), session: dict = Depends(curr
     return r
 
 
+def directory_operator_names(destination: str | None = None,
+                             team: str | None = None) -> list[str] | None:
+    """Destination/team are filters, NOT access-control rules."""
+    if not destination and not team: return None
+    if any(len(x)>80 for x in (destination,team) if x):
+        raise ValueError('Invalid directory filter')
+    entries=store.operator_assignments()
+    return [name for name in database.operators()
+            if (not destination or entries.get(name,{}).get('destination','نامشخص') == destination)
+            and (not team or entries.get(name,{}).get('team','نامشخص') == team)]
+
+
+def operator_display(name: str) -> str:
+    return 'نامشخص' if name == database.UNSPECIFIED else name
+
+
 @app.get('/dashboard', response_class=HTMLResponse, include_in_schema=False)
 def dashboard(request: Request):
     session = logged_in(request)
     if not session: return RedirectResponse('/login', status_code=303)
-    return templates.TemplateResponse(request, 'dashboard.html', {'csrf':session['csrf'], 'session':session, 'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES}})
+    return templates.TemplateResponse(request, 'dashboard.html', {
+        'csrf':session['csrf'],'session':session,
+        'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
+        'selected_operator':None, 'operator_title':None, 'operator_meta':{},
+    })
+
+
+@app.get('/dashboard/operator', response_class=HTMLResponse, include_in_schema=False)
+def operator_profile(request: Request, name: str = Query(...,min_length=1,max_length=180),
+                     session: dict = Depends(current_session)):
+    required(session,'calls:read')
+    return templates.TemplateResponse(request,'dashboard.html',{
+        'csrf':session['csrf'],'session':session,
+        'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
+        'selected_operator':name,'operator_title':operator_display(name),
+        'operator_meta':store.operator_assignments().get(name,{'destination':'نامشخص','team':'نامشخص'}),
+    },headers={'Cache-Control':'no-store'})
+
+
+@app.get('/dashboard/operators', response_class=HTMLResponse, include_in_schema=False)
+def operators_page(request: Request, session: dict = Depends(current_session)):
+    required(session,'calls:read')
+    try: names=database.operators()
+    except Exception as e: json_failure(e)
+    assignments=store.operator_assignments()
+    entries=[{
+        'name':name, 'label':operator_display(name),
+        'destination':assignments.get(name,{}).get('destination','نامشخص'),
+        'team':assignments.get(name,{}).get('team','نامشخص'),
+    } for name in names]
+    return templates.TemplateResponse(request,'operators.html',{
+        'session':session,'csrf':session['csrf'],
+        'entries':entries,'can_manage':has_capability(session,'users:manage'),
+    },headers={'Cache-Control':'no-store'})
+
+
+@app.post('/dashboard/operators/assign', include_in_schema=False)
+def assign_operator(request: Request, name: str = Form(...),
+                    destination: str = Form(''), team: str = Form(''),
+                    csrf: str = Form(...),
+                    session: dict = Depends(current_session)):
+    admin_only(session)
+    csrf_check(request,csrf,session)
+    try:
+        if name not in database.operators():
+            raise ValueError('Operator not in reporting source')
+        store.set_operator_assignment(name,destination,team)
+    except ValueError as e:
+        raise HTTPException(400,str(e)) from e
+    except Exception as e:
+        json_failure(e)
+    return RedirectResponse('/dashboard/operators',status_code=303)
 
 
 @app.get('/dashboard/tokens', response_class=HTMLResponse, include_in_schema=False)
@@ -281,10 +349,16 @@ def revoke_token(request: Request, tid: int, csrf: str = Form(...),
 def dashboard_data(request: Request, limit: int = Query(20, ge=1, le=100),
                    offset: int = Query(0, ge=0, le=10000), after: date | None = None,
                    before: date | None = None, state: str | None = None,
-                   call_type: str | None = None, created_after: datetime | None = None, created_before: datetime | None = None,
+                   call_type: str | None = None, operator: str | None = Query(None,max_length=180),
+                   destination: str | None = Query(None,max_length=80),
+                   team: str | None = Query(None,max_length=80),
+                   created_after: datetime | None = None, created_before: datetime | None = None,
                    session: dict = Depends(current_session)):
     required(session, 'calls:read')
-    try: return {'items':database.list_calls(limit,offset,after,before,state,created_after,created_before,call_type)}
+    try:
+        names=directory_operator_names(destination,team)
+        return {'items':database.list_calls(limit,offset,after,before,state,created_after,created_before,
+                                            call_type,operator,names)}
     except Exception as e: json_failure(e)
 
 
@@ -292,7 +366,17 @@ def dashboard_data(request: Request, limit: int = Query(20, ge=1, le=100),
 def dashboard_filter_options(session: dict = Depends(current_session)):
     required(session, 'calls:read')
     try:
-        return {'states': database.statuses(), 'call_types': database.call_types()}
+        names=database.operators()
+        assignments=store.operator_assignments()
+        return {
+            'states': database.statuses(), 'call_types': database.call_types(),
+            'operators':[{'value':name,'label':operator_display(name),
+                          'destination':assignments.get(name,{}).get('destination','نامشخص'),
+                          'team':assignments.get(name,{}).get('team','نامشخص')}
+                         for name in names],
+            'destinations':sorted({'نامشخص',*(row['destination'] for row in assignments.values())}),
+            'teams':sorted({'نامشخص',*(row['team'] for row in assignments.values())}),
+        }
     except Exception as e: json_failure(e)
 
 
@@ -340,17 +424,28 @@ def dashboard_detail(call_id: int, session: dict = Depends(current_session)):
 @app.get('/dashboard/metrics', include_in_schema=False)
 def dashboard_metrics(after: date | None = None, before: date | None = None,
                       created_after: datetime | None = None, created_before: datetime | None = None,
+                      operator: str | None = Query(None,max_length=180),
+                      destination: str | None = Query(None,max_length=80),
+                      team: str | None = Query(None,max_length=80),
                       session: dict = Depends(current_session)):
     required(session,'metrics:read')
-    try: return database.stats(after, before, created_after, created_before)
+    try:
+        names=directory_operator_names(destination,team)
+        return database.stats(after,before,created_after,created_before,operator,names)
     except Exception as e: json_failure(e)
 
 
 @app.get('/api/v1/calls', dependencies=[Depends(require_api)], tags=['Calls'])
 def api_calls(limit: int = Query(20,ge=1,le=100), offset: int = Query(0,ge=0,le=10000),
               after: date | None = None, before: date | None = None, state: str | None = None,
-              call_type: str | None = None):
-    try: return {'items':database.list_calls(limit,offset,after,before,state,call_type=call_type)}
+              call_type: str | None = None,
+              operator: str | None = Query(None,max_length=180),
+              destination: str | None = Query(None,max_length=80),
+              team: str | None = Query(None,max_length=80)):
+    try:
+        return {'items':database.list_calls(limit,offset,after,before,state,call_type=call_type,
+                                            operator=operator,
+                                            operator_names=directory_operator_names(destination,team))}
     except Exception as e: json_failure(e)
 
 
@@ -364,8 +459,12 @@ def api_call(call_id: int, request: Request, include_sensitive: bool = False):
 
 
 @app.get('/api/v1/stats', dependencies=[Depends(require_metrics_api)], tags=['Analytics'])
-def api_stats(after: date | None = None, before: date | None = None):
-    try: return database.stats(after, before)
+def api_stats(after: date | None = None, before: date | None = None,
+              operator: str | None = Query(None,max_length=180),
+              destination: str | None = Query(None,max_length=80),
+              team: str | None = Query(None,max_length=80)):
+    try: return database.stats(after,before,operator=operator,
+                               operator_names=directory_operator_names(destination,team))
     except Exception as e: json_failure(e)
 
 

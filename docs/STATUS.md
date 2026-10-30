@@ -112,3 +112,20 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
   retains the sign-out action
 - [x] Unit tests of filtering, raw value preservation and keyboard movement
 - [ ] Real browser visual QA including keyboard, screen-reader and mobile touch
+
+## Operator profiles, directory and conversation/date UX
+
+- [x] Operator name filter across dashboard calls and aggregate statistics
+- [x] One-click operator profile with that operator's stats, calls and source detail
+- [x] Admin-managed local destination/team assignment and filtering, with
+  missing values consistently labeled `نامشخص`
+- [x] Read-only operator/team/destination filters in REST, MCP and WebMCP
+- [x] Redesign the conversation expand/collapse card and long-analysis controls
+- [x] Apply self-hosted Vazirmatn font to Doran inputs/calendar including
+  open shadow roots where supported
+- [x] Synthetic tests for report query filters, admin authorization and metadata
+- [ ] Manually verify the Doran popup font, keyboard focus, mobile transcript
+  disclosure and real operator name values against a live deployment
+- [ ] Add **real** operator/team/destination RBAC after confirming a stable
+  operator ID in source data and enforcing the scope in every API/MCP path
+  (see docs/OPERATOR_SCOPES.md).

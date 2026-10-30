@@ -5,6 +5,8 @@ import {callTypeLabel, callStateLabel, knownTypeOptions, knownStateOptions} from
 'use strict';
 const $ = id => document.getElementById(id);
 let offset=0;
+const profileOperator=document.getElementById('dashboard-content')?.dataset.profileOperator||'';
+const operatorName=value=>value==='__unspecified__'||!String(value||'').trim()?'نامشخص':String(value);
 const limit=20;
 const dateFormat = value => window.PanadanDate ? PanadanDate.format(value) : value;
 const numberFormat = value => value === null || value === undefined ? '—' : new Intl.NumberFormat('fa-IR').format(value);
@@ -26,7 +28,8 @@ const showError=error=>{const target=$('error');if(target){target.textContent=er
 const clearError=()=>{if($('error'))$('error').hidden=true;};
 const filters=()=>{
   const values=new URLSearchParams({limit,offset});
-  for(const key of ['after','before','state','call_type','created_after','created_before'])if($(key)?.value)values.set(key,$(key).value);
+  for(const key of ['after','before','state','call_type','operator','destination','team','created_after','created_before'])if($(key)?.value)values.set(key,$(key).value);
+  if(profileOperator)values.set('operator',profileOperator);
   return values;
 };
 async function load(){
@@ -54,6 +57,13 @@ async function load(){
           badge.title='مقدار اصلی: '+value;
           td.append(badge);
         } else if(key==='CALLDATE')td.textContent=dateFormat(value);
+        else if(key==='vw_danix_base_info_users_name'){
+          const name=(value==='—'||!String(value).trim())?'__unspecified__':String(value);
+          const link=el('a','operator-name-link',operatorName(name));
+          link.href='/dashboard/operator?name='+encodeURIComponent(name);
+          link.title='مشاهده آمار و تماس‌های '+operatorName(name);
+          td.append(link);
+        }
         else if(key==='possibility_of_sale_ai')td.textContent=numberFormat(item[key]);
         else td.textContent=value;
         tr.append(td);
@@ -69,7 +79,8 @@ async function metrics(){
   if(!$('metric-total'))return;
   try{
     const params=new URLSearchParams();
-    for(const key of ['after','before','created_after','created_before'])if($(key)?.value)params.set(key,$(key).value);
+    for(const key of ['after','before','created_after','created_before','operator','destination','team'])if($(key)?.value)params.set(key,$(key).value);
+    if(profileOperator)params.set('operator',profileOperator);
     const data=await fetchJSON('/dashboard/metrics?'+params);
     $('metric-total').textContent=numberFormat(data.total);
     $('metric-sold').textContent=numberFormat(data.sold_out);
@@ -92,15 +103,23 @@ async function loadFilterOptions(){
   };
   // Static fallback works even if distinct-value lookup is unavailable.
   let types=knownTypeOptions(),states=knownStateOptions();
+  let foundOperators=[],foundDestinations=['نامشخص'],foundTeams=['نامشخص'];
   try{
     const found=await fetchJSON('/dashboard/filter-options');
     if(Array.isArray(found.call_types))types=[...new Set([...types,...found.call_types])];
     if(Array.isArray(found.states))states=[...new Set([...states,...found.states])];
+    if(Array.isArray(found.operators))foundOperators=found.operators;
+    if(Array.isArray(found.destinations))foundDestinations=found.destinations;
+    if(Array.isArray(found.teams))foundTeams=found.teams;
   }catch{
     // Filters remain functional with common known values.
   }
   makeOptions('call_type',types,callTypeLabel);
   makeOptions('state',states,callStateLabel);
+  const directory=Array.isArray(foundOperators)?foundOperators:[];
+  makeOptions('operator',directory.map(v=>v.value),v=>operatorName(v));
+  makeOptions('destination',foundDestinations,v=>v);
+  makeOptions('team',foundTeams,v=>v);
 }
 const labels={id:'شناسه تماس',CALLDATE:'تاریخ تماس',call_id:'شناسه سیستمی',tellstate:'نوع تماس',tellside:'جهت تماس',aicallinfostate:'وضعیت AI',voice_length:'مدت صوت',possibility_of_sale_ai:'امتیاز AI',deal_value:'ارزش معامله',vw_danix_base_info_users_name:'کارشناس',customername:'نام مشتری',customertell:'شماره مشتری',outcome:'نتیجه تماس',ai_recommendation:'پیشنهاد AI',summary:'خلاصه',transcription:'متن مکالمه',tell_state_desc:'دلیل دسته‌بندی',create_date:'زمان ثبت'};
 function transcriptPanel(raw){
@@ -166,19 +185,35 @@ const priorityFields=['summary','outcome','ai_recommendation','tell_state_desc']
 const heroFields=new Set(['id','CALLDATE','tellstate','aicallinfostate','possibility_of_sale_ai','vw_danix_base_info_users_name']);
 function longTextSection(key, value){
   const section=el('article','detail-analysis');
-  section.append(el('h3','detail-section-title',labels[key]||key));
+  const heading=el('h3','detail-section-title',labels[key]||key);
+  section.append(heading);
   const content=String(value);
-  if(content.length>620){
-    const preview=el('p','detail-analysis-text',content.slice(0,420)+'…');
-    const expand=el('details','inline-expand');
-    const label=el('summary','','خواندن متن کامل');
-    const complete=el('p','detail-analysis-text',content);
-    expand.append(label,complete);
-    section.append(preview,expand);
-    expand.addEventListener('toggle',()=>{preview.hidden=expand.open;});
-  }else section.append(el('p','detail-analysis-text',content));
+  if(content.length<=620){
+    section.append(el('p','detail-analysis-text',content));
+    return section;
+  }
+  const preview=el('p','detail-analysis-text',content.slice(0,360).trimEnd()+'…');
+  const full=el('p','detail-analysis-text',content);
+  const toggle=el('button','analysis-read-more');
+  toggle.type='button';
+  toggle.setAttribute('aria-expanded','false');
+  const target='analysis-full-'+Math.random().toString(36).slice(2,10);
+  full.id=target;toggle.setAttribute('aria-controls',target);
+  full.hidden=true;
+  const icon=el('span','analysis-toggle-icon','⌄');icon.setAttribute('aria-hidden','true');
+  const caption=el('span','','نمایش متن کامل');
+  toggle.append(caption,icon);
+  toggle.addEventListener('click',()=>{
+    const expanded=toggle.getAttribute('aria-expanded')!=='true';
+    toggle.setAttribute('aria-expanded',String(expanded));
+    preview.hidden=expanded;
+    full.hidden=!expanded;
+    caption.textContent=expanded?'بستن متن':'نمایش متن کامل';
+  });
+  section.append(preview,full,toggle);
   return section;
 }
+
 function metaValue(key,value){
   if(key==='CALLDATE')return dateFormat(value);
   if(key==='tellstate')return callTypeLabel(value);
@@ -191,19 +226,32 @@ function metaValue(key,value){
 function conversationSection(raw){
   const section=el('details','conversation-section');
   const summary=el('summary','conversation-opener');
-  const title=el('span','conversation-opener-title','متن کامل مکالمه');
-  const stats=el('span','conversation-opener-info',numberFormat(raw.length)+' نویسه · برای مشاهده باز کنید');
+  const icon=el('span','conversation-icon');
+  icon.textContent='☷';
+  icon.setAttribute('aria-hidden','true');
+  const titleBlock=el('span','conversation-title-block');
+  titleBlock.append(
+    el('strong','conversation-opener-title','متن کامل مکالمه'),
+    el('span','conversation-preview','نسخهٔ خوانا، تفکیک گوینده و متن اصلی')
+  );
+  const meta=el('span','conversation-opener-info',numberFormat(raw.length)+' نویسه');
+  const toggle=el('span','conversation-toggle');
+  const toggleText=el('span','conversation-toggle-label','باز کردن مکالمه');
   const arrow=el('span','conversation-chevron','⌄');
-  summary.append(title,stats,arrow);
+  arrow.setAttribute('aria-hidden','true');
+  toggle.append(toggleText,arrow);
+  summary.append(icon,titleBlock,meta,toggle);
   section.append(summary);
   let rendered=false;
   section.addEventListener('toggle',()=>{
+    toggleText.textContent=section.open?'بستن مکالمه':'باز کردن مکالمه';
     if(!section.open||rendered)return;
     rendered=true;
     section.append(transcriptPanel(raw));
   });
   return section;
 }
+
 async function detail(id){
   $('veil').hidden=false;
   const drawer=$('veil').querySelector('.drawer');
@@ -264,7 +312,7 @@ async function detail(id){
   }catch(error){$('detail').textContent=error.message;}
 }
 function clearDates(){
-  for(const key of ['after','before','state','call_type','created_after','created_before']){
+  for(const key of ['after','before','state','call_type','operator','destination','team','created_after','created_before']){
     if($(key))$(key).value='';
     const component=$(key+'-doran');if(component){component.removeAttribute('value');component.value=null;}
   }

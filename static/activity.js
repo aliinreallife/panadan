@@ -17,6 +17,9 @@ const surfaceLabel={dashboard:'داشبورد',api:'REST API',mcp:'MCP',auth:'و
 const actionTitles={
   'GET /dashboard':'باز کردن داشبورد',
   'GET /dashboard/data':'مرور فهرست تماس‌ها',
+  'GET /dashboard/operator':'مشاهده صفحهٔ کارشناس',
+  'GET /dashboard/operators':'فهرست کارشناسان و مقاصد',
+  'POST /dashboard/operators/assign':'ثبت تیم یا مقصد کارشناس',
   'GET /dashboard/metrics':'مشاهده آمار تماس‌ها',
   'GET /dashboard/filter-options':'بارگذاری فیلترهای گزارش',
   'GET /dashboard/activity':'مشاهده فعالیت کاربران',

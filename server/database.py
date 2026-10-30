@@ -10,6 +10,8 @@ import psycopg
 from psycopg.rows import dict_row
 
 VIEW = 'public.vw_danix_call_info_report'
+OPERATOR_COLUMN = 'vw_danix_base_info_users_name'
+UNSPECIFIED = '__unspecified__'
 PUBLIC_COLUMNS = (
     'id', 'CALLDATE', 'tellstate', 'tellside', 'aicallinfostate',
     'voice_length', 'possibility_of_sale_ai', 'deal_value',
@@ -50,12 +52,30 @@ def connect():
 
 def filters(after: date | None, before: date | None, state: str | None,
             created_after: datetime | None = None, created_before: datetime | None = None,
-            call_type: str | None = None):
+            call_type: str | None = None, operator: str | None = None,
+            operator_names: list[str] | None = None):
     parts, args = [], []
     if after: parts.append('"CALLDATE" >= %s'); args.append(after)
     if before: parts.append('"CALLDATE" <= %s'); args.append(before)
     if state: parts.append('"aicallinfostate" = %s'); args.append(state)
     if call_type: parts.append('"tellstate" = %s'); args.append(call_type)
+    if operator == UNSPECIFIED:
+        parts.append('(' + '"' + OPERATOR_COLUMN + '" IS NULL OR BTRIM("' + OPERATOR_COLUMN + '") = \'\')')
+    elif operator:
+        parts.append('"' + OPERATOR_COLUMN + '" = %s'); args.append(operator)
+    if operator_names is not None:
+        names = [n for n in operator_names if n != UNSPECIFIED]
+        missing = UNSPECIFIED in operator_names
+        if names and missing:
+            parts.append('("' + OPERATOR_COLUMN + '" = ANY(%s) OR "' +
+                         OPERATOR_COLUMN + '" IS NULL OR BTRIM("' + OPERATOR_COLUMN + '") = \'\')')
+            args.append(names)
+        elif names:
+            parts.append('"' + OPERATOR_COLUMN + '" = ANY(%s)'); args.append(names)
+        elif missing:
+            parts.append('("' + OPERATOR_COLUMN + '" IS NULL OR BTRIM("' + OPERATOR_COLUMN + '") = \'\')')
+        else:
+            parts.append('FALSE')
     # Odoo's create_date is a naive UTC timestamp; display times are Asia/Tehran.
     # Convert aware ISO inputs to a UTC-naive timestamp for comparisons.
     from datetime import timezone
@@ -71,14 +91,16 @@ def filters(after: date | None, before: date | None, state: str | None,
 def list_calls(limit: int = 20, offset: int = 0, after: date | None = None,
                before: date | None = None, state: str | None = None,
                created_after: datetime | None = None, created_before: datetime | None = None,
-               call_type: str | None = None):
+               call_type: str | None = None, operator: str | None = None,
+               operator_names: list[str] | None = None):
     limit = max(1, min(int(limit), 100))
     offset = max(0, min(int(offset), 10000))
     if after and before and after > before: raise ValueError('Invalid date range')
     if state and len(state) > 60: raise ValueError('Invalid state')
     if call_type and len(call_type) > 60: raise ValueError('Invalid call type')
+    if operator and len(operator) > 180: raise ValueError('Invalid operator')
     if created_after and created_before and created_after > created_before: raise ValueError('Invalid time range')
-    where, params = filters(after, before, state, created_after, created_before, call_type)
+    where, params = filters(after, before, state, created_after, created_before, call_type, operator, operator_names)
     q = ('SELECT ' + ','.join('"' + c + '"' for c in PUBLIC_COLUMNS) +
          ' FROM ' + VIEW + where + ' ORDER BY "CALLDATE" DESC NULLS LAST, id DESC LIMIT %s OFFSET %s')
     with connect() as c:
@@ -129,8 +151,9 @@ def transcript_excerpt(call_id: int, char_limit: int = 6000,
 
 
 def stats(after: date | None = None, before: date | None = None,
-          created_after: datetime | None = None, created_before: datetime | None = None):
-    where, params = filters(after, before, None, created_after, created_before)
+          created_after: datetime | None = None, created_before: datetime | None = None,
+          operator: str | None = None, operator_names: list[str] | None = None):
+    where, params = filters(after, before, None, created_after, created_before, operator=operator, operator_names=operator_names)
     q = ('SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE "aicallinfostate" = %s) AS sold_out, '
          'ROUND(AVG("possibility_of_sale_ai")::numeric, 1) AS avg_ai_score, '
          'ROUND(AVG("voice_length")::numeric, 1) AS avg_voice_length '
@@ -153,6 +176,19 @@ def call_types():
         rows = c.execute('SELECT DISTINCT "tellstate" AS value FROM ' + VIEW +
                          ' WHERE "tellstate" IS NOT NULL ORDER BY value LIMIT 100').fetchall()
     return [r['value'] for r in rows]
+
+def operators():
+    """Read distinct operator names. Missing values are represented explicitly."""
+    with connect() as c:
+        rows = c.execute('SELECT DISTINCT "' + OPERATOR_COLUMN +
+                         '" AS value FROM ' + VIEW +
+                         ' ORDER BY value NULLS FIRST LIMIT 1000').fetchall()
+    result = sorted({str(r['value']).strip() for r in rows
+                     if r['value'] is not None and str(r['value']).strip()})
+    if any(r['value'] is None or not str(r['value']).strip() for r in rows):
+        return [UNSPECIFIED, *result]
+    return result
+
 
 def health():
     with connect() as c:
