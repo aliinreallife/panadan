@@ -1,4 +1,5 @@
 import {parseTranscript} from './transcript.js';
+import {enhanceSelects} from './selects.js';
 import {registerPanadanWebMcp} from './webmcp.js';
 import {callTypeLabel, callStateLabel, knownTypeOptions, knownStateOptions} from './labels.js';
 'use strict';
@@ -269,6 +270,7 @@ function clearDates(){
   }
 }
 function initialize(){
+  enhanceSelects();
   for(const key of ['after','before'])PanadanDate.attach(key);
   for(const key of ['created_after','created_before'])PanadanDate.attachDateTime(key);
   const form=$('filters');if(form)form.onsubmit=event=>{event.preventDefault();offset=0;load();metrics()};
