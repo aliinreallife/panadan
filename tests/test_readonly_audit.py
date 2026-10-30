@@ -35,6 +35,7 @@ class Connection:
     lambda: database.stats(),
     lambda: database.statuses(),
     lambda: database.call_types(),
+    lambda: database.operators(),
     lambda: database.health(),
 ])
 def test_every_reporting_operation_is_select_only_and_read_only(monkeypatch, operation):
