@@ -66,7 +66,8 @@ async def audit_http_activity(request: Request, call_next):
         '/dashboard', '/dashboard/data', '/dashboard/metrics',
         '/dashboard/filter-options', '/dashboard/api', '/dashboard/users',
         '/dashboard/tokens', '/dashboard/connect', '/dashboard/oauth',
-        '/dashboard/activity', '/dashboard/activity/data'
+        '/dashboard/activity', '/dashboard/activity/data',
+        '/dashboard/operator', '/dashboard/operators', '/dashboard/operators/assign'
     }
     if path in approved:
         action = path
