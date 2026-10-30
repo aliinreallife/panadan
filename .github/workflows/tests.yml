@@ -13,6 +13,9 @@ jobs:
         with:
           enable-cache: true
           version: "0.13.6"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - name: Check executable file modes
         run: |
           test -x panadan.sh
@@ -21,7 +24,7 @@ jobs:
       - name: Confirm lockfile exists
         run: test -s uv.lock
       - name: Install locked dependencies
-        run: uv sync --locked --dev --python 3.12
+        run: uv sync --locked --dev --python 3.13
       - name: Run tests
         run: uv run --locked python -m pytest -q
       - name: Compile sources
@@ -31,6 +34,6 @@ jobs:
       - name: Check browser JavaScript syntax
         run: node --check static/app.js && node --check static/labels.js && node --check static/jalali.js && node --check static/webmcp.js && node --check static/selects.js && node --check static/activity.js
       - name: Compile dashboard assets
-        run: npm install --no-audit --no-fund && npm run build
+        run: npm ci --no-audit --no-fund && npm run build
       - name: Validate shell scripts
         run: bash -n panadan.sh migrate-from-danf.sh
