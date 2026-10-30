@@ -147,3 +147,14 @@ def test_empty_or_end_of_transcript_pages_have_safe_navigation():
     assert result['text']==''
     assert result['next_offset']==100
     assert not result['has_more']
+
+
+def test_offset_beyond_end_returns_empty_final_page():
+    from server.transcript_ai import transcript_for_ai
+    result=transcript_for_ai({
+        'id':1,'transcription':'','_window_start':9488,
+        'total_chars':80
+    },offset=10000)
+    assert result['text']==''
+    assert result['next_offset']==10000
+    assert result['has_more'] is False
