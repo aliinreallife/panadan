@@ -1,0 +1,38 @@
+# One-off preproduction stack refresh. Runs only on this isolated upgrade
+# branch when its dependency manifests or this workflow change.
+name: Refresh modern stack lockfiles
+on:
+  push:
+    branches: [chore/modern-mcp-sdk-v2-stack]
+    paths:
+      - 'pyproject.toml'
+      - 'package.json'
+      - '.github/workflows/refresh-modern-locks.yml'
+permissions:
+  contents: write
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: '0.13.6'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Refresh locked Python dependencies
+        run: uv lock --upgrade
+      - name: Generate a reproducible npm lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit only the two lockfiles to the upgrade branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add uv.lock package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(lock): refresh Python and Node dependencies for MCP SDK v2"
+            git push origin HEAD:chore/modern-mcp-sdk-v2-stack
+          fi
