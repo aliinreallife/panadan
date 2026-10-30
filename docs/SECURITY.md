@@ -103,3 +103,11 @@ trusted browser/agent before enabling against real call data.
 
 A live, authorized end-user smoke test is still required before enabling
 external-facing transcript access.
+
+## v0.8 MCP SDK v2 trusted transport settings
+
+- `mcp.server.mcpserver.MCPServer` (SDK v2.3.0) provides modern protocol support while preserving legacy HTTP clients.
+- The MCP ASGI app is still wrapped in the authenticated bearer gate and uses explicit `stateless_http=True` and `json_response=True`; every transcript request rechecks account permissions and is audited.
+- SDK v2 DNS rebinding checks are enabled, with loopback defaults and explicitly configured HTTPS Host and Origin allowlists. Do not add public wildcards or trust forwarded headers without a real proxy policy.
+- Python 3.13 and Node 24 LTS are used for dev/build, with locked dependencies in both ecosystems. PR CI verifies the source tests and both Docker images before merging.
+- Changing MCP runtimes **does not** implement the OAuth authorization server or approve public hosting. Continue to require HTTPS, live auth tests and a PostgreSQL reader-role audit before external access.
