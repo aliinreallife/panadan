@@ -5,6 +5,8 @@ import {callTypeLabel, callStateLabel, knownTypeOptions, knownStateOptions} from
 'use strict';
 const $ = id => document.getElementById(id);
 let offset=0;
+const profileOperator=document.getElementById('dashboard-content')?.dataset.profileOperator||'';
+const operatorName=value=>value==='__unspecified__'||!String(value||'').trim()?'نامشخص':String(value);
 const limit=20;
 const dateFormat = value => window.PanadanDate ? PanadanDate.format(value) : value;
 const numberFormat = value => value === null || value === undefined ? '—' : new Intl.NumberFormat('fa-IR').format(value);
@@ -26,7 +28,8 @@ const showError=error=>{const target=$('error');if(target){target.textContent=er
 const clearError=()=>{if($('error'))$('error').hidden=true;};
 const filters=()=>{
   const values=new URLSearchParams({limit,offset});
-  for(const key of ['after','before','state','call_type','created_after','created_before'])if($(key)?.value)values.set(key,$(key).value);
+  for(const key of ['after','before','state','call_type','operator','destination','team','created_after','created_before'])if($(key)?.value)values.set(key,$(key).value);
+  if(profileOperator)values.set('operator',profileOperator);
   return values;
 };
 async function load(){
@@ -54,6 +57,13 @@ async function load(){
           badge.title='مقدار اصلی: '+value;
           td.append(badge);
         } else if(key==='CALLDATE')td.textContent=dateFormat(value);
+        else if(key==='vw_danix_base_info_users_name'){
+          const name=(value==='—'||!String(value).trim())?'__unspecified__':String(value);
+          const link=el('a','operator-name-link',operatorName(name));
+          link.href='/dashboard/operator?name='+encodeURIComponent(name);
+          link.title='مشاهده آمار و تماس‌های '+operatorName(name);
+          td.append(link);
+        }
         else if(key==='possibility_of_sale_ai')td.textContent=numberFormat(item[key]);
         else td.textContent=value;
         tr.append(td);
@@ -69,7 +79,8 @@ async function metrics(){
   if(!$('metric-total'))return;
   try{
     const params=new URLSearchParams();
-    for(const key of ['after','before','created_after','created_before'])if($(key)?.value)params.set(key,$(key).value);
+    for(const key of ['after','before','created_after','created_before','operator','destination','team'])if($(key)?.value)params.set(key,$(key).value);
+    if(profileOperator)params.set('operator',profileOperator);
     const data=await fetchJSON('/dashboard/metrics?'+params);
     $('metric-total').textContent=numberFormat(data.total);
     $('metric-sold').textContent=numberFormat(data.sold_out);
@@ -92,15 +103,23 @@ async function loadFilterOptions(){
   };
   // Static fallback works even if distinct-value lookup is unavailable.
   let types=knownTypeOptions(),states=knownStateOptions();
+  let foundOperators=[],foundDestinations=['نامشخص'],foundTeams=['نامشخص'];
   try{
     const found=await fetchJSON('/dashboard/filter-options');
     if(Array.isArray(found.call_types))types=[...new Set([...types,...found.call_types])];
     if(Array.isArray(found.states))states=[...new Set([...states,...found.states])];
+    if(Array.isArray(found.operators))foundOperators=found.operators;
+    if(Array.isArray(found.destinations))foundDestinations=found.destinations;
+    if(Array.isArray(found.teams))foundTeams=found.teams;
   }catch{
     // Filters remain functional with common known values.
   }
   makeOptions('call_type',types,callTypeLabel);
   makeOptions('state',states,callStateLabel);
+  const directory=Array.isArray(foundOperators)?foundOperators:[];
+  makeOptions('operator',directory.map(v=>v.value),v=>operatorName(v));
+  makeOptions('destination',foundDestinations,v=>v);
+  makeOptions('team',foundTeams,v=>v);
 }
 const labels={id:'شناسه تماس',CALLDATE:'تاریخ تماس',call_id:'شناسه سیستمی',tellstate:'نوع تماس',tellside:'جهت تماس',aicallinfostate:'وضعیت AI',voice_length:'مدت صوت',possibility_of_sale_ai:'امتیاز AI',deal_value:'ارزش معامله',vw_danix_base_info_users_name:'کارشناس',customername:'نام مشتری',customertell:'شماره مشتری',outcome:'نتیجه تماس',ai_recommendation:'پیشنهاد AI',summary:'خلاصه',transcription:'متن مکالمه',tell_state_desc:'دلیل دسته‌بندی',create_date:'زمان ثبت'};
 function transcriptPanel(raw){
@@ -264,7 +283,7 @@ async function detail(id){
   }catch(error){$('detail').textContent=error.message;}
 }
 function clearDates(){
-  for(const key of ['after','before','state','call_type','created_after','created_before']){
+  for(const key of ['after','before','state','call_type','operator','destination','team','created_after','created_before']){
     if($(key))$(key).value='';
     const component=$(key+'-doran');if(component){component.removeAttribute('value');component.value=null;}
   }
