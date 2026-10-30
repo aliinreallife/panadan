@@ -81,7 +81,9 @@ function enhanceSelect(select) {
   clear.setAttribute('aria-label','پاک کردن '+label);
   clear.title='پاک کردن انتخاب';
   root.append(trigger,clear);
-  select.after(root);
+  // Keep the visible trigger first within a wrapping <label>, so clicking
+  // its label focuses the usable control rather than the hidden native select.
+  select.before(root);
 
   const menu=doc.createElement('div');
   menu.className='ui-select-menu';
