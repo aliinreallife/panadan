@@ -712,14 +712,24 @@ def mcp_transport_settings() -> TransportSecuritySettings:
     Default hosts/origins are loopback-only. Public proxy hostnames must be
     added explicitly before exposing the MCP route. Do not use wildcards.
     """
-    def extras(name: str) -> list[str]:
+    def extras(name: str, *, origin: bool = False) -> list[str]:
         items=[value.strip() for value in os.getenv(name,'').split(',') if value.strip()]
-        if any('*' in value or '/' in value or len(value)>253 or
-               any(ch.isspace() for ch in value) for value in items):
-            raise ValueError(f'{name} must contain specific host:port or HTTPS origins')
+        for value in items:
+            if ('*' in value or len(value)>253 or
+                    any(ch.isspace() for ch in value)):
+                raise ValueError(f'{name} must contain exact values without wildcards')
+            if origin:
+                from urllib.parse import urlsplit
+                parsed=urlsplit(value)
+                if (parsed.scheme!='https' or not parsed.hostname or
+                        parsed.username or parsed.password or parsed.path not in ('','/') or
+                        parsed.query or parsed.fragment):
+                    raise ValueError(f'{name} must contain specific HTTPS origins')
+            elif '/' in value or '@' in value or ':' not in value:
+                raise ValueError(f'{name} must contain exact host:port values')
         return items
     hosts=['localhost:*','127.0.0.1:*','[::1]:*'] + extras('PANADAN_MCP_ALLOWED_HOSTS')
-    origins=['http://localhost:*','http://127.0.0.1:*'] + extras('PANADAN_MCP_ALLOWED_ORIGINS')
+    origins=['http://localhost:*','http://127.0.0.1:*'] + extras('PANADAN_MCP_ALLOWED_ORIGINS',origin=True)
     return TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=hosts,
