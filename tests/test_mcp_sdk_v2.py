@@ -11,7 +11,6 @@ from mcp import Client
 from mcp.server.mcpserver import MCPServer
 
 from server.mcp_tools import mcp
-from server.main import mcp_transport_settings
 
 
 def test_mcp_server_is_the_new_official_sdk_class():
@@ -33,7 +32,9 @@ def test_modern_mcp_protocol_tool_discovery():
     asyncio.run(check())
 
 
-def test_local_transport_allowed_hosts_and_origins_are_explicit(monkeypatch):
+def test_local_transport_allowed_hosts_and_origins_are_explicit(monkeypatch, tmp_path):
+    monkeypatch.setenv('PANADAN_AUTH_DB',str(tmp_path/'auth.sqlite'))
+    from server.main import mcp_transport_settings
     monkeypatch.delenv('PANADAN_MCP_ALLOWED_HOSTS', raising=False)
     monkeypatch.delenv('PANADAN_MCP_ALLOWED_ORIGINS', raising=False)
     cfg=mcp_transport_settings()
@@ -43,7 +44,9 @@ def test_local_transport_allowed_hosts_and_origins_are_explicit(monkeypatch):
     assert 'http://localhost:*' in cfg.allowed_origins
 
 
-def test_public_host_and_origin_are_opt_in(monkeypatch):
+def test_public_host_and_origin_are_opt_in(monkeypatch, tmp_path):
+    monkeypatch.setenv('PANADAN_AUTH_DB',str(tmp_path/'auth.sqlite'))
+    from server.main import mcp_transport_settings
     monkeypatch.setenv('PANADAN_MCP_ALLOWED_HOSTS','reports.example.org:443')
     monkeypatch.setenv('PANADAN_MCP_ALLOWED_ORIGINS','https://reports.example.org')
     cfg=mcp_transport_settings()
