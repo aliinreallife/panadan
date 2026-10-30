@@ -2,13 +2,13 @@
 
 Private-by-design Persian RTL reporting application for an allowlisted read-only PostgreSQL reporting view: FastAPI, an authenticated dashboard, read-only REST API, and read-only MCP tools.
 
-**Current release: v0.7 (draft)** — Vazirmatn UI, Doran Jalali date/time filters, capability-based user access, and a formatted transcript reader with an unmodified **Raw original** view.
+**Current release: v0.8 (preproduction)** — Vazirmatn UI, Doran Jalali date/time filters, capability-based user access, and a formatted transcript reader with an unmodified **Raw original** view.
 
 ## Requirements
 
 - Linux or WSL2, Bash, Git and Docker/Compose.
-- [uv](https://docs.astral.sh/uv/) and Python 3.12.
-- Node.js 20+ and npm to build the local Doran/Vazirmatn dashboard assets.
+- [uv](https://docs.astral.sh/uv/) and Python 3.13 (uv can install the required Python version).
+- Node.js 24 LTS and npm to build the local Doran/Vazirmatn dashboard assets.
 - An authorized PostgreSQL reporting account and a private OpenVPN profile.
 - For the WSL-local development workflow, the two **already-built** Docker images `danf-v2-vpn:latest` and `danf-v2-python:latest`. The dev workflow deliberately does not pull/build Docker Hub base images.
 
@@ -43,7 +43,7 @@ chmod 600 .env.app .env.db vpn/client.ovpn
 
 Set `PANADAN_ADMIN_PASSWORD` to a unique value of at least 14 characters. Review `docs/SECURITY.md` before any deployment.
 
-Install the locked Python dependencies and local frontend assets, then start the development stack:
+Install Python 3.13 with `uv python install 3.13` if needed. Install the locked Python dependencies and local frontend assets, then start the development stack:
 
 ```bash
 ./panadan.sh setup
@@ -165,3 +165,9 @@ the one-click OAuth consent experience.
 To verify that your reporting login cannot **create or change source data**, run `./panadan.sh audit-db` and follow `docs/READ_ONLY.md` for the resulting PASS/FAIL and DBA recommendations. The application runs read-only transactions, but database grants must be independently verified.
 
 Technical details: `docs/PRD.md`, `docs/DECISIONS.md`, `docs/SECURITY.md`, `docs/STATUS.md`, `docs/TRANSCRIPTS.md`.
+
+## Preproduction SDK v2 migration
+
+Panadan now uses official `mcp==2.3.0` (locked) and `MCPServer`, with Python 3.13, Node 24 LTS, refreshed FastAPI/psycopg dependencies and pinned, reproducible npm dependencies. The `FastMCP` v1 class no longer exists in the v2 SDK. The MCP HTTP route remains `/mcp/`, preserving old clients while supporting the newer 2026 MCP protocol. The transcript permission and read-only constraints are unchanged. PR CI builds both Docker images before merge.
+
+The v2 MCP server validates request origins/hosts. For a trusted HTTPS proxy or tunnel, explicitly set `PANADAN_MCP_ALLOWED_HOSTS` and `PANADAN_MCP_ALLOWED_ORIGINS` as described in `docs/MCP_SETUP.md`. These allowlists **do not** implement OAuth login/consent or make the server safe to publish without proper TLS and additional security checks.
