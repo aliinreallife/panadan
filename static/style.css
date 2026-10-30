@@ -428,7 +428,17 @@ select:not(.ui-select-native):focus-visible{outline:0;border-color:var(--control
   }
   .sidebar nav a span{display:inline}
   .sidebar nav a:hover{transform:none}
-  .sidebar .side-footer{display:none}
+  .sidebar .side-footer{
+    display:flex;
+    margin:0;
+    padding:0;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    font-size:10px;
+  }
+  .sidebar .side-footer .status{font-size:10px}
+  .sidebar .side-footer .link-button{margin:0;padding:5px 10px;border:1px solid #3d6b59;border-radius:9px}
   .content{padding:24px 14px 45px}
   .page-head{flex-wrap:wrap;gap:12px}
   .page-head h1{font-size:26px}
