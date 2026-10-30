@@ -46,6 +46,13 @@ function ensureFilter(value, name) {
   return value;
 }
 
+function ensureOperator(value) {
+  if(value===undefined||value===null||value==='')return '';
+  if(typeof value!=='string'||value.length>180||/[\\u0000-\\u001f]/.test(value)){
+    throw new Error('نام کارشناس معتبر نیست.');
+  }
+  return value;
+}
 function ensureInteger(value, name, min, max) {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
     throw new Error(name + ' خارج از محدوده است.');
@@ -84,16 +91,25 @@ export function createWebMcpTools({ canReadCalls=false, canReadMetrics=false, ca
         type:'object', additionalProperties:false,
         properties: {
           after: schemaDate('Optional Gregorian start date, inclusive; use YYYY-MM-DD.'),
-          before: schemaDate('Optional Gregorian end date, inclusive; use YYYY-MM-DD.')
+          before: schemaDate('Optional Gregorian end date, inclusive; use YYYY-MM-DD.'),
+          operator:{type:'string',maxLength:180,description:'Optional exact source operator name.'},
+          destination:{type:'string',maxLength:60,description:'Optional locally assigned destination.'},
+          team:{type:'string',maxLength:60,description:'Optional locally assigned team.'}
         }
       },
       annotations: {readOnlyHint:true, untrustedContentHint:true},
-      execute: guarded(async ({after,before}, {signal}={}) => {
+      execute: guarded(async ({after,before,operator,destination,team}, {signal}={}) => {
         const a=validate(ensureDate,after,'از تاریخ'), b=validate(ensureDate,before,'تا تاریخ');
         validate(ensureRange,a,b);
         const params=new URLSearchParams();
         if(a) params.set('after',a);
         if(b) params.set('before',b);
+        const agent=validate(ensureOperator,operator);
+        const destinationName=validate(ensureFilter,destination,'مقصد');
+        const teamName=validate(ensureFilter,team,'تیم');
+        if(agent)params.set('operator',agent);
+        if(destinationName)params.set('destination',destinationName);
+        if(teamName)params.set('team',teamName);
         const response=await request('/dashboard/metrics'+(params.size?'?'+params:''),signal);
         return {
           total: response.total ?? null,
@@ -116,12 +132,15 @@ export function createWebMcpTools({ canReadCalls=false, canReadMetrics=false, ca
           before:schemaDate('Optional Gregorian end date, inclusive.'),
           call_type:{type:'string',maxLength:60,description:'Raw source call type, such as FollowUp or FirstToch.'},
           state:{type:'string',maxLength:60,description:'Raw source status, such as SoldOut or Unchecked.'},
+          operator:{type:'string',maxLength:180,description:'Exact source operator name.'},
+          destination:{type:'string',maxLength:60,description:'Locally assigned destination.'},
+          team:{type:'string',maxLength:60,description:'Locally assigned team.'},
           limit:{type:'integer',minimum:1,maximum:20,description:'Number of records to retrieve; at most 20.'},
           offset:{type:'integer',minimum:0,maximum:10000,description:'Pagination offset, from zero.'}
         }
       },
       annotations:{readOnlyHint:true,untrustedContentHint:true},
-      execute:guarded(async ({after,before,call_type,state,limit=10,offset=0},{signal}={}) => {
+      execute:guarded(async ({after,before,call_type,state,operator,destination,team,limit=10,offset=0},{signal}={}) => {
         const a=validate(ensureDate,after,'از تاریخ'),b=validate(ensureDate,before,'تا تاریخ');
         validate(ensureRange,a,b);
         const type=validate(ensureFilter,call_type,'نوع تماس');
@@ -133,6 +152,12 @@ export function createWebMcpTools({ canReadCalls=false, canReadMetrics=false, ca
         if(b)params.set('before',b);
         if(type)params.set('call_type',type);
         if(status)params.set('state',status);
+        const agent=validate(ensureOperator,operator);
+        const destinationName=validate(ensureFilter,destination,'مقصد');
+        const teamName=validate(ensureFilter,team,'تیم');
+        if(agent)params.set('operator',agent);
+        if(destinationName)params.set('destination',destinationName);
+        if(teamName)params.set('team',teamName);
         const response=await request('/dashboard/data?'+params,signal);
         return {
           items:(Array.isArray(response.items)?response.items.slice(0,take):[]).map(publicCall),
