@@ -84,3 +84,22 @@ trusted browser/agent before enabling against real call data.
   user ID, result, duration, timestamp), not request bodies or tokens. The
   admin activity screen presents 90-day aggregates and recent events. These
   logs themselves are sensitive admin data; protect SQLite backups.
+
+## v0.7.1 transcript page-boundary hardening
+
+- Each SQL page fetches a bounded 512-character context on both sides of the
+  requested range, still through the reporting database's READ ONLY transaction.
+- The returned excerpt is masked **before** clipping. Fixed-width block
+  replacements preserve the original source offsets and avoid leaking halves
+  of ordinary phone numbers, emails, URLs or IBANs across consecutive pages.
+- This is still best-effort masking, **not anonymization**. Exceptionally long
+  identifiers, names, spoken personal information and private business details
+  may remain. Use explicit transcript permission and obtain the necessary
+  authorization before connecting external AI providers.
+- End-to-end synthetic MCP HTTP integration tests now cover initialization,
+  tool listing, permissions, a successful transcript lookup, account attribution
+  and immediate access revocation. No real PostgreSQL or customer data is used.
+- An offset beyond the end of a transcript returns an empty terminal page.
+
+A live, authorized end-user smoke test is still required before enabling
+external-facing transcript access.
