@@ -168,7 +168,6 @@ function enhanceSelect(select) {
       option.append(optionText,mark);
       if(item.hint)option.title=item.hint;
       if(item.disabled)option.classList.add('ui-select-disabled');
-      option.addEventListener('pointerdown',event=>event.preventDefault());
       option.addEventListener('click',()=>{
         if(!item.disabled)choose(item);
       });
