@@ -85,9 +85,7 @@ function enhanceSelect(select) {
 
   const menu=doc.createElement('div');
   menu.className='ui-select-menu';
-  menu.id=id+'-menu';
-  menu.setAttribute('role','listbox');
-  menu.setAttribute('aria-label',label);
+  menu.id=id+'-popup';
   menu.hidden=true;
   const search=doc.createElement('input');
   search.type='search';
@@ -99,6 +97,9 @@ function enhanceSelect(select) {
   search.spellcheck=false;
   const list=doc.createElement('div');
   list.className='ui-select-options';
+  list.id=id+'-menu';
+  list.setAttribute('role','listbox');
+  list.setAttribute('aria-label',label);
   let visible=[],active=-1,open=false;
   if(searchMode){
     const searchArea=doc.createElement('div');
@@ -228,7 +229,7 @@ function enhanceSelect(select) {
     if(event.key==='ArrowDown'||event.key==='ArrowUp'){
       event.preventDefault();
       activeTo(nextEnabledIndex(visible,active,event.key==='ArrowDown'?'next':'previous'));
-    }else if(event.key==='Home'||event.key==='End'){
+    }else if((event.key==='Home'||event.key==='End')&&event.target!==search){
       event.preventDefault();activeTo(nextEnabledIndex(visible,active,event.key==='Home'?'first':'last'));
     }else if(event.key==='Enter'||(event.key===' '&&!searchMode)){
       event.preventDefault();
