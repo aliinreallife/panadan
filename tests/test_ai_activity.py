@@ -81,7 +81,8 @@ def test_transcript_query_uses_substring_and_no_personal_columns(monkeypatch):
     monkeypatch.setattr(database,'connect',mock_connect)
     row=database.transcript_excerpt(9,100,6000)
     assert row['id']==9
-    assert connection.args==(6001,100,9)
+    assert connection.args==(5489,1124,9)
+    assert row['_window_start']==5488
     assert 'SUBSTRING(' in connection.query.upper()
     assert '"customername"' not in connection.query
     assert '"customertell"' not in connection.query
@@ -103,3 +104,46 @@ def test_audit_events_are_metadata_only_and_aggregated(tmp_path):
     with pytest.raises(ValueError):
         store.record_activity(user_id=1,surface='other',action='GET /secret',
                               http_status=200,duration_ms=0)
+
+
+def test_sensitive_tokens_split_over_transcript_page_edges_are_masked():
+    """Return pages separately; neither page may leak a partial identifier."""
+    from server.transcript_ai import transcript_for_ai
+
+    boundary = 6000
+    sources = [
+        'A' * (boundary - 5) + '09121234567' + ' Z',
+        'A' * (boundary - 8) + 'person@example.com' + ' Z',
+        'A' * (boundary - 6) + 'https://private.example.org/account/secret' + ' Z',
+        'A' * (boundary - 5) + 'IR123456789012345678901234' + ' Z',
+    ]
+    for full in sources:
+        pages = []
+        for offset in (0, boundary):
+            window_start = max(0, offset - 512)
+            window = full[window_start:offset+6000+512]
+            result = transcript_for_ai({
+                'id':123, 'transcription': window,
+                '_window_start':window_start,
+                'total_chars':len(full)
+            },offset=offset)
+            pages.append(result['text'])
+            assert result['next_offset']==min(len(full),offset+6000)
+        combined=''.join(pages)
+        for secret in ('09121234567','person@example.com',
+                       'https://private.example.org/account/secret',
+                       'IR123456789012345678901234'):
+            assert secret not in combined
+        # The beginning and end of a private token must not remain in either page.
+        assert combined.count('█') >= 11
+        assert len(combined) == len(full)
+
+
+def test_empty_or_end_of_transcript_pages_have_safe_navigation():
+    from server.transcript_ai import transcript_for_ai
+    result=transcript_for_ai({
+        'id':1,'transcription':'','_window_start':100,'total_chars':100
+    },offset=100)
+    assert result['text']==''
+    assert result['next_offset']==100
+    assert not result['has_more']
