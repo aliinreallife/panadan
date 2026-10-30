@@ -129,3 +129,24 @@ def test_audit_detects_inherited_schema_or_relation_write(monkeypatch, audit_row
     report, _ = run_audit(monkeypatch, audit_row, schema_count=1, writable_relations=2)
     assert not report["strict_report_read_only"]
     assert len(report["blocking"]) == 2
+
+
+
+def test_audit_catalog_queries_do_not_use_invalid_multicharacter_escape():
+    """PostgreSQL standard_conforming_strings makes ESCAPE '\\\\' two chars."""
+    for query in (readonly_audit.SCHEMA_SQL, readonly_audit.RELATION_SQL):
+        assert "LEFT(n.nspname, 3) <> 'pg_'" in query
+        assert " ESCAPE " not in query
+        assert query.lstrip().upper().startswith("SELECT ")
+
+
+def test_database_audit_error_reports_only_exception_type_and_sqlstate(monkeypatch, capsys):
+    class SyntheticDbError(RuntimeError):
+        sqlstate = "22025"
+    def bad_inspection():
+        raise SyntheticDbError("sensitive connection details")
+    monkeypatch.setattr(readonly_audit, "inspect_permissions", bad_inspection)
+    assert readonly_audit.main() == 2
+    output = capsys.readouterr().err
+    assert "SyntheticDbError" in output and "SQLSTATE=22025" in output
+    assert "sensitive connection details" not in output
