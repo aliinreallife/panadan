@@ -93,12 +93,18 @@ def get_call(call_id: int, sensitive: bool = False):
     return normalized(row) if row else None
 
 
+# Only a small read-only context window is added for redaction across page edges.
+# If a phone number or email straddles a boundary, both halves are masked.
+TRANSCRIPT_REDACTION_OVERLAP = 512
+
+
 def transcript_excerpt(call_id: int, char_limit: int = 6000,
                        offset: int = 0) -> dict | None:
-    """Read one numbered fragment of a call, not an artificial full-call truncation.
+    """Fetch transcript with small overlapping context, never customer columns.
 
-    The complete conversation can be fetched in authorized chunks. We never
-    query the customer contact columns or change the source database.
+    The response formatter must strip the overlap *after* recognizing sensitive
+    tokens. The SQL still only reads a fixed, parameterized view and returns
+    at most char_limit + 2*overlap characters. Pagination has no total cap.
     """
     if type(call_id) is not int or call_id <= 0:
         raise ValueError('Invalid call ID')
@@ -106,12 +112,20 @@ def transcript_excerpt(call_id: int, char_limit: int = 6000,
         raise ValueError('Invalid transcript length')
     if type(offset) is not int or not 0 <= offset <= 2147483646:
         raise ValueError('Invalid transcript offset')
+    window_start = max(0, offset - TRANSCRIPT_REDACTION_OVERLAP)
+    before = offset - window_start
     query = ('SELECT id, SUBSTRING("transcription" FROM %s FOR %s) AS transcription, '
              'COALESCE(LENGTH("transcription"), 0) AS total_chars '
              'FROM ' + VIEW + ' WHERE id=%s LIMIT 1')
     with connect() as conn:
-        row = conn.execute(query, (offset + 1, char_limit, call_id)).fetchone()
-    return normalized(row) if row else None
+        row = conn.execute(query, (window_start + 1,
+                                   char_limit + before + TRANSCRIPT_REDACTION_OVERLAP,
+                                   call_id)).fetchone()
+    if not row:
+        return None
+    result = normalized(row)
+    result['_window_start'] = window_start
+    return result
 
 
 def stats(after: date | None = None, before: date | None = None,
