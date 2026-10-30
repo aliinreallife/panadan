@@ -258,7 +258,7 @@ def dashboard(request: Request):
     return templates.TemplateResponse(request, 'dashboard.html', {
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
-        'selected_operator':None, 'operator_title':None,
+        'selected_operator':None, 'operator_title':None, 'operator_meta':{},
     })
 
 
@@ -270,6 +270,7 @@ def operator_profile(request: Request, name: str = Query(...,min_length=1,max_le
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
         'selected_operator':name,'operator_title':operator_display(name),
+        'operator_meta':store.operator_assignments().get(name,{'destination':'نامشخص','team':'نامشخص'}),
     },headers={'Cache-Control':'no-store'})
 
 
