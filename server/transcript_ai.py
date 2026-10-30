@@ -1,43 +1,65 @@
-"""Conservative, bounded transcript projection for external AI tools.
+"""Bounded transcript extraction with privacy masking across page boundaries.
 
-This is not guaranteed anonymization. The transcript may still contain spoken
-names or sensitive statements. An administrator must explicitly authorize it.
+This is best-effort redaction, not anonymization. Spoken names, addresses,
+unrecognized IDs and unusually long secrets may still be present.
 """
 from __future__ import annotations
 
 import re
 
 MAX_TRANSCRIPT_CHARS = 6000
+# Context comes from the read-only database query, never from user input.
 _PHONE = re.compile(r'(?<![\d۰-۹])(?:\+?98|\+?۹۸|0|۰)?[9۹][\d۰-۹]{9}(?![\d۰-۹])')
 _EMAIL = re.compile(r'(?<![\w.@])[-\w.+]+@[-\w.]+\.[A-Za-z]{2,}(?![\w.-])')
 _URL = re.compile(r'(?i)https?://[^\s<>]+')
 _IBAN = re.compile(r'(?i)\bIR[0-9]{24}\b')
+# Long uninterrupted digit sequences may contain other identifiers.
+_LONG_DIGITS = re.compile(r'(?<![\d۰-۹])[\d۰-۹]{12,}(?![\d۰-۹])')
+
+
+def _mask(text: str) -> str:
+    """Replace each sensitive character in-place, preserving source offsets.
+
+    Fixed-width replacements are intentional: next_offset is measured in the
+    *original* transcription, not the redacted output.
+    """
+    for pattern in (_URL, _EMAIL, _IBAN, _PHONE, _LONG_DIGITS):
+        text = pattern.sub(lambda m: '█' * len(m.group(0)), text)
+    return text
 
 
 def transcript_for_ai(record: dict | None, *, limit: int = MAX_TRANSCRIPT_CHARS,
                       offset: int = 0) -> dict | None:
-    """Return a scrubbed partial transcript, never customer fields or raw SQL."""
+    """Return only the requested page, after masking its overlapping context."""
     if record is None:
         return None
-    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > MAX_TRANSCRIPT_CHARS:
+    if type(limit) is not int or not 1 <= limit <= MAX_TRANSCRIPT_CHARS:
         raise ValueError('Invalid transcript limit')
     if type(offset) is not int or not 0 <= offset <= 2147483646:
         raise ValueError('Invalid transcript offset')
-    text = str(record.get('transcription') or '')
-    # Bound return size even if the database view contains a huge transcript.
-    text = text[:limit]
-    text = _EMAIL.sub('[ایمیل حذف شد]', text)
-    text = _PHONE.sub('[شماره تلفن حذف شد]', text)
-    text = _URL.sub('[لینک حذف شد]', text)
-    text = _IBAN.sub('[شماره شبا حذف شد]', text)
+
+    window_start = record.get('_window_start', offset)
+    if type(window_start) is not int or not 0 <= window_start <= offset:
+        raise ValueError('Invalid transcript window start')
+    before = offset - window_start
+    raw_window = str(record.get('transcription') or '')
+    if before > len(raw_window):
+        raise ValueError('Invalid transcript window')
+    page_length = min(limit, len(raw_window) - before)
+    # Redact *before* clipping: tokens split over two pages are still detected.
+    safe_window = _mask(raw_window)
+    excerpt = safe_window[before:before + page_length]
+    total = int(record.get('total_chars') or 0)
+    next_offset = offset + page_length
+
     return {
         'call_id': record['id'],
-        'text': text[:limit],
-        'has_more': bool(record.get('total_chars', 0) > offset + len(str(record.get('transcription') or ''))),
-        'next_offset': offset + len(str(record.get('transcription') or '')),
+        'text': excerpt,
+        'has_more': total > next_offset,
+        'next_offset': next_offset,
         'offset': offset,
-        'truncated': bool(record.get('total_chars', 0) > offset + len(str(record.get('transcription') or ''))),
-        'source_chars': int(record.get('total_chars', 0)),
-        'presentation': 'Panadan AI excerpt (redacted)',
-        'privacy_notice': 'Names and other private details spoken in the call may remain. Treat as confidential.',
+        'truncated': total > next_offset,
+        'source_chars': total,
+        'presentation': 'Panadan AI excerpt (best-effort redacted)',
+        'privacy_notice': 'Masking is not anonymization. Spoken names and private statements can remain.',
     }
