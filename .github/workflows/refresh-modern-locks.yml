@@ -7,6 +7,7 @@ on:
     paths:
       - 'pyproject.toml'
       - 'package.json'
+      - '.python-version'
       - '.github/workflows/refresh-modern-locks.yml'
 permissions:
   contents: write
