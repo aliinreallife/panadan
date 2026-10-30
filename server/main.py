@@ -347,10 +347,16 @@ def revoke_token(request: Request, tid: int, csrf: str = Form(...),
 def dashboard_data(request: Request, limit: int = Query(20, ge=1, le=100),
                    offset: int = Query(0, ge=0, le=10000), after: date | None = None,
                    before: date | None = None, state: str | None = None,
-                   call_type: str | None = None, created_after: datetime | None = None, created_before: datetime | None = None,
+                   call_type: str | None = None, operator: str | None = Query(None,max_length=180),
+                   destination: str | None = Query(None,max_length=80),
+                   team: str | None = Query(None,max_length=80),
+                   created_after: datetime | None = None, created_before: datetime | None = None,
                    session: dict = Depends(current_session)):
     required(session, 'calls:read')
-    try: return {'items':database.list_calls(limit,offset,after,before,state,created_after,created_before,call_type)}
+    try:
+        names=directory_operator_names(destination,team)
+        return {'items':database.list_calls(limit,offset,after,before,state,created_after,created_before,
+                                            call_type,operator,names)}
     except Exception as e: json_failure(e)
 
 
@@ -358,7 +364,17 @@ def dashboard_data(request: Request, limit: int = Query(20, ge=1, le=100),
 def dashboard_filter_options(session: dict = Depends(current_session)):
     required(session, 'calls:read')
     try:
-        return {'states': database.statuses(), 'call_types': database.call_types()}
+        names=database.operators()
+        assignments=store.operator_assignments()
+        return {
+            'states': database.statuses(), 'call_types': database.call_types(),
+            'operators':[{'value':name,'label':operator_display(name),
+                          'destination':assignments.get(name,{}).get('destination','نامشخص'),
+                          'team':assignments.get(name,{}).get('team','نامشخص')}
+                         for name in names],
+            'destinations':sorted({'نامشخص',*(row['destination'] for row in assignments.values())}),
+            'teams':sorted({'نامشخص',*(row['team'] for row in assignments.values())}),
+        }
     except Exception as e: json_failure(e)
 
 
@@ -406,9 +422,14 @@ def dashboard_detail(call_id: int, session: dict = Depends(current_session)):
 @app.get('/dashboard/metrics', include_in_schema=False)
 def dashboard_metrics(after: date | None = None, before: date | None = None,
                       created_after: datetime | None = None, created_before: datetime | None = None,
+                      operator: str | None = Query(None,max_length=180),
+                      destination: str | None = Query(None,max_length=80),
+                      team: str | None = Query(None,max_length=80),
                       session: dict = Depends(current_session)):
     required(session,'metrics:read')
-    try: return database.stats(after, before, created_after, created_before)
+    try:
+        names=directory_operator_names(destination,team)
+        return database.stats(after,before,created_after,created_before,operator,names)
     except Exception as e: json_failure(e)
 
 
