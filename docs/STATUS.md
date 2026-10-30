@@ -82,3 +82,14 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [ ] Confirm real MCP SDK request context propagation with an authenticated live tool call
 - [ ] Review browser responsiveness and Jalali date formatting with realistic data
 - [ ] Configure full OAuth authorization-code/PKCE consent and external HTTPS provider (separate future milestone)
+
+## v0.7.1 transcript security follow-up
+
+- [x] Redact across consecutive transcript page boundaries using bounded
+  overlapping context and original-character-offset-preserving replacement.
+- [x] Real MCP Streamable HTTP protocol test with denied/allowed transcript
+  access, local account attribution, and revocation.
+- [x] Handle offsets beyond the end of a conversation.
+- [ ] Exercise the flow against a live authorized test call in WSL and review
+  masking quality on realistic Persian/English transcripts.
+- [ ] Verify PostgreSQL role permissions with `./panadan.sh audit-db`.
