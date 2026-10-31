@@ -166,6 +166,28 @@ To verify that your reporting login cannot **create or change source data**, run
 
 Technical details: `docs/PRD.md`, `docs/DECISIONS.md`, `docs/SECURITY.md`, `docs/STATUS.md`, `docs/TRANSCRIPTS.md`.
 
+### Test a feature branch in an isolated Git worktree
+
+Git worktrees do **not** share untracked/ignored `.env.db`, `.env.app`,
+or `vpn/client.ovpn` files with the main checkout. These files are
+needed only for live VPN/database operations and app startup, **not**
+for Python unit tests or JavaScript tests. Do not copy production
+credentials into a test worktree just to execute unit tests.
+
+```bash
+cd ~/panadan
+git fetch origin
+git worktree add --detach ../panadan-sync-test origin/feat/updated-at-only-odoo-sync-adapter
+cd ../panadan-sync-test
+./panadan.sh test
+npm test
+```
+
+If the worktree already exists, just `cd ~/panadan-sync-test` and
+run the last two commands. The normal Python test run skips opt-in
+disposable-PostgreSQL integration cases unless the dedicated guarded
+`panadan_ci` test database is configured. Production secrets are
+not needed for offline test execution.
 ## Odoo source updates + new calls (adapter prepared)
 
 The multi-source foundation now has a **read-only, opt-in** Odoo view
