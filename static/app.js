@@ -244,12 +244,21 @@ async function metrics(){
 async function loadFilterOptions(){
   const makeOptions=(id,values,translate)=>{
     const select=$(id);if(!select)return;
-    const current=new Set(multiValues(select));
+    // A distinct-value refresh can be incomplete. Never silently drop a
+    // user's selected raw filters if a value is absent from the latest list.
+    const current=new Map([...select.selectedOptions]
+      .filter(option=>option.value)
+      .map(option=>[option.value, option.textContent]));
+    const available=new Set(values
+      .filter(v=>v!==null && v!==undefined && String(v).trim())
+      .map(String));
     select.replaceChildren();
-    for(const raw of [...new Set(values.filter(v=>v!==null && v!==undefined && String(v).trim()).map(String))]){
+    for(const raw of new Set([...available,...current.keys()])){
       const option=document.createElement('option');
-      option.value=raw;option.textContent=translate(raw);
-      option.title=raw;option.selected=current.has(raw);
+      option.value=raw;
+      option.textContent=available.has(raw)?translate(raw):current.get(raw);
+      option.title=raw;
+      option.selected=current.has(raw);
       select.append(option);
     }
     select.dispatchEvent(new Event('change',{bubbles:true}));
