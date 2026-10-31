@@ -772,3 +772,153 @@ doran-datepicker::part(dialog){
 @media(max-width:370px){
  .call-datetime{flex-wrap:wrap;row-gap:2px;white-space:normal}
 }
+
+
+/* 2026-10: accessible RTL filtering, mobile call cards, persistent navigation.
+   Scope below the shell/report panels to avoid shifting login and dialog UI. */
+.shell > .sidebar{
+  position:sticky;top:0;align-self:flex-start;height:100dvh;
+  min-height:0;z-index:8;overflow:hidden;
+}
+.shell > .sidebar nav{overflow-y:auto;min-height:0;overscroll-behavior:contain}
+.shell > .sidebar .side-footer{flex:none;margin-top:auto;min-width:0}
+.shell > .sidebar .link-button{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:42px;min-width:75px;margin:8px 0 0;
+  background:#f2f6f0;border:1px solid #d4e5d9;border-radius:10px;
+  color:#234b35;font-weight:750;font-size:13px;
+}
+.shell > .sidebar .link-button:hover{background:#e0eddf}
+.veil{z-index:35}
+.report-filters{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  align-items:end;gap:16px 12px;
+}
+.report-filters > label{flex:none;width:100%;min-width:0;align-self:stretch}
+.filter-logic{
+  grid-column:1 / -1;min-width:0;display:flex;flex-wrap:wrap;align-items:center;
+  gap:10px 14px;border:1px solid #dae8dd;background:#f6faf7;
+  padding:13px 15px 12px;border-radius:14px;margin:0;
+}
+.filter-logic legend{padding:0 6px;color:#36634d;font-size:12px;font-weight:750}
+.filter-logic .filter-logic-option{
+  display:inline-flex;flex-direction:row;align-items:center;justify-content:center;
+  gap:9px;border:1px solid #d6e5da;border-radius:10px;background:#fff;
+  padding:10px 13px;min-height:44px;cursor:pointer;font-size:12px;color:#2c4b3b;
+}
+.filter-logic .filter-logic-option:has(input:checked){border-color:#208564;background:#e8f6ef;color:#145c45;font-weight:750}
+.filter-logic-option input{margin:0;accent-color:#16805e;width:16px;height:16px;flex:none}
+.filter-logic p{flex-basis:100%;color:#658173;font-size:11px;margin:2px 0 0;line-height:1.8}
+.filter-actions{grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.filter-actions button{min-height:45px;padding:10px 22px}
+.report-filters .advanced-filters{display:none}
+#metric-length{
+  direction:rtl!important;text-align:right!important;
+  display:flex;align-items:baseline;justify-content:flex-start;
+  gap:5px;flex-wrap:wrap;font-size:clamp(16px,1.9vw,22px);
+  line-height:1.9;white-space:normal;
+}
+#metric-length .duration-part,#metric-length .duration-join{
+  direction:rtl;unicode-bidi:isolate;display:inline-block;white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+#metric-length .duration-join{font-weight:500;color:#7a8d80}
+.activity-filter-panel .filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.activity-filter-panel .filters > label:not(.activity-only-errors){width:100%;min-width:0;flex:none}
+.activity-filter-panel .activity-only-errors{
+  display:inline-flex!important;flex-direction:row!important;
+  align-items:center;justify-content:flex-start;gap:10px;
+  min-width:0;min-height:46px;margin:0;padding:10px 13px;
+  border:1px solid #dce8de;border-radius:12px;background:#f7faf7;
+  font-weight:600;font-size:12px;line-height:1.6;cursor:pointer;
+}
+.activity-filter-panel .activity-only-errors input{
+  accent-color:#16805e;width:17px;height:17px;flex:none;margin:0;
+}
+.activity-filter-panel .filters > button{min-height:46px;width:100%}
+.activity-filter-panel .activity-only-errors span{min-width:0}
+@media(max-width:1050px){
+ .report-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .activity-filter-panel .filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:800px){
+ .shell > .sidebar{
+   position:sticky;top:0;z-index:8;align-self:auto;
+   display:grid;grid-template-columns:minmax(0,1fr) auto;
+   grid-template-areas:"brand logout" "links links";
+   column-gap:10px;row-gap:7px;width:100%;height:auto;max-height:none;
+   padding:9px 12px 7px;background:#102e2a;
+   box-shadow:0 4px 18px #091f1830;
+ }
+ .shell > .sidebar .logo{grid-area:brand;min-width:0;font-size:15px;justify-content:flex-start;gap:8px;white-space:nowrap}
+ .shell > .sidebar .nav-caption{display:none}
+ .shell > .sidebar nav{
+   grid-area:links;display:flex;flex-direction:row;min-width:0;width:100%;
+   overflow-x:auto;overflow-y:hidden;max-width:100%;gap:7px;
+   -webkit-overflow-scrolling:touch;scrollbar-width:thin;
+   overscroll-behavior-x:contain;margin:0;padding:0 0 6px;
+ }
+ .shell > .sidebar nav a{
+   display:inline-flex;flex:none;align-items:center;min-height:40px;
+   font-size:12px;white-space:nowrap;padding:9px 12px;
+ }
+ .shell > .sidebar nav a span{display:inline}
+ .shell > .sidebar .side-footer{
+   grid-area:logout;margin:0;padding:0;display:flex;align-items:center;
+   justify-content:flex-end;min-height:40px;
+ }
+ .shell > .sidebar .side-footer .status,.shell > .sidebar .side-footer > .muted{display:none}
+ .shell > .sidebar .side-footer form{margin:0}
+ .shell > .sidebar .link-button{
+   margin:0;min-height:40px;min-width:65px;padding:8px 12px;
+   background:#183e35;color:#fff;border-color:#457564;
+ }
+ .content{padding:18px 13px 45px}
+ .filter-panel,.activity-filter-panel{padding:16px}
+ .report-filters > label,.activity-filter-panel .filters>label{flex:none;min-width:0}
+ .metrics .metric{min-width:0}
+}
+@media(max-width:600px){
+ .report-filters,.activity-filter-panel .filters{grid-template-columns:minmax(0,1fr)}
+ .report-filters > label,.activity-filter-panel .filters>label{min-width:0!important;width:100%;flex:none}
+ .report-filters > label > doran-datepicker{min-width:0;width:100%;max-width:100%}
+ .report-filters .filter-logic{gap:8px;padding:12px}
+ .filter-logic .filter-logic-option{flex:1 1 100px;min-width:0;padding:8px}
+ .filter-actions button{flex:1;min-width:125px}
+ .activity-filter-panel .filters > button{width:100%}
+ .metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .metric{min-width:0;padding:13px;min-height:114px}
+ .metric strong{font-size:clamp(20px,5vw,26px);overflow-wrap:anywhere}
+ #metric-length{font-size:17px;gap:3px}
+ /* Replace horizontal table scrolling with two-column compact call cards. */
+ .calls-panel .table-scroller{overflow:visible}
+ .calls-panel table,.calls-panel tbody{display:block;width:100%;min-width:0;white-space:normal}
+ .calls-panel thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+ .calls-panel tbody tr{
+   display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+   gap:6px 12px;margin:0 0 12px;padding:13px;
+   border:1px solid #e0ebe3;border-radius:14px;background:#fff;
+   box-shadow:0 2px 10px #103c2710;
+ }
+ .calls-panel tbody td{
+   display:flex;flex-direction:column;justify-content:flex-start;gap:4px;
+   min-width:0;padding:5px 0;border:0;white-space:normal;
+   overflow-wrap:anywhere;font-size:12px;
+ }
+ .calls-panel tbody td::before{
+   content:attr(data-label);font-size:10px;font-weight:650;color:#718579;
+ }
+ .calls-panel tbody td:last-child{grid-column:1 / -1;display:block;padding-top:7px}
+ .calls-panel tbody td:last-child::before{display:none}
+ .calls-panel .view-btn{width:100%;min-height:43px}
+ .calls-panel tbody td[colspan]{grid-column:1 / -1;display:block;text-align:center}
+ .calls-panel tbody td[colspan]::before{display:none}
+ .pager{gap:9px;flex-wrap:wrap}
+ .pager button{min-height:42px}
+}
+@media(max-width:360px){
+ .calls-panel tbody tr{grid-template-columns:minmax(0,1fr)}
+ .calls-panel tbody td:last-child{grid-column:1}
+ .filter-actions{flex-direction:column;align-items:stretch}
+ .filter-actions button{width:100%}
+}
