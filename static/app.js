@@ -53,6 +53,11 @@ async function load(){
       const tr=el('tr');
       for(const key of ['CALLDATE','vw_danix_base_info_users_name','tellstate','aicallinfostate','possibility_of_sale_ai']){
         const td=el('td');const value=safe(item[key]);
+        td.dataset.label=({
+          CALLDATE:'تاریخ',vw_danix_base_info_users_name:'کارشناس',
+          tellstate:'نوع تماس',aicallinfostate:'وضعیت AI',
+          possibility_of_sale_ai:'امتیاز AI'
+        })[key]||key;
         if(key==='aicallinfostate'){
           const badge=el('span','status-badge',callStateLabel(item[key]));
           badge.dataset.status=safe(item[key]).replace(/[^\w]/g,'');
@@ -79,7 +84,7 @@ async function load(){
         else td.textContent=value;
         tr.append(td);
       }
-      const td=el('td');const button=el('button','view-btn','مشاهده');
+      const td=el('td');td.dataset.label='جزئیات';const button=el('button','view-btn','مشاهده');
       button.type='button';button.setAttribute('aria-label','مشاهده جزئیات تماس '+safe(item.id));
       button.onclick=()=>detail(item.id);td.append(button);tr.append(td);$('rows').append(tr);
     }
