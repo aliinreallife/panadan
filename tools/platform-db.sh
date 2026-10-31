@@ -18,7 +18,7 @@ need_docker() {
   docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required."
 }
 check_env() {
-  [[ -s "$ENV_FILE" ]] || fail "Missing $ENV_FILE. Run ./panadan.sh platform-db setup."
+  [[ -s "$ENV_FILE" && ! -L "$ENV_FILE" ]] || fail "Missing or symlinked $ENV_FILE. Run ./panadan.sh platform-db setup."
   local mode
   mode="$(stat -c '%a' "$ENV_FILE")" || fail "Cannot inspect $ENV_FILE permissions."
   (( (8#$mode & 8#077) == 0 )) || fail "$ENV_FILE must not be group/world accessible (chmod 600)."
@@ -108,13 +108,78 @@ SELECT 'active_sources=' || count(*) FROM panadan_ingest.sources WHERE enabled;"
     echo "Backup created: $final (mode 600, ignored by Git)."
     echo "Backup contains data and remains on this machine; arrange encrypted off-host backups."
     ;;
+  rotate-password)
+    # Explicit owner-only password rotation for the isolated platform DB.
+    # No source credentials are loaded, no volume is removed, and no secret
+    # is passed as a command-line argument or written to stdout/stderr.
+    set +x
+    need_docker; check_env; require_up; assert_pg18
+    command -v openssl >/dev/null 2>&1 || fail "openssl is required for password rotation."
+    identity="$(run_psql -A -t -c "SELECT current_database() || ':' || current_user;" 2>/dev/null)" ||
+      fail "Cannot verify database identity for rotation."
+    [[ "$identity" == "panadan:panadan_owner" ]] ||
+      fail "Refusing to rotate credentials for an unexpected database identity."
+
+    # The staged configuration must remain in the same directory so the
+    # subsequent rename is atomic on ordinary local filesystems.
+    staged="$(mktemp ".env.platform.rotate.XXXXXXXX")" ||
+      fail "Could not stage new private credentials."
+    trap 'rm -f -- "${staged:-}"' EXIT
+    chmod 600 "$staged"
+    new_secret="$(openssl rand -hex 32)" ||
+      fail "Could not generate a new random password."
+    [[ "$new_secret" =~ ^[[:xdigit:]]{64}$ ]] ||
+      fail "Generated password format was invalid."
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      case "$line" in
+        PANADAN_PLATFORM_DB_PASSWORD=*)
+          printf 'PANADAN_PLATFORM_DB_PASSWORD=%s\n' "$new_secret" >> "$staged" ;;
+        *) printf '%s\n' "$line" >> "$staged" ;;
+      esac
+    done < "$ENV_FILE"
+
+    # Apply the server change over local stdin, not through Docker argv.
+    # Suppress server SQL diagnostics because some errors could reproduce
+    # the submitted ALTER statement containing the secret.
+    if ! printf "ALTER ROLE panadan_owner PASSWORD '%s';\n" "$new_secret" |
+         run_psql --single-transaction >/dev/null 2>&1; then
+      fail "PostgreSQL rejected password rotation; existing config was retained."
+    fi
+
+    if ! mv -- "$staged" "$ENV_FILE"; then
+      # An OS rename error leaves the original credentials in the env file.
+      # Best-effort restore the server password to avoid a split-brain state.
+      previous_secret="$(sed -n 's/^PANADAN_PLATFORM_DB_PASSWORD=//p' "$ENV_FILE")"
+      if ! printf "ALTER ROLE panadan_owner PASSWORD '%s';\n" "$previous_secret" |
+           run_psql --single-transaction >/dev/null 2>&1; then
+        fail "Configuration update failed and password rollback failed; recover via local owner socket."
+      fi
+      fail "Configuration update failed; database password restored to the previous value."
+    fi
+    staged=""
+    unset new_secret
+    check_env
+
+    # POSTGRES_PASSWORD in a running container does not automatically change
+    # when the role is altered; recreate only the isolated DB service.
+    if ! compose up -d --wait --force-recreate db >/dev/null; then
+      fail "Password changed, but the database container did not restart cleanly. Retry platform-db up; volume retained."
+    fi
+    authentication="$(compose exec -T db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -At -v ON_ERROR_STOP=1 -h 127.0.0.1 -U panadan_owner -d panadan -c "SELECT 1"' 2>/dev/null)" ||
+      fail "Password changed, but TCP authentication verification failed."
+    [[ "$authentication" == "1" ]] ||
+      fail "Password changed, but TCP authentication verification returned an unexpected result."
+    echo "Platform DB owner password rotated and TCP authentication verified."
+    echo "Private .env.platform updated (mode 600); database volume preserved."
+    echo "Update any authorized clients using the previous owner password."
+    ;;
   down)
     need_docker; check_env
     compose down
     echo "Platform DB stopped. Persistent volume retained (no -v)."
     ;;
   help|-h|--help)
-    echo "Usage: ./panadan.sh platform-db {setup|up|init|check|backup|down}"
+    echo "Usage: ./panadan.sh platform-db {setup|up|init|check|backup|rotate-password|down}"
     echo "Only the isolated Panadan PostgreSQL 18 database is affected."
     ;;
   *)
