@@ -273,3 +273,15 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Add tests covering all three reporting endpoints and invalid SQLSTATE scrubbing.
 - [ ] On the user's local WSL/VPN, run `./panadan.sh diagnose-db` while FastAPI is running, and use sanitized new logs after FastAPI restart to determine whether the failure is transport, query/permission, or statement timeout. Container health is not sufficient evidence.
 - [ ] Verify the dashboard loads actual reporting data on desktop and mobile. This was not checked against the private live DB from CI.
+
+## Local reporting-store readiness audit — live result 2026-10-31
+
+- [x] Source operator pulled `2f31e2c`; Python **162 passed** and Node **51 passed**.
+- [x] `./panadan.sh audit-sync --sample 100` completed successfully over the VPN.
+- [x] Live catalog: ordinary reporting **view** with 36 columns; `id` integer, `create_date` present, **no recognized update marker and no recognized deletion marker**.
+- [x] All 100 sampled IDs non-null/distinct; all 100 `create_date` values present; zero sampled creation-order inversions. **This is not full-history uniqueness/monotonicity proof.**
+- [x] EXPLAIN-only estimate: 93,396 rows × 3,049 bytes; do **not** treat it as actual count/storage. Findings and source-owner requirements recorded in `docs/LOCAL_REPORTING_SYNC.md`.
+- [ ] Obtain stable-ID contract, view-wide update feed or guaranteed `sync_updated_at` semantics, deletion/tombstone feed and customer-data retention approval from source owner.
+- [ ] Measure safe sample batch latency and actual record/transcript sizes before sizing database or scheduling full history backfill.
+- [ ] After contract approval, implement isolated local PostgreSQL schema and resumable keyset backfill with transactional checkpoints, then incremental worker, parity checks and authorization-safe read cutover.
+- [ ] Redis remains deferred pending measured need. No customer records have been copied by the audit.
