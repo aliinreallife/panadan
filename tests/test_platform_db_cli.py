@@ -61,11 +61,11 @@ def test_cli_never_references_odoo_credentials_or_deletes_volumes():
 
 def test_bash_wrapper_routes_platform_commands_separately_from_source():
     wrapper = (ROOT / "panadan.sh").read_text()
-    assert "platform-db)" in wrapper
-    block = wrapper.split("\n  platform-db)\n", 1)[1].split("\n    ;;", 1)[0]
-    assert 'bash tools/platform-db.sh "$@"' in block
-    assert "check_config" not in block
-    assert ".env.db" not in block
+    early = wrapper.split("if [[ -f .env.app ]]; then", 1)[0]
+    assert 'if [[ "$cmd" == "platform-db" ]]; then' in early
+    assert 'exec bash tools/platform-db.sh "$@"' in early
+    assert "check_config" not in early
+    assert ".env.db" not in early
 
 
 def test_help_does_not_need_secret_or_docker():
