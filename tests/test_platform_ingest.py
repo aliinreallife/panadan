@@ -379,7 +379,7 @@ def test_odoo_adapter_backfill_new_rows_and_old_updates_both_work(pg):
 
     # Two historical calls change, and two NEW calls appear. All four receive
     # the same source timestamp, so cursor ID tie-breaking is essential.
-    source.clock=clock+timedelta(minutes=10)
+    source.clock=clock+timedelta(minutes=6)
     updated=clock+timedelta(minutes=2)
     source.data[1]=row(1,updated,'SoldOut')
     source.data[2]=row(2,updated,'FollowUp')
