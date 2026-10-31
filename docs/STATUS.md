@@ -215,3 +215,14 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [ ] Verify with source administrator whether `tellnum` is an operator extension/line number or another short internal code. Continue to exclude it from customer click-to-call.
 - [ ] Confirm the event/timezone of `call_time` (call began, answered, ended, etc.) and `create_date` before exposing the clock field in the UI.
 - [ ] Intermittent `ConnectionTimeout` recurred on two 300-row semantic runs before 100-row success; investigate the remote connectivity path if it continues (not proof of SQL statement-timeout).
+
+
+## Call detail and UI/UX quality pass (2026-10-31)
+
+- [x] Add the strongly supported but source-owner-unconfirmed `call_time` as detail-only source metadata. Format to readable HH:MM Persian digits with an explicit provisional meaning and Tehran-locality note; no claim of call start/end.
+- [x] Hide zero `deal_value` from the detail UI (it is not verified revenue), retain any nonzero value as unverified, and preserve all existing raw API values.
+- [x] Leave `tellnum` out of calling and reporting; continue using permission-gated `customertell`.
+- [x] Improve call detail drawer's mobile/RTL layout, focus management, Escape/Tab navigation, background scroll and asynchronous close/open races.
+- [x] Add source column-selection regression tests and Node unit tests for Persian clock formatting and source-zero filtering.
+- [ ] Visual and assistive-tech smoke tests on desktop Chrome and an Android phone before production rollout. The current changes have code/CI tests but no actual device screenshots.
+- [ ] Source owner to confirm the `call_time` event definition, `tellnum` short-code meaning, and `create_date` timezone contract before further reporting features.
