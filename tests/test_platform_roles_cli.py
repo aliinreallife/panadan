@@ -4,6 +4,7 @@ Runs only against a disposable temporary directory. No Docker or DB used.
 """
 from pathlib import Path
 import re
+import os
 import shutil
 import stat
 import subprocess
@@ -61,3 +62,44 @@ def test_role_provisioning_only_via_explicit_owner_db_stdin():
     assert "docker volume rm" not in sh
     assert "PASSWORD '%s'" in sh
     assert 'cat "$SQL_FILE"' in sh
+
+
+def test_roles_check_fails_closed_on_privilege_drift(tmp_path):
+    """Mock Docker/psql without contacting any real DB or source system."""
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    script = tools / "platform-roles.sh"
+    shutil.copyfile(ROLES, script)
+    secret = tmp_path / ".env.platform"
+    secret.write_text("PANADAN_PLATFORM_DB_PASSWORD=synthetic_only\\n")
+    secret.chmod(0o600)
+
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    docker = fakebin / "docker"
+    docker.write_text("""#!/usr/bin/env bash
+if [[ "$*" == "compose version" ]]; then exit 0; fi
+if [[ "$*" == *"SELECT current_database()"* ]]; then echo panadan; exit 0; fi
+if [[ "$*" == *"SHOW server_version_num"* ]]; then echo 180006; exit 0; fi
+if [[ "$*" == *"SELECT CASE WHEN"* ]]; then echo "${FAKE_AUDIT_RESULT:-FAIL}"; exit 0; fi
+echo 'Unexpected mock invocation' >&2
+exit 2
+""")
+    docker.chmod(0o700)
+    env = os.environ.copy()
+    env["PATH"] = f"{fakebin}:{env['PATH']}"
+    env["FAKE_AUDIT_RESULT"] = "PASS"
+    passed = subprocess.run(
+        ["bash", str(script), "check"], cwd=tmp_path,
+        env=env, capture_output=True, text=True, timeout=10,
+    )
+    assert passed.returncode == 0, passed.stderr
+    assert "verification: PASS" in passed.stdout
+
+    env["FAKE_AUDIT_RESULT"] = "FAIL"
+    denied = subprocess.run(
+        ["bash", str(script), "check"], cwd=tmp_path,
+        env=env, capture_output=True, text=True, timeout=10,
+    )
+    assert denied.returncode != 0
+    assert "verification FAILED" in denied.stderr
