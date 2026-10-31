@@ -44,3 +44,21 @@ test('single-select enhancer skips multi-selects and mobile controls include sea
   assert.match(multi,/reset\.addEventListener/);
   assert.match(multi,/select\.dispatchEvent\(new Event\('change'/);
 });
+
+test('compact responsive filters use four desktop and two mobile columns',()=>{
+  const css=readFileSync('static/style.css','utf8');
+  assert.match(css,/\.report-filters\{display:grid;grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(css,/@media\(max-width:600px\)\{\s*\.report-filters\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css,/\.mobile-nav-tab\{\s*min-height:38px/);
+  assert.match(css,/\.ui-multi-popup\{\s*left:0!important;right:0!important;top:auto!important/);
+});
+test('every admin screen exposes all four mobile navigation destinations',()=>{
+  for(const name of ['activity','connect','tokens','api','oauth','users','operators']){
+    const html=readFileSync('templates/'+name+'.html','utf8');
+    assert.match(html,/href="\/dashboard"/);
+    assert.match(html,/href="\/dashboard\/operators"/);
+    assert.match(html,/href="\/dashboard\/users"/);
+    assert.match(html,/href="\/dashboard\/connect"/);
+    assert.match(html,/\/static\/mobile-nav\.js/);
+  }
+});
