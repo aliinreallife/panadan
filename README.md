@@ -166,6 +166,25 @@ To verify that your reporting login cannot **create or change source data**, run
 
 Technical details: `docs/PRD.md`, `docs/DECISIONS.md`, `docs/SECURITY.md`, `docs/STATUS.md`, `docs/TRANSCRIPTS.md`.
 
+## Assess local reporting mirror readiness (read-only)
+
+Before moving dashboard/REST/MCP reads to a private Panadan PostgreSQL mirror,
+inspect the existing Odoo reporting view's ability to support incremental
+updates and deletes. **This command copies no records** and does not run a
+full row count:
+
+```bash
+./panadan.sh audit-sync --sample 100
+```
+
+The result includes visible change-marker candidates and only aggregate
+samples/optional query-planner estimates. If the VPN is unstable, try
+`./panadan.sh audit-sync --sample 0 --no-explain`. See
+[local reporting sync architecture](docs/LOCAL_REPORTING_SYNC.md) for
+bounded keyset backfill, transactional upsert checkpoints, reliable
+edit/delete detection, stale-data handling and when Redis is useful.
+No mirror or scheduler is enabled by this command.
+
 ## Audit unknown source fields safely
 
 The reporting view has 36 known columns, but not every column is reliable or
