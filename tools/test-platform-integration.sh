@@ -13,7 +13,9 @@ command -v uv >/dev/null 2>&1 || {
   exit 2
 }
 
-# Distinct name, no shared data, loopback-only ephemeral port, no mounted volumes.
+# Distinct name, loopback-only ephemeral port, no persistent volume.
+# Do NOT use docker run --rm here: an intentional database restart is part
+# of this test, and --rm may delete the stopped container.
 container="panadan-ci-pg-$"
 archive=""
 cleanup() {
@@ -23,7 +25,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "Starting disposable PostgreSQL 18.6 with synthetic test credentials only ..."
-docker run --rm -d \
+docker run -d \
   --name "$container" \
   -e POSTGRES_DB=panadan_ci \
   -e POSTGRES_USER=panadan_ci \
