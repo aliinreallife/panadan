@@ -30,12 +30,13 @@ admin_psql() {
   compose exec -T db psql -X -v ON_ERROR_STOP=1 -U panadan_owner -d panadan "$@"
 }
 confirm_target() {
-  local values
-  values="$(admin_psql -A -t -c 'SELECT current_database(); SHOW server_version_num;')"
-  # Explicit validation without interpolating arbitrary database identifiers.
-  [[ "$(printf '%s\n' "$values" | head -1)" == "panadan" ]] ||
+  local dbname major
+  dbname="$(admin_psql -A -t -c 'SELECT current_database()')"
+  major="$(admin_psql -A -t -c 'SHOW server_version_num')"
+  # Separate psql invocations avoid ambiguous multiple-result formatting.
+  [[ "$dbname" == "panadan" ]] ||
     die "Wrong target database: expected panadan."
-  [[ "$(printf '%s\n' "$values" | tail -1)" =~ ^18[0-9]{4}$ ]] ||
+  [[ "$major" =~ ^18[0-9]{4}$ ]] ||
     die "Wrong PostgreSQL major: expected 18."
 }
 check_roles_file() {
