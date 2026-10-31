@@ -78,9 +78,11 @@ case "$cmd" in
   logs) compose_dev logs --tail=80 pgrelay vpn ;;
   prod-logs) compose_prod logs --tail=80 web vpn ;;
   test)
-    require_uv; check_config; lock_if_needed
+    # Offline unit tests must also run in clean git worktrees and CI without
+    # Odoo credentials, VPN profiles, or local development configuration.
+    require_uv; lock_if_needed
     uv sync --locked --dev
-    uv run --locked python -m pytest -q
+    uv run --locked python -m pytest -q "$@"
     ;;
   audit-db)
     # Does not modify PostgreSQL permissions or read customer records.
