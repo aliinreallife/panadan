@@ -112,6 +112,8 @@ async function load(){
   const requestKey=filters().toString();
   $('rows').setAttribute('aria-busy','true');
   if(shownCallsKey!==requestKey){
+    // Old chips describe an earlier response, not the pending query.
+    if($('applied-filters'))$('applied-filters').hidden=true;
     const spinner=el('tr');const message=el('td','muted','در حال دریافت...');message.colSpan=6;spinner.append(message);$('rows').replaceChildren(spinner);
     $('count').textContent='—';
   }
@@ -119,7 +121,7 @@ async function load(){
     const data=await fetchJSON('/dashboard/data?'+requestKey);
     if(requestId!==callListRequestId)return;
     $('rows').replaceChildren();
-    $('count').textContent=numberFormat(data.items.length)+' مورد';
+    $('count').textContent=numberFormat(data.items.length)+' مورد در این صفحه';
     $('page').textContent='صفحه '+numberFormat(Math.floor(offset/limit)+1);
     $('previous').disabled=offset===0;
     $('next').disabled=data.items.length<limit;
