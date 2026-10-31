@@ -22,7 +22,68 @@ the existing Odoo view, and auth/audit remain in separate SQLite.
   Never retarget an existing volume or switch major versions in place
   without verified backups and a real `pg_upgrade` or dump/restore plan.
 
-## Optional local platform database (WSL + Docker)
+## Recommended safe local bootstrap
+
+The easiest way to initialize **only Panadan's own database** uses the
+project's dedicated management CLI. No system PostgreSQL or separate `psql`
+Docker image is required; the official `postgres:18.6-alpine3.24` image
+already includes `psql`, `pg_dump` and `pg_restore`.
+
+```bash
+cd ~/panadan
+./panadan.sh platform-db setup   # Once: generate private .env.platform (mode 600)
+./panadan.sh platform-db up      # Start only the separate PostgreSQL 18 service
+./panadan.sh platform-db init    # One transaction; additive, safe to repeat
+./panadan.sh platform-db check   # Verify major version, 7 schema tables, metadata
+./panadan.sh platform-db backup  # Optional: custom-format local dump, mode 600
+./panadan.sh platform-db down    # Stop only this DB; NEVER remove its volume
+```
+
+`setup` refuses to replace existing credentials and generates a unique
+cryptographic password. The setup command does not require Docker;
+other database commands require Docker Compose v2. `up` requires a
+valid `.env.platform` file whose permissions exclude group and world
+access. Every database-management command checks that it is operating
+on PostgreSQL major version 18. The `init` command verifies all seven
+core tables exist after executing the schema within one SQL transaction;
+it creates **no source connectors, imports, users, or schedules**.
+
+The local database binds only to the configured loopback port (default
+15433). Running `platform-db` does not start the VPN relay, read
+`.env.db` / `.env.app`, or contact Odoo.
+
+`backup` writes a PostgreSQL custom-format dump under
+`data/platform-backups/` (Git-ignored; directory mode 700, file 600),
+then verifies that `pg_restore --list` can read its directory. This is
+a basic archive-format check, **not** a full restore verification and
+**not** a remotely stored or encrypted backup. Backups of actual data
+may contain personal information. Arrange encrypted off-host backups
+and periodic *isolated* restore drills before ingesting real records.
+
+To validate restore behavior **without any real data or secrets**:
+
+```bash
+bash tools/test-platform-integration.sh
+```
+
+The Docker integration helper now applies the migration twice on a
+disposable PG18 DB, inserts synthetic metadata, restarts PostgreSQL,
+dumps it, restores into another disposable database, and verifies the
+metadata survived. It removes the test container and its temporary
+backup automatically. This does not replace a production backup drill.
+
+`down` retains the persistent named volume. Never run
+`docker compose down -v` against a database holding user records.
+`pg_dump` does not back up external files, nor guarantee a recovery
+point for concurrent source writes once ingestion is enabled.
+
+## Manual Compose alternative (WSL + Docker)
+
+The CLI above is preferred because it generates and checks the private
+credentials automatically. If using the manual alternative below, your
+password must be a **64-character lowercase/uppercase hexadecimal value**
+(e.g. generated privately using `openssl rand -hex 32`), and `.env.platform`
+must be mode 600. Never print or commit the generated password.
 
 No database is started automatically by `./panadan.sh dev`,
 `./panadan.sh up`, or CI. This is an **independent** Docker Compose

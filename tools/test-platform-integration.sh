@@ -13,15 +13,21 @@ command -v uv >/dev/null 2>&1 || {
   exit 2
 }
 
-# Distinct name, no shared data, loopback-only ephemeral port, no mounted volumes.
-container="panadan-ci-pg-$$"
+# Distinct name, loopback-only ephemeral port, no persistent volume.
+# Do NOT use docker run --rm here: an intentional database restart is part
+# of this test, and --rm may delete the stopped container.
+container="panadan-ci-pg-${BASHPID}"
+archive=""
 cleanup() {
-  docker rm -f "$container" >/dev/null 2>&1 || true
+  [[ -z "$archive" ]] || rm -f -- "$archive"
+  # Remove the synthetic container AND any anonymous volume it created.
+  # Never use this command on the separately named panadan-platform volume.
+  docker rm -fv "$container" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
 echo "Starting disposable PostgreSQL 18.6 with synthetic test credentials only ..."
-docker run --rm -d \
+docker run -d \
   --name "$container" \
   -e POSTGRES_DB=panadan_ci \
   -e POSTGRES_USER=panadan_ci \
@@ -66,4 +72,48 @@ if [[ -f tests/test_odoo_sync_adapter.py ]]; then
   tests+=(tests/test_odoo_sync_adapter.py)
 fi
 uv run --locked python -m pytest -q "${tests[@]}"
+echo "Testing idempotent schema initialization and custom-format backup/restore ..."
+for _ in 1 2; do
+  docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -1 \
+    -U panadan_ci -d panadan_ci \
+    < database/migrations/001_multisource_foundation.sql >/dev/null
+done
+docker exec "$container" psql -X -v ON_ERROR_STOP=1 -U panadan_ci \
+  -d panadan_ci -c \
+  "INSERT INTO panadan_ingest.sources(source_key,kind,label) VALUES ('smoke_fixture','manual','Synthetic smoke fixture')" \
+  >/dev/null
+# Real PostgreSQL restart must preserve the schema and the synthetic test row.
+docker restart "$container" >/dev/null
+ready=false
+for _ in {1..35}; do
+  if docker exec "$container" pg_isready -U panadan_ci -d panadan_ci >/dev/null 2>&1; then
+    ready=true
+    break
+  fi
+  sleep 1
+done
+[[ "$ready" == true ]] || {
+  echo "PostgreSQL did not come back after restart." >&2
+  exit 2
+}
+persisted="$(docker exec "$container" psql -X -At -U panadan_ci -d panadan_ci \
+  -c "SELECT source_key FROM panadan_ingest.sources WHERE source_key = 'smoke_fixture' AND enabled = FALSE")"
+[[ "$persisted" == "smoke_fixture" ]] || {
+  echo "Synthetic metadata was not retained across PostgreSQL restart." >&2
+  exit 2
+}
+archive="$(mktemp)"
+docker exec "$container" pg_dump -U panadan_ci -d panadan_ci -Fc > "$archive"
+[[ -s "$archive" ]] || { echo "Synthetic backup is empty." >&2; exit 2; }
+docker exec -i "$container" pg_restore --list < "$archive" >/dev/null
+docker exec "$container" createdb -U panadan_ci panadan_restore_ci
+docker exec -i "$container" pg_restore --no-owner --no-acl \
+  -U panadan_ci -d panadan_restore_ci < "$archive"
+restored="$(docker exec "$container" psql -X -At -U panadan_ci -d panadan_restore_ci \
+  -c "SELECT source_key FROM panadan_ingest.sources WHERE source_key = 'smoke_fixture' AND enabled = FALSE")"
+[[ "$restored" == "smoke_fixture" ]] || {
+  echo "Restored backup did not preserve synthetic metadata." >&2
+  exit 2
+}
+echo "PG18 migration, restart persistence, backup and restore verified using synthetic data."
 echo "Integration test finished. Disposable database will be deleted."

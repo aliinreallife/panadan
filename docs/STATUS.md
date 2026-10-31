@@ -316,3 +316,13 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [ ] Enable an explicitly approved, supervised source adapter runner and verify a bounded 100-row pilot before any actual history import; no CLI/cron/live import is enabled by this PR.
 - [ ] Build cautious periodic ID reconciliation for disappeared rows (do **not** infer deletion from an incomplete page or transient VPN failure) and implement purge/retention policies before sensitive payloads.
 - [ ] Set up scheduling/health alerts and parity/authorization tests before dashboard/REST/MCP cutover. Redis remains deferred.
+
+## PostgreSQL platform initialization and recovery verification (2026-10-31)
+
+- [x] Add explicit `./panadan.sh platform-db {setup|up|init|check|backup|down}` commands for the separate PostgreSQL 18.6 instance; no Odoo/VPN credentials or live data read path.
+- [x] Set up a cryptographic local password only once, without echoing it, with file mode 600; fail closed on missing, group-readable or malformed secrets, unexpected PostgreSQL versions, and incomplete schema.
+- [x] Run the initial additive 7-table migration in a single transaction and verify the schema; restarting/stopping does not delete the named Docker data volume.
+- [x] Provide an opt-in private local `pg_dump -Fc` backup with basic `pg_restore --list` validation (not an encrypted/offsite backup).
+- [x] Extend disposable PostgreSQL 18 integration tests to cover repeated schema initialization, restart persistence, and full custom-format backup/restore of synthetic-only metadata.
+- [ ] Confirm local real-Docker smoke results in WSL, including backup and restore, before merging and starting the optional persistent service. Odoo source remains untouched; real customer-data ingestion is still disabled.
+- [ ] Define encrypted off-host backup, tested disaster recovery, retention, least-privilege roles, and source `updated_at` guarantees before enabling a real source pilot.

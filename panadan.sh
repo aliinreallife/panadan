@@ -3,6 +3,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 cmd="${1:-help}"; shift || true
 umask 077
+# Dispatch the platform DB CLI before even reading source/app configuration.
+if [[ "$cmd" == "platform-db" ]]; then
+  exec bash tools/platform-db.sh "$@"
+fi
 if [[ -f .env.app ]]; then
   port="$(sed -n 's/^PANADAN_HTTP_PORT=//p' .env.app | tail -1 | tr -d '\r')"
   proxy_port="$(sed -n 's/^PANADAN_PG_PROXY_PORT=//p' .env.app | tail -1 | tr -d '\r')"
@@ -148,7 +152,7 @@ case "$cmd" in
     done
     ;;
   *)
-    echo 'Usage: ./panadan.sh {setup|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|audit-db|audit-fields|audit-semantics|audit-sync|diagnose-db|relay-recreate|diagnose}'
+    echo 'Usage: ./panadan.sh {setup|platform-db|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|audit-db|audit-fields|audit-semantics|audit-sync|diagnose-db|relay-recreate|diagnose}'
     echo 'dev = native WSL uv FastAPI + Docker-isolated VPN; up = GHCR production images'
     ;;
 esac
