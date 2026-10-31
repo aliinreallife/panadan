@@ -50,6 +50,43 @@ check_roles_file() {
   [[ "$writer" =~ ^[[:xdigit:]]{64}$ && "$reader" =~ ^[[:xdigit:]]{64}$ && "$writer" != "$reader" ]] ||
     die "Each role password must be distinct, exactly 64 hexadecimal characters."
 }
+audit_roles() {
+  # Treat any unexpected grant as an error, not merely a printed warning.
+  # Checking permissions by explicit role keeps the audit independent of
+  # the superuser owner session used to provision these accounts.
+  local status
+  status="$(admin_psql -A -t -c "
+SELECT CASE WHEN
+  (SELECT count(*) = 2 AND bool_and(
+      NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole
+      AND NOT rolreplication AND NOT rolbypassrls)
+     FROM pg_roles
+     WHERE rolname IN ('panadan_ingest_writer', 'panadan_report_reader'))
+  AND has_database_privilege('panadan_ingest_writer',current_database(),'CONNECT')
+  AND has_database_privilege('panadan_report_reader',current_database(),'CONNECT')
+  AND NOT has_database_privilege('panadan_ingest_writer',current_database(),'CREATE,TEMP')
+  AND NOT has_database_privilege('panadan_report_reader',current_database(),'CREATE,TEMP')
+  AND has_schema_privilege('panadan_ingest_writer','panadan_ingest','USAGE')
+  AND has_schema_privilege('panadan_report_reader','panadan_ingest','USAGE')
+  AND NOT has_schema_privilege('panadan_ingest_writer','panadan_ingest','CREATE')
+  AND NOT has_schema_privilege('panadan_report_reader','panadan_ingest','CREATE')
+  AND NOT has_schema_privilege('panadan_report_reader','public','CREATE')
+  AND has_table_privilege('panadan_ingest_writer','panadan_ingest.sources','SELECT')
+  AND NOT has_table_privilege('panadan_ingest_writer','panadan_ingest.sources','INSERT,UPDATE,DELETE,TRUNCATE')
+  AND NOT has_table_privilege('panadan_ingest_writer','panadan_ingest.safe_call_facts_v1','SELECT')
+  AND has_table_privilege('panadan_report_reader','panadan_ingest.safe_call_facts_v1','SELECT')
+  AND NOT has_table_privilege('panadan_report_reader','panadan_ingest.sources','SELECT,INSERT,UPDATE,DELETE')
+  AND NOT has_table_privilege('panadan_report_reader','panadan_ingest.source_records','SELECT,INSERT,UPDATE,DELETE')
+  AND NOT has_table_privilege('panadan_report_reader','panadan_ingest.raw_revisions','SELECT,INSERT,UPDATE,DELETE')
+  AND NOT has_table_privilege('panadan_report_reader','panadan_ingest.processing_jobs','SELECT,INSERT,UPDATE,DELETE')
+  AND NOT has_table_privilege('panadan_report_reader','panadan_ingest.derived_facts','SELECT,INSERT,UPDATE,DELETE')
+  AND NOT has_table_privilege('panadan_report_reader','panadan_ingest.sync_checkpoints','SELECT,INSERT,UPDATE,DELETE')
+  AND NOT has_table_privilege('panadan_report_reader','panadan_ingest.sync_runs','SELECT,INSERT,UPDATE,DELETE')
+THEN 'PASS' ELSE 'FAIL' END;")" || die "Could not audit PostgreSQL roles."
+  [[ "$status" == "PASS" ]] ||
+    die "Role privilege verification FAILED: unexpected grants or missing restrictions."
+  echo "Role privilege verification: PASS (writer restricted, reader safe-view-only)."
+}
 case "${1:-help}" in
   setup)
     [[ ! -e "$ROLES_FILE" && ! -L "$ROLES_FILE" ]] ||
@@ -90,6 +127,7 @@ ROLE_SQL
       printf "ALTER ROLE panadan_report_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" "$reader"
       cat "$SQL_FILE"
     } | admin_psql --single-transaction >/dev/null
+    audit_roles
     echo "Restricted ingest-writer and safe-facts reader roles provisioned."
     echo "No Odoo connection, source activation, or dashboard cutover occurred."
     ;;
@@ -97,13 +135,7 @@ ROLE_SQL
     need_runtime
     check_permissions "$PLATFORM_FILE"
     confirm_target
-    admin_psql -A -t -c "
-SELECT 'writer_can_read_source_registry=' || has_table_privilege('panadan_ingest_writer','panadan_ingest.sources','SELECT');
-SELECT 'writer_can_enable_sources=' || has_table_privilege('panadan_ingest_writer','panadan_ingest.sources','UPDATE');
-SELECT 'reader_can_read_safe_view=' || has_table_privilege('panadan_report_reader','panadan_ingest.safe_call_facts_v1','SELECT');
-SELECT 'reader_can_read_raw=' || has_table_privilege('panadan_report_reader','panadan_ingest.raw_revisions','SELECT');
-SELECT 'reader_can_write_raw=' || has_table_privilege('panadan_report_reader','panadan_ingest.raw_revisions','INSERT');
-SELECT 'reader_can_create_schema=' || has_database_privilege('panadan_report_reader','panadan','CREATE');"
+    audit_roles
     ;;
   help|-h|--help)
     echo "Usage: ./panadan.sh platform-db roles-{setup|apply|check}"
