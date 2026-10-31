@@ -4,7 +4,7 @@ import {enhanceMultiSelects, multiValues} from './multiselect.js';
 import {registerPanadanWebMcp} from './webmcp.js';
 import {formatVoiceDuration, voiceDurationSegments, formatSourceCallClock, hasDisplayableDealValue} from './formatters.js';
 import {dialablePhone} from './phone.js';
-import {callTypeLabel, callStateLabel, knownTypeOptions, knownStateOptions} from './labels.js';
+import {callTypeLabel, callStateLabel, directionLabel, knownTypeOptions, knownStateOptions} from './labels.js';
 'use strict';
 const $ = id => document.getElementById(id);
 let offset=0;
@@ -161,8 +161,9 @@ async function loadFilterOptions(){
   }
   makeOptions('call_type',types,callTypeLabel);
   makeOptions('state',states,callStateLabel);
-  // Raw source direction labels until upstream confirms incoming/outgoing codes.
-  makeOptions('direction',foundDirections,v=>String(v));
+  // Source owner confirmed IntoOut=outgoing, OutToIn=incoming.
+  // Raw source codes remain option values for backend filtering.
+  makeOptions('direction',foundDirections,directionLabel);
   const directory=Array.isArray(foundOperators)?foundOperators:[];
   makeOptions('operator',directory.map(v=>v.value),v=>operatorName(v));
   makeOptions('destination',foundDestinations,v=>v);
