@@ -6,13 +6,21 @@ const formatDay=day=>{
   try{return new Intl.DateTimeFormat('fa-IR-u-ca-persian',{month:'short',day:'numeric',timeZone:'UTC'})
     .format(new Date(day+'T12:00:00Z'));}catch{return day;}
 };
-const formatWhen=stamp=>{
-  const date=new Date(Number(stamp)*1000);
-  return Number.isNaN(date.valueOf())?'—':new Intl.DateTimeFormat('fa-IR-u-ca-persian',{
-    year:'numeric',month:'2-digit',day:'2-digit',
-    hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tehran',hourCycle:'h23'
-  }).format(date);
-};
+// Event timestamps are Unix seconds (UTC). Convert once to Tehran local time;
+// keep the original ISO instant for the native <time> element and auditability.
+export function formatEventTimestamp(stamp) {
+  if(stamp===null || stamp===undefined || stamp==='')return null;
+  const seconds=Number(stamp);
+  if(!Number.isFinite(seconds))return null;
+  const instant=new Date(seconds*1000);
+  if(!Number.isFinite(instant.valueOf()))return null;
+  const locale='fa-IR-u-ca-persian', timeZone='Asia/Tehran';
+  return {
+    iso:instant.toISOString(),
+    date:new Intl.DateTimeFormat(locale,{year:'numeric',month:'2-digit',day:'2-digit',timeZone}).format(instant),
+    time:new Intl.DateTimeFormat(locale,{hour:'2-digit',minute:'2-digit',hourCycle:'h23',timeZone}).format(instant)
+  };
+}
 const surfaceLabel={dashboard:'داشبورد',api:'REST API',mcp:'MCP',auth:'ورود و خروج'};
 const actionTitles={
   'GET /dashboard':'باز کردن داشبورد',
@@ -142,15 +150,28 @@ function renderEvents(items){
   for(const event of items){
     const tr=node('tr');
     tr.title=event.action;
-    for(const val of [formatWhen(event.created_at),event.username,
-      surfaceLabel[event.surface]||event.surface,actionLabel(event.action)]){
-      tr.append(node('td','',val));
-    }
+    const cell=node('td','activity-event-when');
+    const stamp=formatEventTimestamp(event.created_at);
+    if(stamp){
+      const time=node('time','activity-time');
+      time.dateTime=stamp.iso;
+      time.title='زمان تهران';
+      time.append(node('span','activity-date',stamp.date),
+        node('span','activity-clock',stamp.time));
+      cell.append(time);
+    }else cell.textContent='—';
+    tr.append(cell);
+    tr.append(node('td','activity-event-username',event.username??'—'));
+    tr.append(node('td','',surfaceLabel[event.surface]||event.surface||'—'));
+    tr.append(node('td','',actionLabel(event.action)||'—'));
     const status=node('td');
     const badge=node('span',Number(event.http_status)>=400?'activity-status failed':'activity-status successful',
       event.http_status);
     status.append(badge);tr.append(status);
-    tr.append(node('td','',formatNum(event.duration_ms)+' ms'));
+    const duration=Number(event.duration_ms);
+    const elapsed=Number.isFinite(duration)&&event.duration_ms!=null&&duration>=0
+      ? formatNum(Math.round(duration))+' ms':'—';
+    tr.append(node('td','activity-event-duration',elapsed));
     tbody.append(tr);
   }
 }

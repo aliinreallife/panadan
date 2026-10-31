@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {totals,barScale,completeDailySeries,actionLabel} from '../static/activity.js';
+import {totals,barScale,completeDailySeries,actionLabel,formatEventTimestamp} from '../static/activity.js';
 
 test('activity KPIs reflect all active accounts, not only chart top-users',()=>{
   const result=totals({total:200,errors:12,active_users:27,users:[{name:'A',total:50}]});
@@ -20,4 +20,14 @@ test('line chart includes quiet days and preserves UTC ordering',()=>{
   const days=completeDailySeries([{day:'2026-10-27',total:5,errors:1}],3,'2026-10-29');
   assert.deepEqual(days.map(x=>x.day),['2026-10-27','2026-10-28','2026-10-29']);
   assert.deepEqual(days.map(x=>x.total),[5,0,0]);
+});
+
+test('audit event seconds show Persian date and Tehran local clock independently',()=>{
+  const stamp=Date.parse('2026-10-29T04:39:00Z')/1000;
+  const formatted=formatEventTimestamp(stamp);
+  assert.equal(formatted.iso,'2026-10-29T04:39:00.000Z');
+  assert.equal(formatted.time,'۰۸:۰۹');
+  assert.match(formatted.date,/۱۴۰۵/);
+  assert.equal(formatEventTimestamp(null),null);
+  assert.equal(formatEventTimestamp('not-a-date'),null);
 });

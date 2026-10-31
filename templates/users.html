@@ -1,5 +1,44 @@
 <!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>کاربران | پانادان</title><link rel="stylesheet" href="/static/vendor/panadan-bundle.css"><link rel="stylesheet" href="/static/style.css"></head><body><div class="shell"><aside class="sidebar"><a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a><nav><a href="/dashboard">▦ گزارش تماس‌ها</a><a href="/dashboard/connect">◈ اتصال هوش مصنوعی</a><a href="/dashboard/tokens">♢ توکن‌ها</a><a href="/dashboard/api">⌘ راهنمای API</a><a href="/dashboard/oauth">◉ اتصال امن OAuth</a><a class="active" href="/dashboard/users">♙ کاربران و دسترسی‌ها</a><a href="/dashboard/activity">▤ فعالیت کاربران</a></nav><div class="side-footer"><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{csrf}}"><button class="link-button">خروج</button></form></div></aside><main class="content"><header class="page-head"><div><span class="eyebrow">مدیریت فضای کاری</span><h1>کاربران و دسترسی‌ها</h1><p class="muted">برای هر نفر، فقط قابلیت‌های مورد نیاز را فعال کنید.</p></div><span class="tag">مدیر سیستم</span></header>
-<section class="panel"><div class="panel-head"><h2>افزودن کاربر</h2></div><form method="post" action="/dashboard/users" class="management-form"><input type="hidden" name="csrf" value="{{csrf}}"><label>نام کاربری<input name="username" maxlength="80" required autocomplete="off" placeholder="user_name"></label><label>رمز موقت (حداقل ۱۴ کاراکتر)<input name="password" type="password" minlength="14" required autocomplete="new-password"></label><label>نوع نقش<select name="role" id="role"><option value="analyst">تحلیل‌گر</option><option value="reader">فقط فهرست تماس‌ها</option><option value="metrics">فقط آمار</option><option value="admin">مدیر کل</option></select></label><div style="grid-column:1/-1"><strong>مجوزهای دقیق</strong><p class="description">برای نقش غیرمدیر، این مجوزها تعیین‌کنندهٔ دسترسی هستند؛ نقش مدیر همهٔ دسترسی‌ها را دارد.</p><div class="permissions"><label><input type="checkbox" name="grants" value="calls:read" checked> دیدن تماس‌ها</label><label><input type="checkbox" name="grants" value="metrics:read" checked> دیدن آمار</label><label><input type="checkbox" name="grants" value="calls:sensitive"> جزئیات حساس</label><label><input type="checkbox" name="grants" value="calls:transcript:read"> تحلیل متن مکالمات توسط AI</label><label><input type="checkbox" name="grants" value="mcp:use" checked> اتصال MCP (نیازمند تماس و آمار)</label></div></div><button class="primary" type="submit">ساخت حساب کاربری</button></form></section>
-<section class="panel"><div class="panel-head"><h2>کاربران موجود</h2><span class="tag">{{users|length}} نفر</span></div><div class="table-scroller"><table><thead><tr><th>نام</th><th>نقش</th><th>وضعیت</th><th>مجوزها</th><th>تغییر</th></tr></thead><tbody>{% for user in users %}<tr><td>{{user.username}}</td><td><span class="role-pill" data-role="{{user.role}}">{{role_labels.get(user.role,user.role)}}</span></td><td>{% if user.is_active %}<span class="status-badge" data-status="SoldOut">فعال</span>{% else %}<span class="status-badge" data-status="Canceled">غیرفعال</span>{% endif %}</td><td><div class="user-capabilities">{% for cap in user_caps[user.id] | sort %}
-<span class="user-capability" title="{{cap}}">{{cap_labels.get(cap,cap)}}</span>
-{% else %}<span class="muted">بدون دسترسی</span>{% endfor %}</div></td><td><form method="post" action="/dashboard/users/{{user.id}}/update" class="token-form"><input name="csrf" type="hidden" value="{{csrf}}"><select name="role" aria-label="نقش کاربر"><option value="admin" {% if user.role=='admin' %}selected{% endif %}>مدیر</option><option value="analyst" {% if user.role=='analyst' %}selected{% endif %}>تحلیل‌گر</option><option value="reader" {% if user.role=='reader' %}selected{% endif %}>خواننده</option><option value="metrics" {% if user.role=='metrics' %}selected{% endif %}>فقط آمار</option></select><label><input type="checkbox" name="is_active" value="true" {% if user.is_active %}checked{% endif %}>فعال</label><details class="row-grants"><summary>مجوزهای دقیق</summary><div class="permissions">{% for cap in ['calls:read','metrics:read','calls:sensitive','calls:transcript:read','mcp:use'] %}<label><input type="checkbox" name="grants" value="{{cap}}" {% if cap in user_caps[user.id] %}checked{% endif %}>{{cap_labels.get(cap,cap)}}</label>{% endfor %}</div></details><button type="submit" class="secondary" onclick="return confirm('مجوزها و توکن‌های این حساب پس از تغییر بازنشانی شوند؟')">اعمال</button></form></td></tr>{% else %}<tr><td colspan="5">کاربری وجود ندارد.</td></tr>{% endfor %}</tbody></table></div><p class="description">تغییر نقش یا وضعیت، نشست‌ها و توکن‌های قبلی کاربر را باطل می‌کند. در بخش «مجوزهای دقیق» می‌توانید سطح دسترسی هر کاربر را سفارشی کنید.</p></section></main></div><script src="/static/users.js" defer></script><script type="module">import {enhanceSelects} from "/static/selects.js";enhanceSelects();</script></body></html>
+<section class="panel"><div class="panel-head"><h2>افزودن کاربر</h2></div><form method="post" action="/dashboard/users" class="management-form"><input type="hidden" name="csrf" value="{{csrf}}"><label>نام کاربری<input name="username" dir="ltr" lang="en" maxlength="80" required autocomplete="off" placeholder="user_name"></label><label>رمز موقت (حداقل ۱۴ کاراکتر)<input name="password" dir="ltr" lang="en" type="password" minlength="14" required autocomplete="new-password"></label><label>نوع نقش<select name="role" id="role"><option value="analyst">تحلیل‌گر</option><option value="reader">فقط فهرست تماس‌ها</option><option value="metrics">فقط آمار</option><option value="admin">مدیر کل</option></select></label><div style="grid-column:1/-1"><strong>مجوزهای دقیق</strong><p class="description">برای نقش غیرمدیر، این مجوزها تعیین‌کنندهٔ دسترسی هستند؛ نقش مدیر همهٔ دسترسی‌ها را دارد.</p><div class="permissions"><label><input type="checkbox" name="grants" value="calls:read" checked> دیدن تماس‌ها</label><label><input type="checkbox" name="grants" value="metrics:read" checked> دیدن آمار</label><label><input type="checkbox" name="grants" value="calls:sensitive"> جزئیات حساس</label><label><input type="checkbox" name="grants" value="calls:transcript:read"> تحلیل متن مکالمات توسط AI</label><label><input type="checkbox" name="grants" value="mcp:use" checked> اتصال MCP (نیازمند تماس و آمار)</label></div></div><button class="primary" type="submit">ساخت حساب کاربری</button></form></section>
+<section class="panel users-panel">
+  <div class="panel-head"><div><h2>کاربران موجود</h2><p class="muted small-text">برای تغییر نقش یا دسترسی، کارت هر کاربر را باز کنید.</p></div><span class="tag">{{users|length}} نفر</span></div>
+  <div class="users-list">
+    {% for user in users %}
+    <details class="user-card">
+      <summary class="user-card-summary">
+        <span class="user-card-name"><bdi dir="ltr">{{user.username}}</bdi>
+          {% if user.is_active %}<span class="status-badge" data-status="SoldOut">فعال</span>
+          {% else %}<span class="status-badge" data-status="Canceled">غیرفعال</span>{% endif %}
+        </span>
+        <span class="user-card-role"><span class="role-pill" data-role="{{user.role}}">{{role_labels.get(user.role,user.role)}}</span></span>
+        <span class="user-capabilities">{% for cap in user_caps[user.id] | sort %}
+          <span class="user-capability" title="{{cap}}">{{cap_labels.get(cap,cap)}}</span>
+          {% else %}<span class="muted">بدون دسترسی</span>{% endfor %}
+        </span>
+        <span class="user-card-edit">ویرایش <span aria-hidden="true">⌄</span></span>
+      </summary>
+      <form method="post" action="/dashboard/users/{{user.id}}/update" class="user-edit-form">
+        <input name="csrf" type="hidden" value="{{csrf}}">
+        <label class="user-edit-role">نقش کاربر
+          <select name="role" aria-label="نقش کاربر {{user.username}}">
+            <option value="admin" {% if user.role=='admin' %}selected{% endif %}>مدیر</option>
+            <option value="analyst" {% if user.role=='analyst' %}selected{% endif %}>تحلیل‌گر</option>
+            <option value="reader" {% if user.role=='reader' %}selected{% endif %}>خواننده</option>
+            <option value="metrics" {% if user.role=='metrics' %}selected{% endif %}>فقط آمار</option>
+          </select>
+        </label>
+        <label class="user-edit-active"><input type="checkbox" name="is_active" value="true" {% if user.is_active %}checked{% endif %}> حساب فعال باشد</label>
+        <fieldset class="user-edit-grants"><legend>مجوزهای دقیق</legend>
+          <div class="permissions">{% for cap in ['calls:read','metrics:read','calls:sensitive','calls:transcript:read','mcp:use'] %}
+            <label><input type="checkbox" name="grants" value="{{cap}}" {% if cap in user_caps[user.id] %}checked{% endif %}>{{cap_labels.get(cap,cap)}}</label>
+          {% endfor %}</div>
+        </fieldset>
+        <div class="user-edit-footer"><p class="description">ذخیره تغییرات، نشست‌ها و توکن‌های فعلی این حساب را باطل می‌کند.</p>
+          <button type="submit" class="primary" onclick="return confirm('مجوزها و توکن‌های این حساب پس از تغییر بازنشانی شوند؟')">ذخیره تغییرات</button>
+        </div>
+      </form>
+    </details>
+    {% else %}<p class="muted">کاربری وجود ندارد.</p>{% endfor %}
+  </div>
+  <p class="description">نقش مدیر به همه قابلیت‌ها دسترسی دارد. دسترسی‌های دقیق برای سایر نقش‌ها قابل تنظیم است.</p>
+</section></main></div><script src="/static/users.js" defer></script><script type="module">import {enhanceSelects} from "/static/selects.js";enhanceSelects();</script></body></html>

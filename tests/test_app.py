@@ -252,3 +252,25 @@ def test_operator_rest_filter_retains_raw_values(client,monkeypatch):
     assert res.status_code==200
     assert seen['operator']=='Test Op'
     assert seen['operator_names'] is None
+
+
+def test_admin_templates_keep_login_ltr_and_user_editing_collapsed(client):
+    c, main = client
+    login = c.get('/login').text
+    assert 'name="username" dir="ltr"' in login
+    assert 'name="password" dir="ltr"' in login
+    admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    cookie, _ = main.store.create_session(admin)
+    c.cookies.set('panadan_session', cookie)
+    users = c.get('/dashboard/users')
+    assert users.status_code == 200
+    assert 'class="user-card-summary"' in users.text
+    assert 'class="user-edit-form"' in users.text
+    assert 'class="token-form"' not in users.text
+    activity = c.get('/dashboard/activity')
+    assert activity.status_code == 200
+    assert 'زمان (تهران)' in activity.text
+    assert 'class="activity-col-duration"' in activity.text
+    dashboard = c.get('/dashboard')
+    assert dashboard.status_code == 200
+    assert 'class="filters report-filters"' in dashboard.text
