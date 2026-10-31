@@ -26,7 +26,7 @@ test('mobile navigation groups secondary pages into exactly four destinations',(
   for(const id of ['report','operators','integrations','management']){
     assert.match(js,new RegExp("id:'"+id+"'"));
   }
-  assert.match(js,/groups=\[/);
+  assert.match(js,/groups\s*=\s*\[/);
   assert.match(js,/mobile-nav-tab/);
   assert.match(js,/aria-expanded/);
   assert.match(js,/links\.filter/);
@@ -66,7 +66,7 @@ test('four mobile navigation tabs are actual buttons anchored at the bottom',()=
   assert.match(mobile,/mobile\.append\(button\)/);
   assert.match(mobile,/openMenu\(button, group, available\)/);
   assert.match(mobile,/window\.location\.assign\(available\[0\]\.href\)/);
-  assert.match(css,/\.shell > \.sidebar nav\.mobile-nav\{\s*display:grid;position:fixed;inset:auto 0 0 0;/);
+  assert.match(css,/\.shell > \.sidebar \.mobile-nav\{\s*display:grid;position:fixed;inset:auto 0 0 0;/);
   assert.match(css,/grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
   assert.match(css,/\.shell > \.sidebar > nav:not\(\.mobile-nav\)\{[\s\S]*?overflow-x:hidden!important/);
   assert.match(css,/\.ui-multi-option\[aria-selected="true"\] \.ui-multi-check\{/);
