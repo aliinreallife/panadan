@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {callTypeLabel, callStateLabel} from '../static/labels.js';
+import {callTypeLabel, callStateLabel, directionLabel} from '../static/labels.js';
 
 test('call types map to stable Persian display names', () => {
   assert.equal(callTypeLabel('FirstToch'), 'تماس اول');
@@ -20,4 +20,13 @@ test('unknown values are preserved, not inferred or changed', () => {
   assert.equal(callTypeLabel('NewType'), 'NewType');
   assert.equal(callStateLabel('New State'), 'New State');
   assert.equal(callTypeLabel(null), '—');
+});
+
+test('verified source direction codes are translated without rewriting their values',()=>{
+  assert.equal(directionLabel('IntoOut'),'خروجی');
+  assert.equal(directionLabel('OutToIn'),'ورودی');
+  assert.equal(directionLabel('into_out'),'خروجی');
+  assert.equal(directionLabel('OUT_TO_IN'),'ورودی');
+  assert.equal(directionLabel('NewDirection'),'NewDirection');
+  assert.equal(directionLabel(null),'—');
 });
