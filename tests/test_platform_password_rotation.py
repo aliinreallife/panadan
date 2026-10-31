@@ -35,6 +35,7 @@ if [[ "$args" == *"inspect --format"* ]]; then echo true; exit 0; fi
 if [[ "$args" == *" ps -q db"* ]]; then echo fake-platform-container; exit 0; fi
 if [[ "$args" == *"SHOW server_version_num"* ]]; then echo 180006; exit 0; fi
 if [[ "$args" == *"current_database()"* ]]; then echo panadan:panadan_owner; exit 0; fi
+if [[ "$args" == *"SHOW log_statement"* ]]; then echo "${MOCK_LOG_STATEMENT:-none}"; exit 0; fi
 if [[ "$args" == *"--single-transaction"* ]]; then
     IFS= read -r statement
     [[ "$statement" =~ ^ALTER[[:space:]]ROLE[[:space:]]panadan_owner[[:space:]]PASSWORD[[:space:]]\'[a-f0-9]{64}\'\;$ ]] || exit 2
@@ -121,4 +122,14 @@ def test_failed_container_recreation_keeps_new_credentials_for_recovery(tmp_path
     assert run.returncode != 0
     assert private.read_text() != original
     assert "Retry platform-db up" in run.stderr
+    assert not list(tmp_path.glob(".env.platform.rotate.*"))
+
+
+def test_rotation_refuses_sql_logging_before_generating_a_password(tmp_path):
+    private, original, env = _sandbox(tmp_path)
+    env["MOCK_LOG_STATEMENT"] = "ddl"
+    result = _run(tmp_path, env)
+    assert result.returncode != 0
+    assert "statement logging" in result.stderr
+    assert private.read_text() == original
     assert not list(tmp_path.glob(".env.platform.rotate.*"))
