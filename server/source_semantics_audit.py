@@ -96,7 +96,7 @@ FROM classified
 """
 
 
-def audit(*, limit: int = 300, offsets: tuple[int, ...] = (0, 1000, 5000)) -> dict:
+def audit(*, limit: int = 100, offsets: tuple[int, ...] = (0, 1000, 5000)) -> dict:
     if type(limit) is not int or not 1 <= limit <= 1000:
         raise ValueError("limit must be between 1 and 1000")
     if not isinstance(offsets, tuple) or not offsets or len(offsets) > 3:
@@ -124,7 +124,7 @@ def audit(*, limit: int = 300, offsets: tuple[int, ...] = (0, 1000, 5000)) -> di
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--limit", type=int, default=300)
+    parser.add_argument("--limit", type=int, default=100, help="1-1000 rows per slice; default 100")
     parser.add_argument("--offsets", default="0,1000,5000")
     args = parser.parse_args(argv)
     try:
