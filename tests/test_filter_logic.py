@@ -93,13 +93,65 @@ def test_mobile_ui_and_filter_contract_are_scoped():
     html = Path('templates/dashboard.html').read_text()
     js = Path('static/app.js').read_text()
     css = Path('static/style.css').read_text()
-    assert 'id="direction"' in html
-    assert 'name="filter_mode" value="any"' in html
+    assert 'id="direction" multiple data-multi' in html
+    assert 'name="filter_mode"' not in html
     assert 'id="created_after"' not in html
-    assert "values.set('filter_mode',profileOperator?'all':mode)" in js
+    assert "for(const value of multiValues(select))values.append(key,value)" in js
     assert "params.delete('limit')" in js
     assert "td.dataset.label" in js
     assert '.calls-panel tbody tr{' in css
     assert '.report-filters{' in css
-    assert '.activity-filter-panel .activity-only-errors{' in css
     assert '#metric-length{' in css
+
+
+def test_multiselect_or_matches_all_selected_values_but_dates_are_and():
+    where, params = database.filters(
+        date(2026,10,1), date(2026,10,31), None,
+        filter_mode='any',
+        selected_facets={
+            'operators':['Ali','Sara'],
+            'states':['SoldOut','Unchecked'],
+            'call_types':['FollowUp'],
+            'directions':['1','2'],
+        },
+        any_operator_groups=[['Team Alpha'], ['__unspecified__']],
+    )
+    assert where.startswith(' WHERE "CALLDATE" >= %s AND "CALLDATE" <= %s AND (')
+    assert '"vw_danix_base_info_users_name" = ANY(%s)' in where
+    assert '"aicallinfostate" = ANY(%s)' in where
+    assert '"tellstate" = ANY(%s)' in where
+    assert '"tellside"::text = ANY(%s)' in where
+    assert ' OR ' in where
+    assert params[:2] == [date(2026,10,1),date(2026,10,31)]
+    assert ['Ali','Sara'] in params
+    assert ['SoldOut','Unchecked'] in params
+    assert ['1','2'] in params
+    assert ['Team Alpha'] in params
+
+
+def test_operator_profile_remains_fixed_and_cannot_expand_via_other_facets():
+    where, params = database.filters(
+        date(2026,10,1), None, None,
+        operator='Ali', filter_mode='any',
+        selected_facets={'states':['SoldOut','Unchecked']},
+    )
+    assert ' WHERE "CALLDATE" >= %s AND "vw_danix_base_info_users_name" = %s AND (' in where
+    assert '"aicallinfostate" = ANY(%s)' in where
+    assert params == [date(2026,10,1),'Ali',['SoldOut','Unchecked']]
+
+
+@pytest.mark.parametrize('bad',[
+    {'unknown':['a']},{'states':['a']*21},
+    {'states':['']},{'operators':['x'*181]},{'directions':['x'*61]},
+])
+def test_multiselect_validation_rejects_untrusted_inputs(bad):
+    with pytest.raises(ValueError):
+        database.filters(None,None,None,selected_facets=bad,filter_mode='any')
+
+
+def test_empty_multiselect_has_no_restricting_or_predicates():
+    where, params = database.filters(None,None,None,
+                                     selected_facets={'states':[],'directions':[]},
+                                     filter_mode='any')
+    assert where == ''
+    assert params == []
