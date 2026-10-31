@@ -192,6 +192,45 @@ stable numeric-ID operator authorization. **Do not turn metadata filters into
 team/department security permissions** before the cross-surface RBAC checks
 described in [Operator scopes](docs/OPERATOR_SCOPES.md).
 
+## Troubleshoot PostgreSQL connection timeouts
+
+A healthy VPN Docker container does **not** prove that PostgreSQL itself
+accepts connections. The current VPN health check validates the `tun0`
+interface and that the database host route traverses the tunnel, while
+`pgrelay` opens a separate outbound TCP connection for each client.
+
+If `./panadan.sh audit-fields`, the dashboard or another database query
+fails with `ConnectionTimeout`, diagnose the actual path first:
+
+```bash
+cd ~/panadan
+./panadan.sh diagnose-db
+./panadan.sh logs
+```
+
+The diagnostic checks (1) the VPN route to the DB IP, (2) PostgreSQL's TCP
+readiness from inside the VPN namespace using `pg_isready`, (3) local
+loopback relay acceptance, and (4) a real, explicit read-only PostgreSQL
+`SELECT 1` using the configured credentials and SSL settings.
+
+Interpretation:
+
+- **Local relay TCP fails:** inspect the `pgrelay` container, Docker
+  port mapping and WSL Docker integration.
+- **Local relay works but VPN-side `pg_isready` fails:** inspect VPN
+  reachability, the database listener and firewall with the DB/VPN operator.
+  A tunnel route check by itself is not sufficient.
+- **`pg_isready` succeeds but `SELECT 1` fails:** check SSL requirements,
+  credentials, `pg_hba.conf`, server limits and relay logs.
+- **All checks pass but `audit-fields` fails:** retry a small bounded sample
+  (`--limit 100 --offsets 0`) and investigate server-side query execution,
+  statement timeouts and view complexity.
+
+Neither the diagnostic nor the audit writes to Odoo. These commands must not
+print passwords, DSNs, customer information or transcripts. Do not paste
+private VPN client configuration, PostgreSQL logs containing connection
+strings, or `.env.*` secrets in GitHub issues or chats.
+
 ## Preproduction SDK v2 migration
 
 Panadan now uses official `mcp==2.3.0` (locked) and `MCPServer`, with Python 3.13, Node 24 LTS, refreshed FastAPI/psycopg dependencies and pinned, reproducible npm dependencies. The `FastMCP` v1 class no longer exists in the v2 SDK. The MCP HTTP route remains `/mcp/`, preserving old clients while supporting the newer 2026 MCP protocol. The transcript permission and read-only constraints are unchanged. PR CI builds both Docker images before merge.

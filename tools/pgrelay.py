@@ -14,7 +14,14 @@ PORT = int(os.environ.get("PANADAN_PG_TARGET_PORT", "5432"))
 class Relay(socketserver.BaseRequestHandler):
     def handle(self):
         try:
-            with socket.create_connection((HOST, PORT), timeout=10) as remote:
+            remote = socket.create_connection((HOST, PORT), timeout=10)
+        except (OSError, ValueError) as exc:
+            # Connection errors from the remote host are not credential errors.
+            # Never print addresses, secrets, socket payloads or exception text.
+            logging.warning("Remote PostgreSQL TCP connect failed: %s", type(exc).__name__)
+            return
+        try:
+            with remote:
                 self.request.settimeout(None)
                 remote.settimeout(None)
                 streams = [self.request, remote]
@@ -25,9 +32,8 @@ class Relay(socketserver.BaseRequestHandler):
                         payload = source.recv(65536)
                         if not payload: return
                         (remote if source is self.request else self.request).sendall(payload)
-        except (OSError, ValueError):
-            # Never log passwords, connection bytes, or customer information.
-            logging.warning("Connection to reporting database ended or unavailable")
+        except (OSError, ValueError) as exc:
+            logging.warning("PostgreSQL relay forwarding interrupted: %s", type(exc).__name__)
 
 class ThreadedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True

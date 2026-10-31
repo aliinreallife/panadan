@@ -176,6 +176,9 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"Audit failed: {type(exc).__name__} SQLSTATE={getattr(exc, 'sqlstate', None) or 'unknown'}",
               file=sys.stderr)
+        print("If the failure is connection-related, run ./panadan.sh diagnose-db to",
+              "check the local relay, VPN route and PostgreSQL readiness separately.",
+              file=sys.stderr)
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
     return 0
