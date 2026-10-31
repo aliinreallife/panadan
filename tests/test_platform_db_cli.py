@@ -74,3 +74,14 @@ def test_help_does_not_need_secret_or_docker():
         cwd=ROOT, capture_output=True, text=True, check=True, timeout=10,
     )
     assert "{setup|up|init|check|backup|down}" in r.stdout
+
+
+def test_disposable_docker_container_name_expands_bash_pid():
+    """A literal $ is an illegal Docker container name (regression)."""
+    runner = (ROOT / "tools/test-platform-integration.sh").read_text()
+    assert 'container="panadan-ci-pg-$$"' in runner
+    assert 'container="panadan-ci-pg-$"' not in runner
+    assert 'docker run -d \\' in runner
+    assert 'docker run --rm -d' not in runner
+    assert 'docker restart "$container"' in runner
+    assert 'docker rm -fv "$container"' in runner
