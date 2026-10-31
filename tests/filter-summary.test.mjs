@@ -43,6 +43,10 @@ test('applied chips represent successful responses only and render source labels
   assert.doesNotMatch(app,/chip\.innerHTML/);
   assert.match(html,/id="applied-filters"[^>]*hidden/);
   assert.match(html,/id="applied-filter-chips"/);
+  assert.match(html,/id="count"[^>]*aria-live="polite"/);
+  assert.match(app,/\$\('rows'\)\.setAttribute\('aria-busy','true'\)/);
+  assert.match(app,/\$\('rows'\)\.removeAttribute\('aria-busy'\)/);
+  assert.match(app,/clear\.onclick=\(\)=>\$\('reset'\)\?\.click\(\)/);
   assert.match(css,/\.applied-filters\[hidden\]\{display:none!important\}/);
 });
 
