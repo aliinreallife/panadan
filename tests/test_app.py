@@ -309,3 +309,37 @@ def test_sales_ai_score_label_and_metric_coverage(client):
     assert stats.json()['avg_ai_score'] == 10
     assert 'امتیاز ثبت‌شده: ' not in Path('static/app.js').read_text()
     assert 'ثبت نشده' in Path('static/app.js').read_text()
+
+
+def test_customer_phone_only_readable_with_sensitive_permission(client, monkeypatch):
+    c, main = client
+    calls = []
+    def fake_get_call(call_id, sensitive=False):
+        calls.append((call_id, sensitive))
+        public = {'id': call_id, 'CALLDATE': '2026-10-29'}
+        if sensitive:
+            return {**public, 'customertell': '09121234567',
+                    'customername': 'Synthetic Customer'}
+        return public
+    monkeypatch.setattr(main.database, 'get_call', fake_get_call)
+
+    reader = main.store.create_user('call-reader-phone', 'reader-long-safe-password',
+                                    'reader', ['calls:read'])
+    cookie, _ = main.store.create_session(reader)
+    c.cookies.set('panadan_session', cookie)
+    response = c.get('/dashboard/data/5')
+    assert response.status_code == 200
+    assert 'customertell' not in response.json()
+    assert calls[-1] == (5, False)
+
+    admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    cookie, _ = main.store.create_session(admin)
+    c.cookies.set('panadan_session', cookie)
+    response = c.get('/dashboard/data/5')
+    assert response.status_code == 200
+    assert response.json()['customertell'] == '09121234567'
+    assert calls[-1] == (5, True)
+    assert 'customertell' not in c.get('/dashboard/overview/5').json()
+    assert calls[-1] == (5, False)
+    assert "'customertell'" in Path('server/database.py').read_text()
+    assert "dialablePhone(val)" in Path('static/app.js').read_text()
