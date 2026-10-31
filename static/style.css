@@ -1117,7 +1117,7 @@ doran-datepicker::part(dialog){
    align-items:center;row-gap:0;padding:7px 12px;
    overflow:visible!important;
  }
- .shell > .sidebar nav.mobile-nav{
+ .shell > .sidebar .mobile-nav{
    display:grid;position:fixed;inset:auto 0 0 0;
    z-index:20;grid-template-columns:repeat(4,minmax(0,1fr));
    gap:7px;min-width:0;width:100%;max-width:none;
@@ -1143,6 +1143,6 @@ doran-datepicker::part(dialog){
  .shell > .content{padding-bottom:calc(105px + env(safe-area-inset-bottom,0px))}
 }
 @media(max-width:370px){
- .shell > .sidebar nav.mobile-nav{gap:5px;padding-inline:7px}
+ .shell > .sidebar .mobile-nav{gap:5px;padding-inline:7px}
  .shell > .sidebar .mobile-nav-text{font-size:10px}
 }
