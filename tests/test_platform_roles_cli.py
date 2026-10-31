@@ -71,7 +71,7 @@ def test_roles_check_fails_closed_on_privilege_drift(tmp_path):
     script = tools / "platform-roles.sh"
     shutil.copyfile(ROLES, script)
     secret = tmp_path / ".env.platform"
-    secret.write_text("PANADAN_PLATFORM_DB_PASSWORD=synthetic_only\\n")
+    secret.write_text("PANADAN_PLATFORM_DB_PASSWORD=synthetic_only\n")
     secret.chmod(0o600)
 
     fakebin = tmp_path / "fakebin"
