@@ -265,6 +265,7 @@ function longTextSection(key, value){
 function metaValue(key,value){
   if(key==='CALLDATE')return dateFormat(value);
   if(key==='tellstate')return callTypeLabel(value);
+  if(key==='tellside')return directionLabel(value);
   if(key==='aicallinfostate')return callStateLabel(value);
   if(key==='possibility_of_sale_ai')return numberFormat(value);
   if(key==='voice_length')return formatVoiceDuration(value);
