@@ -32,6 +32,21 @@ deployment. Original raw revisions are retained by default: that is **not**
 a finalized legal retention or deletion policy. Build retention-aware
 purges and privileged maintenance procedures before ingesting personal data.
 
+## Database roles and authorized access
+
+The standalone PostgreSQL 18 platform now has an **optional**
+role-provisioning flow. A privileged owner approves and enables
+sources; a restricted `panadan_ingest_writer` has INSERT/UPDATE
+rights for the required ingestion and processing tables but cannot
+activate sources. A separate `panadan_report_reader` has SELECT
+rights on a sanitized view only, never the raw revisions or full
+derived-facts table. No dashboard, API or MCP route uses these roles yet.
+
+See [the PG18 deployment and role guide](POSTGRESQL_18_PLATFORM.md).
+Credentials and role grants must be initialized explicitly; real
+customer-data retention, off-host backups and complete RBAC are still
+blocked.
+
 ## Code contracts
 
 - `server/platform_ingest.py` exposes `register_source`,
