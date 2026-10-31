@@ -447,3 +447,56 @@ def test_sticky_navigation_logout_available_on_all_admin_pages(client):
     assert '.shell > .sidebar{' in css
     assert 'position:sticky;top:0' in css
     assert '.calls-panel tbody tr{' in css
+
+
+def test_reporting_503_logs_only_safe_error_class_and_sqlstate(client, monkeypatch, caplog):
+    """All dashboard data requests retain a safe HTTP response and sanitized log."""
+    import logging
+    c, main = client
+    admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    cookie, _ = main.store.create_session(admin)
+    c.cookies.set('panadan_session', cookie)
+
+    class SyntheticBackendFailure(Exception):
+        sqlstate = '08006'
+        def __str__(self):
+            return 'db host 192.0.2.10 password=SECRET customer=09120000000'
+
+    def failed_query(*args, **kwargs):
+        raise SyntheticBackendFailure()
+    monkeypatch.setattr(main.database, 'list_calls', failed_query)
+    monkeypatch.setattr(main.database, 'stats', failed_query)
+    monkeypatch.setattr(main.database, 'operators', failed_query)
+
+    with caplog.at_level(logging.WARNING, logger='panadan.reporting'):
+        for endpoint in ('/dashboard/data', '/dashboard/metrics',
+                         '/dashboard/filter-options'):
+            response = c.get(endpoint)
+            assert response.status_code == 503
+            assert response.json()['detail'] == 'Reporting database unavailable or query timed out'
+            assert 'SECRET' not in response.text
+        messages = [record.getMessage() for record in caplog.records
+                    if record.name == 'panadan.reporting']
+    assert len(messages) == 3
+    assert all('SyntheticBackendFailure' in message and 'SQLSTATE=08006' in message
+               for message in messages)
+    assert all('192.0.2.10' not in message and 'SECRET' not in message
+               and '09120000000' not in message
+               for message in messages)
+
+
+def test_reporting_sqlstate_logging_rejects_untrusted_code(client, caplog):
+    import logging
+    _, main = client
+    class SecretError(Exception):
+        sqlstate = '08006 password=PRIVATE'
+        def __str__(self):
+            return 'unsafe credentials and private customer data'
+    with caplog.at_level(logging.WARNING, logger='panadan.reporting'):
+        with pytest.raises(Exception) as error:
+            main.json_failure(SecretError())
+    assert getattr(error.value, 'status_code', None) == 503
+    messages = [record.getMessage() for record in caplog.records
+                if record.name == 'panadan.reporting']
+    assert messages == ['Reporting backend failed type=SecretError SQLSTATE=unknown']
+    assert 'PRIVATE' not in str(messages)
