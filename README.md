@@ -226,6 +226,37 @@ Interpretation:
   (`--limit 100 --offsets 0`) and investigate server-side query execution,
   statement timeouts and view complexity.
 
+### Reload a previously running relay after updating Panadan
+
+The development relay mounts `tools/pgrelay.py` as source code, but its
+already-running Python process does **not** automatically reload that source
+after `git pull`. If the logs still show the old generic warning
+`Connection to reporting database ended or unavailable`, reload **only**
+the relay process:
+
+```bash
+docker compose --env-file .env.app -f compose.dev.yaml restart pgrelay
+./panadan.sh diagnose-db
+```
+
+Do not interpret stale relay warnings as evidence of a new code regression.
+Restarting the relay will not repair an unreachable server behind the VPN.
+
+### When the tunnel is up but PostgreSQL gives no response
+
+A confirmed route such as `dev tun0` proves the local routing decision,
+not remote reachability. Repeating `Inactivity timeout (--ping-restart)`
+in OpenVPN logs is an **additional potential tunnel health symptom**; it is
+not definitive proof of a PostgreSQL or VPN-server defect.
+
+If `pg_isready` from the VPN container says `no response`, investigate
+with the VPN/DB operator: whether `192.168.3.9:5432` is currently
+listening, VPN-server forwarding to the private database subnet, firewall
+rules allowing the VPN client subnet, return routing, and OpenVPN keepalive
+reachability. Avoid changing firewall rules or rebooting production services
+until an administrator has confirmed the cause. Do not retry larger audits
+until the basic `SELECT 1` diagnostic succeeds.
+
 Neither the diagnostic nor the audit writes to Odoo. These commands must not
 print passwords, DSNs, customer information or transcripts. Do not paste
 private VPN client configuration, PostgreSQL logs containing connection
