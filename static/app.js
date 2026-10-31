@@ -376,13 +376,16 @@ async function detail(id){
       if(key==='tellstate'||key==='aicallinfostate')chip.title='مقدار اصلی: '+safe(data[key]);
       chips.append(chip);
     }
+    // Fourth card belongs in the same balanced 2x2 grid; missing ≠ zero.
+    const hasScore=data.possibility_of_sale_ai!==null&&data.possibility_of_sale_ai!==undefined;
+    const score=el('div','detail-chip detail-chip-score');
+    score.append(
+      el('span','detail-chip-label','امتیاز احتمال فروش (AI)'),
+      el('strong','detail-score-value',hasScore?numberFormat(data.possibility_of_sale_ai):'ثبت نشده')
+    );
+    score.title='امتیاز تخمینی از سامانه مبدأ است؛ معادل احتمال قطعی یا فروش تأییدشده نیست.';
+    chips.append(score);
     hero.append(chips);
-    if(Object.hasOwn(data,'possibility_of_sale_ai')){
-      const present=data.possibility_of_sale_ai!==null&&data.possibility_of_sale_ai!==undefined;
-      const score=el('p','detail-score','امتیاز احتمال فروش (AI): '+(present?numberFormat(data.possibility_of_sale_ai):'ثبت نشده'));
-      score.title='امتیاز تخمینی از سامانه مبدأ است؛ معادل احتمال قطعی یا فروش تأییدشده نیست.';
-      hero.append(score);
-    }
     $('detail').append(hero);
     const analyzed=priorityFields.filter(key=>data[key]!==null&&data[key]!==undefined&&String(data[key]).trim());
     if(analyzed.length){
