@@ -1,9 +1,15 @@
 name: CI
 on:
   push:
+    branches: [main]
   pull_request:
 permissions:
   contents: read
+# Avoid using paid runner minutes twice for branch pushes with open PRs.
+# New commits cancel older in-progress CI on the same PR or main branch.
+concurrency:
+  group: panadan-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   quality:
     runs-on: ubuntu-latest
