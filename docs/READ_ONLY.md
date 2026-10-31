@@ -7,7 +7,7 @@ authentication database** have different access policies.
 | --- | --- | --- |
 | Dashboard | Fixed SELECT-only reporting queries | Session/login/user management may write |
 | REST API | Fixed SELECT-only reporting queries | Access-token last-used accounting may write |
-| MCP (manual bearer or OAuth) | Four fixed SELECT-only, non-sensitive tools | Token usage or OAuth account lookups may write/read |
+| MCP (manual bearer or OAuth) | Five allowlisted SELECT-only tools: four summary/metrics tools plus one separately permissioned redacted transcript tool | Token usage, account and transcript-access audit may write/read |
 | Admin panel | Never writes to the source reporting DB | Admin can create/suspend users, revoke connections |
 
 The data connection in `server/database.py` specifies
@@ -50,9 +50,13 @@ runtime application's environment is still necessary.
 
 ## What to do if the audit finds CREATE
 
-A previous inspection noted that the existing reporting login could
-`CREATE` objects in the `public` schema. This is **not verified for the
-current server** until `./panadan.sh audit-db` is run.
+The user's read-only audit on 2026-10-31 found effective `CREATE` on
+the `public` schema for `report_user`, granted to `PUBLIC` by
+`pg_database_owner`. The same audit found no writable existing relations
+and no usable/updatable sequences (in sampled non-system schemas).
+This is **not** a privilege audit of all callable SECURITY DEFINER functions
+or every possible write path. Repeat `./panadan.sh audit-db` after a
+DBA-reviewed grant change and independently confirm least privilege.
 
 **Recommended approach: use a separate dedicated least-privilege role**
 instead of changing the grants of a shared reporting role.
