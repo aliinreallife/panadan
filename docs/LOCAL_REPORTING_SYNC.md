@@ -54,6 +54,58 @@ If the VPN is flaky or planning is slow, try:
 If the source view has no reliable update marker or delete feed, record that
 as a source-contract limitation and ask its owner for an improved sync source.
 
+## Observed live audit — 2026-10-31
+
+The source operator successfully ran `./panadan.sh audit-sync --sample 100`
+over the existing read-only VPN. Python 162/162 and Node 51/51 tests passed
+on that checkout. These are source-observed metadata results, not a
+production migration or a comprehensive census.
+
+| Observation | Result | Decision |
+| --- | --- | --- |
+| Reporting object | Ordinary `view`, 36 columns | No native view-level logical publication or change history |
+| Candidate key | Integer `id`; 100/100 sampled IDs populated and distinct | Test **global** stable uniqueness before relying on this as UPSERT key |
+| Creation marker | `create_date`, present in all 100 sampled rows | May support initial import/inserts; **not** reliable for updates |
+| ID vs creation time | 0 creation-order inversions in the newest 100 rows | Encouraging sample, **not** proof of monotonic history |
+| Update markers | None of the audit's recognized names appeared | Exact incremental edits **not available** via observed view |
+| Deletion markers | None of the audit's recognized names appeared | Exact delete propagation **not available** via observed view |
+| PostgreSQL planner | Estimated 93,396 rows, 3,049 bytes/row | Rough sizing input only, not a measured row count or disk footprint |
+
+Multiplying those two **planner estimates** yields about 285 million bytes
+(approximately 272 MiB) for estimated emitted row bytes. This is **not a
+storage budget** or a guarantee of on-disk footprint: real text and
+transcript sizes, PostgreSQL row/index overhead, TOAST, WAL, backups,
+compression and replication can change actual storage substantially.
+Do not claim the full history occupies 272 MiB without a measured sample.
+
+**Decision:** The history appears potentially practical to migrate in
+small batches, but no live mirror or scheduled ingestion may be called
+fully correct until source-owner guarantees address edits and deletes.
+A keyset backfill is a reasonable *pilot*, starting with about 100 rows
+per batch; measure runtime and failure rate before loading all history.
+Keep the existing dashboard source-read path until a local read-path
+parity/security test is complete.
+
+**Source owner questions requiring explicit answers:**
+
+1. Is the view's integer `id` globally unique, immutable and never reused?
+   Can joins produce multiple rows for one ID?
+2. Can a separate sync view or change feed expose a stable change sequence
+   or comprehensive `sync_updated_at` for **any field affecting the final
+   view row**, including changes to joined models?
+3. Can hard deletions, archival and disappearance from the view be emitted
+   as tombstone events with the stable ID?
+4. What is the approved data-retention scope, particularly phone numbers,
+   customer names, transcripts and derived AI text? May these be stored
+   in Panadan's own PostgreSQL, and how should source deletions be honored?
+5. Are there source rate/batch limits? May Panadan run one read-only
+   incremental job at an agreed cadence without overloading production?
+
+If the source owner cannot provide those change semantics, choose a
+**best-effort** refresh/reconciliation model with clearly bounded
+staleness and explicitly acknowledged inability to detect arbitrary
+old-row edits or deletes immediately.
+
 ## Recommended source contract (preferred)
 
 Ask the Odoo reporting-view owner for one of:
