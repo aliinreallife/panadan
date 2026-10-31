@@ -18,6 +18,12 @@ from server.platform_ingest import (
 )
 
 
+def test_platform_pg_version_is_18(pg):
+    """The Panadan-owned integration server is PG18, independent of Odoo."""
+    version = pg.execute("SHOW server_version_num").fetchone()["server_version_num"]
+    assert 180000 <= int(version) < 190000
+
+
 def test_json_validation_is_bounded_and_does_not_need_a_database():
     first = _validate_events([SourceEvent("42", "upsert", {"name": "آزمایش", "n": 1})])
     second = _validate_events([SourceEvent("42", "upsert", {"n": 1, "name": "آزمایش"})])
