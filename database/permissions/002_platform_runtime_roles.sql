@@ -4,7 +4,7 @@
 --
 -- Reader sees ONLY the explicitly allowlisted, sanitized v1 facts. Raw
 -- source revisions, transcripts, account metadata and source IDs stay
--- inaccessible except for a scoped numeric identifier in the safe view.
+-- inaccessible. The view exposes only an internal revision ID.
 --
 -- Guard database identity, not just schema name.
 DO $guard$
@@ -58,7 +58,7 @@ GRANT USAGE ON ALL SEQUENCES IN SCHEMA panadan_ingest TO panadan_ingest_writer;
 -- Do not expose this view directly to users without API-level RBAC.
 CREATE OR REPLACE VIEW panadan_ingest.safe_call_facts_v1
 WITH (security_barrier = true) AS
-SELECT s.source_key, s.external_id, d.fact_key,
+SELECT s.source_key, d.revision_id, d.fact_key,
   CASE d.fact_key
     WHEN 'call_direction' THEN jsonb_build_object(
        'code', d.value->>'code',
@@ -67,9 +67,11 @@ SELECT s.source_key, s.external_id, d.fact_key,
     WHEN 'call_type' THEN jsonb_build_object('source_code', d.value->>'source_code')
     WHEN 'ai_call_status' THEN jsonb_build_object('source_code', d.value->>'source_code')
     WHEN 'recording_duration' THEN jsonb_build_object(
-       'seconds', (d.value->>'seconds')::numeric)
+       'seconds', CASE WHEN jsonb_typeof(d.value->'seconds') = 'number'
+                  THEN (d.value->>'seconds')::numeric END)
     WHEN 'ai_sales_estimate' THEN jsonb_build_object(
-       'score_0_100', (d.value->>'score_0_100')::numeric,
+       'score_0_100', CASE WHEN jsonb_typeof(d.value->'score_0_100') = 'number'
+                      THEN (d.value->>'score_0_100')::numeric END,
        'is_confirmed_sale', false)
   END AS fact_value
 FROM panadan_ingest.source_records s
@@ -89,11 +91,14 @@ WHERE s.is_deleted = false
        AND d.value->>'source_code' ~ '^[A-Za-z0-9_]{1,60}$')
     OR (d.fact_key = 'recording_duration'
        AND jsonb_typeof(d.value->'seconds') = 'number'
-       AND (d.value->>'seconds')::numeric >= 0
-       AND (d.value->>'seconds')::numeric < 10000000)
+       AND (CASE WHEN jsonb_typeof(d.value->'seconds') = 'number'
+                  THEN (d.value->>'seconds')::numeric END) >= 0
+       AND (CASE WHEN jsonb_typeof(d.value->'seconds') = 'number'
+                  THEN (d.value->>'seconds')::numeric END) < 10000000)
     OR (d.fact_key = 'ai_sales_estimate'
        AND jsonb_typeof(d.value->'score_0_100') = 'number'
-       AND (d.value->>'score_0_100')::numeric BETWEEN 0 AND 100)
+       AND (CASE WHEN jsonb_typeof(d.value->'score_0_100') = 'number'
+                  THEN (d.value->>'score_0_100')::numeric END) BETWEEN 0 AND 100)
   );
 
 -- A PUBLIC view created by the privileged owner has no PUBLIC grants.
