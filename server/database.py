@@ -77,7 +77,8 @@ def filters(after: date | None, before: date | None, state: str | None,
             call_type: str | None = None, operator: str | None = None,
             operator_names: list[str] | None = None, *,
             direction: str | None = None, filter_mode: str = 'all',
-            any_operator_groups: list[list[str]] | None = None):
+            any_operator_groups: list[list[str]] | None = None,
+            selected_facets: dict[str, list[str]] | None = None):
     """Date range always AND; selected categorical filters can use AND or OR.
 
     Directory assignments are report facets, not row-level authorization.
@@ -125,6 +126,49 @@ def filters(after: date | None, before: date | None, state: str | None,
         for group in any_operator_groups:
             selections.append(_operator_match(group, select_args))
 
+    # Dashboard multi-select: values within each dimension are OR, and
+    # selected dimensions are OR together. Fixed legacy 'operator' stays AND
+    # when an explicit multi-select query is used (operator profile context).
+    if selected_facets is not None:
+        allowed = {
+            'operators': OPERATOR_COLUMN, 'states': 'aicallinfostate',
+            'call_types': 'tellstate', 'directions': 'tellside',
+        }
+        if set(selected_facets) - set(allowed):
+            raise ValueError('Unknown report filter')
+        for key, values in selected_facets.items():
+            if not isinstance(values, list) or len(values) > 20 or any(
+                not isinstance(v, str) or not v or len(v) > (180 if key == 'operators' else 60)
+                for v in values
+            ):
+                raise ValueError('Invalid report filter values')
+            if not values:
+                continue
+            if key == 'operators':
+                selections.append(_operator_match(values, select_args))
+            else:
+                column = allowed[key]
+                predicate = f'"{column}"::text = ANY(%s)' if key == 'directions' else f'"{column}" = ANY(%s)'
+                selections.append(predicate)
+                select_args.append(list(dict.fromkeys(values)))
+        if operator:
+            # Legacy single-operator scoping is not an OR term.
+            # Remove its existing predicate from the disjunction, then AND it
+            # outside so the profile cannot accidentally expand via other facets.
+            fixed = '"' + OPERATOR_COLUMN + '" = %s'
+            if operator == UNSPECIFIED:
+                fixed = _operator_match([UNSPECIFIED], [])
+            if operator != UNSPECIFIED and fixed in selections:
+                idx = selections.index(fixed)
+                selections.pop(idx)
+                select_args.remove(operator)
+            else:
+                selections = [p for p in selections if p != fixed]
+            date_parts.append(fixed)
+            if operator != UNSPECIFIED:
+                date_args.append(operator)
+        filter_mode = 'any'
+
     if selections:
         separator = ' OR ' if filter_mode == 'any' else ' AND '
         date_parts.append('(' + separator.join(selections) + ')')
@@ -137,7 +181,8 @@ def list_calls(limit: int = 20, offset: int = 0, after: date | None = None,
                call_type: str | None = None, operator: str | None = None,
                operator_names: list[str] | None = None, *,
                direction: str | None = None, filter_mode: str = 'all',
-               any_operator_groups: list[list[str]] | None = None):
+               any_operator_groups: list[list[str]] | None = None,
+               selected_facets: dict[str, list[str]] | None = None):
     limit = max(1, min(int(limit), 100))
     offset = max(0, min(int(offset), 10000))
     if after and before and after > before: raise ValueError('Invalid date range')
@@ -147,7 +192,8 @@ def list_calls(limit: int = 20, offset: int = 0, after: date | None = None,
     if operator and len(operator) > 180: raise ValueError('Invalid operator')
     if created_after and created_before and created_after > created_before: raise ValueError('Invalid time range')
     where, params = filters(after, before, state, created_after, created_before, call_type, operator, operator_names,
-                            direction=direction, filter_mode=filter_mode, any_operator_groups=any_operator_groups)
+                            direction=direction, filter_mode=filter_mode, any_operator_groups=any_operator_groups,
+                            selected_facets=selected_facets)
     q = ('SELECT ' + ','.join('"' + c + '"' for c in PUBLIC_COLUMNS) +
          ' FROM ' + VIEW + where + ' ORDER BY "CALLDATE" DESC NULLS LAST, id DESC LIMIT %s OFFSET %s')
     with connect() as c:
@@ -202,11 +248,13 @@ def stats(after: date | None = None, before: date | None = None,
           operator: str | None = None, operator_names: list[str] | None = None,
           *, state: str | None = None, call_type: str | None = None,
           direction: str | None = None, filter_mode: str = 'all',
-          any_operator_groups: list[list[str]] | None = None):
+          any_operator_groups: list[list[str]] | None = None,
+          selected_facets: dict[str, list[str]] | None = None):
     where, params = filters(after, before, state, created_after, created_before,
                             call_type=call_type, operator=operator, operator_names=operator_names,
                             direction=direction, filter_mode=filter_mode,
-                            any_operator_groups=any_operator_groups)
+                            any_operator_groups=any_operator_groups,
+                            selected_facets=selected_facets)
     q = ('SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE "aicallinfostate" = %s) AS sold_out, '
          'COUNT("possibility_of_sale_ai") AS scored_calls, '
          'ROUND(AVG("possibility_of_sale_ai")::numeric, 1) AS avg_ai_score, '
