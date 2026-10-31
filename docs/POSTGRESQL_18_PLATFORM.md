@@ -77,6 +77,54 @@ backup automatically. This does not replace a production backup drill.
 `pg_dump` does not back up external files, nor guarantee a recovery
 point for concurrent source writes once ingestion is enabled.
 
+## Restricted runtime roles (opt-in)
+
+The Docker bootstrap account `panadan_owner` is a privileged
+administrator. Never give its password to the ingestion worker, reporter,
+dashboard or MCP layer.
+
+To provision two separate **non-admin LOGIN roles** on the independently
+owned PostgreSQL 18 instance:
+
+```bash
+cd ~/panadan
+./panadan.sh platform-db roles-setup  # one-time random credentials, never printed
+./panadan.sh platform-db roles-apply  # explicit and transactional grants
+./panadan.sh platform-db roles-check  # inspect permission booleans only
+```
+
+`roles-setup` generates a new ignored `.env.platform.roles` with two
+different 64-character random secrets (mode 600); it refuses overwriting.
+`roles-apply` requires the active DB to be exactly `panadan` running
+PostgreSQL 18. It applies only to the separate platform database,
+not the existing Odoo source or its VPN.
+
+- `panadan_ingest_writer` can read source enablement and write only
+  the current records, revisions, jobs, facts and checkpoints needed by
+  the ingestion/processing libraries. It **cannot** create tables,
+  register sources or enable a disabled source, and cannot delete raw history.
+- `panadan_report_reader` can **only SELECT** from
+  `panadan_ingest.safe_call_facts_v1`. This security-barrier view
+  projects a small primitive allowlist from the current, nondeleted
+  `normalize:v1` revision. It hides raw source IDs, transcripts,
+  phone numbers, arbitrary JSON and all underlying tables.
+
+The view is an internal defense-in-depth boundary, **not** a replacement
+for per-user REST/dashboard/MCP authorization; no serving path is switched
+to the new database by provisioning these roles. No source is enabled,
+and no customer records are copied.
+
+Reapplying `roles-apply` reuses the stored role passwords; it does not
+generate new ones. Never paste either secret into chat or GitHub.
+
+**Restore caveat:** `pg_dump -Fc` saves database objects and ACLs but
+does not export PostgreSQL cluster-global role definitions or passwords.
+Safeguard `.env.platform` and `.env.platform.roles` separately in a
+secret manager. On a fresh restore target, provision roles first or
+restore with `--no-owner --no-acl` and then reapply the reviewed grants.
+Do not test a restore against the existing live volume. Local unencrypted
+backups are not yet an acceptable protection for real customer data.
+
 ## Manual Compose alternative (WSL + Docker)
 
 The CLI above is preferred because it generates and checks the private
