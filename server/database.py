@@ -135,7 +135,9 @@ def list_calls(limit: int = 20, offset: int = 0, after: date | None = None,
                before: date | None = None, state: str | None = None,
                created_after: datetime | None = None, created_before: datetime | None = None,
                call_type: str | None = None, operator: str | None = None,
-               operator_names: list[str] | None = None):
+               operator_names: list[str] | None = None, *,
+               direction: str | None = None, filter_mode: str = 'all',
+               any_operator_groups: list[list[str]] | None = None):
     limit = max(1, min(int(limit), 100))
     offset = max(0, min(int(offset), 10000))
     if after and before and after > before: raise ValueError('Invalid date range')
@@ -197,8 +199,14 @@ def transcript_excerpt(call_id: int, char_limit: int = 6000,
 
 def stats(after: date | None = None, before: date | None = None,
           created_after: datetime | None = None, created_before: datetime | None = None,
-          operator: str | None = None, operator_names: list[str] | None = None):
-    where, params = filters(after, before, None, created_after, created_before, operator=operator, operator_names=operator_names)
+          operator: str | None = None, operator_names: list[str] | None = None,
+          *, state: str | None = None, call_type: str | None = None,
+          direction: str | None = None, filter_mode: str = 'all',
+          any_operator_groups: list[list[str]] | None = None):
+    where, params = filters(after, before, state, created_after, created_before,
+                            call_type=call_type, operator=operator, operator_names=operator_names,
+                            direction=direction, filter_mode=filter_mode,
+                            any_operator_groups=any_operator_groups)
     q = ('SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE "aicallinfostate" = %s) AS sold_out, '
          'COUNT("possibility_of_sale_ai") AS scored_calls, '
          'ROUND(AVG("possibility_of_sale_ai")::numeric, 1) AS avg_ai_score, '
