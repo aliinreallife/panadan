@@ -1,8 +1,12 @@
 # Operator directory and future scoped permissions
 
 Panadan's read-only reporting view currently exposes operator **display names**
-under `vw_danix_base_info_users_name`, but no verified operator ID,
-organizational team or destination relationship.
+under `vw_danix_base_info_users_name`. The view also exposes
+`vw_danix_base_info_users` as a **candidate numeric operator ID** and
+`pipeline_expert_id`. In three sampled slices totaling 3,000 rows, both IDs
+were present and equal, and no within-slice ID/name mismatches were observed.
+This is promising evidence, **not yet source-owner verification of long-term
+identity stability**. Organizational team/destination membership remains unverified.
 
 ## Delivered
 
@@ -40,9 +44,10 @@ fail-closed scope checks must run on **all** reporting surfaces:
    for cross-team direct-ID access, unknown operator, revoked permissions,
    unmapped call, and mixed-team aggregates.
 
-For reliable security the source view should provide a **stable operator ID**:
-display names can change or be duplicated. Validate that ID with the source
-owner before building operator-specific data authorization. The current
+For reliable security the view provides candidate numeric IDs, but their
+**stability and semantics must be verified** with the source owner and a wider
+historical sample. Display names can change or be duplicated. Do not enable
+operator-specific authorization until that verification is complete. The current
 name-based directory is suitable for UI filtering, **not** authoritative RBAC.
 
 Suggested future model:
@@ -61,3 +66,11 @@ Suggested future model:
 When implementing these changes, migrate safely, invalidate active user
 sessions/tokens after changing scope assignments, and keep the actual source
 PostgreSQL role read-only.
+
+## Next verification
+
+Run `./panadan.sh audit-fields --limit 300 --offsets 0,1000,5000` and
+review the operator ID/name metrics in `docs/DATA_DICTIONARY.md`. The next
+implementation must migrate existing name-based local assignments with an
+explicit manual review for ambiguous/renamed operators; never automatically
+convert name filters into authorization grants.
