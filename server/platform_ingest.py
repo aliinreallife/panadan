@@ -102,7 +102,7 @@ def ingest_batch(conn, *, source_key: str, stream: str,
                  next_cursor: Mapping[str, object] | None) -> BatchResult:
     """Write revisions, jobs, run stats and cursor in one ACID transaction.
 
-    - SELECT/lock on (source,stream) serializes concurrent workers.
+    - The owner-only lock helper protects source enablement until commit.\n    - SELECT/lock on (source,stream) serializes concurrent workers.
     - CAS expected_cursor prevents stale workers from overwriting checkpoints.
     - Same content replay creates no new revision/job.
     - Tombstones ONLY come from explicit upstream change events; never infer
@@ -118,7 +118,7 @@ def ingest_batch(conn, *, source_key: str, stream: str,
             _json_bytes(cursor, limit=4096)
     with conn.transaction():
         source = conn.execute(
-            "SELECT enabled FROM panadan_ingest.sources WHERE source_key = %s FOR SHARE",
+            "SELECT panadan_ingest.lock_source_for_ingest(%s) AS enabled",
             (source_key,),
         ).fetchone()
         if not source or not source["enabled"]:
