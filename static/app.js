@@ -1,12 +1,14 @@
 import {parseTranscript} from './transcript.js';
 import {enhanceSelects} from './selects.js';
 import {registerPanadanWebMcp} from './webmcp.js';
-import {formatVoiceDuration} from './formatters.js';
+import {formatVoiceDuration, formatSourceCallClock, hasDisplayableDealValue} from './formatters.js';
 import {dialablePhone} from './phone.js';
 import {callTypeLabel, callStateLabel, knownTypeOptions, knownStateOptions} from './labels.js';
 'use strict';
 const $ = id => document.getElementById(id);
 let offset=0;
+let detailRequestId=0;
+let drawerReturnFocus=null;
 const profileOperator=document.getElementById('dashboard-content')?.dataset.profileOperator||'';
 const operatorName=value=>value==='__unspecified__'||!String(value||'').trim()?'نامشخص':String(value);
 const limit=20;
@@ -136,7 +138,7 @@ async function loadFilterOptions(){
   makeOptions('destination',foundDestinations,v=>v);
   makeOptions('team',foundTeams,v=>v);
 }
-const labels={id:'شناسه تماس',CALLDATE:'تاریخ تماس',call_id:'شناسه سیستمی',tellstate:'نوع تماس',tellside:'جهت تماس',aicallinfostate:'وضعیت AI',voice_length:'مدت صوت',possibility_of_sale_ai:'امتیاز احتمال فروش (AI)',deal_value:'ارزش معامله (تأییدنشده)',vw_danix_base_info_users_name:'کارشناس',customername:'نام مشتری',customertell:'شماره مشتری',outcome:'نتیجه تماس',ai_recommendation:'پیشنهاد AI',summary:'خلاصه',transcription:'متن مکالمه',tell_state_desc:'دلیل دسته‌بندی',create_date:'زمان ثبت'};
+const labels={id:'شناسه تماس',CALLDATE:'تاریخ تماس',call_id:'شناسه سیستمی',tellstate:'نوع تماس',tellside:'جهت تماس',aicallinfostate:'وضعیت AI',voice_length:'مدت صوت',possibility_of_sale_ai:'امتیاز احتمال فروش (AI)',deal_value:'ارزش معامله (تأییدنشده)',call_time:'ساعت تماس (طبق مبدأ)',vw_danix_base_info_users_name:'کارشناس',customername:'نام مشتری',customertell:'شماره مشتری',outcome:'نتیجه تماس',ai_recommendation:'پیشنهاد AI',summary:'خلاصه',transcription:'متن مکالمه',tell_state_desc:'دلیل دسته‌بندی',create_date:'زمان ثبت'};
 function transcriptPanel(raw){
   const parsed=parseTranscript(raw);
   const panel=el('section','transcript-panel');
@@ -197,7 +199,7 @@ function transcriptPanel(raw){
   return panel;
 }
 const priorityFields=['summary','outcome','ai_recommendation','tell_state_desc'];
-const heroFields=new Set(['id','CALLDATE','tellstate','aicallinfostate','possibility_of_sale_ai','vw_danix_base_info_users_name']);
+const heroFields=new Set(['id','CALLDATE','tellstate','aicallinfostate','possibility_of_sale_ai','vw_danix_base_info_users_name','call_time']);
 function longTextSection(key, value){
   const section=el('article','detail-analysis');
   const heading=el('h3','detail-section-title',labels[key]||key);
@@ -235,6 +237,7 @@ function metaValue(key,value){
   if(key==='aicallinfostate')return callStateLabel(value);
   if(key==='possibility_of_sale_ai')return numberFormat(value);
   if(key==='voice_length')return formatVoiceDuration(value);
+  if(key==='call_time')return formatSourceCallClock(value);
   if(key==='deal_value')return numberFormat(value);
   if(key==='create_date'&&window.PanadanDate)
     return PanadanDate.format(value,{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23',timeZone:'Asia/Tehran'});
@@ -269,15 +272,31 @@ function conversationSection(raw){
   return section;
 }
 
+function closeDetail(){
+  if($('veil')?.hidden)return;
+  detailRequestId += 1;
+  $('veil').hidden=true;
+  document.body.classList.remove('drawer-open');
+  $('detail')?.removeAttribute('aria-busy');
+  if(drawerReturnFocus?.isConnected)drawerReturnFocus.focus();
+  drawerReturnFocus=null;
+}
 async function detail(id){
+  const requestId=++detailRequestId;
+  if($('veil').hidden)drawerReturnFocus=document.activeElement;
   $('veil').hidden=false;
+  document.body.classList.add('drawer-open');
+  $('close-drawer').focus();
   const drawer=$('veil').querySelector('.drawer');
   if(drawer)drawer.scrollTop=0;
   $('detail-title').textContent='تماس '+numberFormat(id);
-  $('detail').replaceChildren(el('p','muted','در حال بارگذاری جزئیات...'));
+  const loading=el('p','muted','در حال دریافت جزئیات تماس...');
+  loading.setAttribute('role','status');
+  $('detail').setAttribute('aria-busy','true');
+  $('detail').replaceChildren(loading);
   try{
     const data=await fetchJSON('/dashboard/data/'+encodeURIComponent(id));
-    if($('veil').hidden)return;
+    if($('veil').hidden || requestId!==detailRequestId)return;
     $('detail').replaceChildren();
     const hero=el('section','detail-overview');
     hero.append(el('h3','detail-section-title','نمای کلی تماس'));
@@ -292,6 +311,16 @@ async function detail(id){
       chip.append(el('span','detail-chip-label',labels[key]||key),el('strong','',text));
       if(key==='tellstate'||key==='aicallinfostate')chip.title='مقدار اصلی: '+safe(data[key]);
       chips.append(chip);
+    }
+    if(Object.hasOwn(data,'call_time')){
+      const time=el('div','detail-chip detail-chip-clock');
+      time.append(el('span','detail-chip-label',labels.call_time));
+      const clock=el('bdi','detail-clock-value',formatSourceCallClock(data.call_time));
+      clock.dir='ltr';
+      time.append(clock);
+      time.append(el('span','detail-clock-hint','احتمالاً به وقت تهران · شروع یا پایان تماس تأیید نشده'));
+      time.title='ساعت استخراج‌شده از ثانیه‌های روز در سامانه مبدأ؛ نوع رویداد هنوز تأیید نشده است.';
+      chips.append(time);
     }
     hero.append(chips);
     if(Object.hasOwn(data,'possibility_of_sale_ai')){
@@ -309,7 +338,8 @@ async function detail(id){
       $('detail').append(block);
     }
     const extra=Object.entries(data).filter(([key,val])=>
-      !heroFields.has(key)&&!priorityFields.includes(key)&&key!=='transcription'&&val!==null&&val!==''&&val!==undefined
+      !heroFields.has(key)&&!priorityFields.includes(key)&&key!=='transcription'&&val!==null&&val!==''&&val!==undefined&&
+      (key!=='deal_value'||hasDisplayableDealValue(val))
     );
     if(extra.length){
       const block=el('section','detail-section');
@@ -339,7 +369,7 @@ async function detail(id){
         }
         if(key==='deal_value'){
           item.title='مقدار مستقیم از سامانه مبدأ؛ معنای عدد، واحد پول و تأیید مالی آن هنوز مشخص نیست.';
-          item.append(el('span','form-hint','مقدار مبدأ؛ صفر بودن به‌تنهایی به معنی نبود فروش نیست.'));
+          item.append(el('span','form-hint','واحد پول و تأیید مالی این مقدار از مبدأ مشخص نیست.'));
         }
         grid.append(item);
       }
@@ -351,7 +381,13 @@ async function detail(id){
       end.append(conversationSection(data.transcription));
       $('detail').append(end);
     }
-  }catch(error){$('detail').textContent=error.message;}
+  }catch(error){
+    if(requestId===detailRequestId && !$('veil').hidden){
+      $('detail').replaceChildren(el('p','error','دریافت جزئیات ممکن نشد. دوباره تلاش کنید.'));
+    }
+  }finally{
+    if(requestId===detailRequestId)$('detail')?.removeAttribute('aria-busy');
+  }
 }
 function clearDates(){
   for(const key of ['after','before','state','call_type','operator','destination','team','created_after','created_before']){
@@ -368,9 +404,20 @@ function initialize(){
   if($('refresh'))$('refresh').onclick=()=>{load();metrics()};
   if($('previous'))$('previous').onclick=()=>{offset=Math.max(0,offset-limit);load()};
   if($('next'))$('next').onclick=()=>{offset+=limit;load()};
-  if($('close-drawer'))$('close-drawer').onclick=()=>{$('veil').hidden=true};
-  if($('close-backdrop'))$('close-backdrop').onclick=()=>{$('veil').hidden=true};
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('veil'))$('veil').hidden=true});
+  if($('close-drawer'))$('close-drawer').onclick=closeDetail;
+  if($('close-backdrop'))$('close-backdrop').onclick=closeDetail;
+  document.addEventListener('keydown',e=>{
+    if($('veil')?.hidden)return;
+    if(e.key==='Escape'){e.preventDefault();closeDetail();return;}
+    if(e.key!=='Tab')return;
+    const drawer=$('veil').querySelector('.drawer');
+    const options=[...drawer.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])')]
+      .filter(node=>node.getClientRects().length && !node.closest('[hidden]'));
+    if(!options.length){e.preventDefault();drawer.focus();return;}
+    const first=options[0],last=options[options.length-1];
+    if(e.shiftKey && (document.activeElement===first || !drawer.contains(document.activeElement))){e.preventDefault();last.focus();}
+    else if(!e.shiftKey && (document.activeElement===last || !drawer.contains(document.activeElement))){e.preventDefault();first.focus();}
+  });
   load();metrics();
   if($('call_type')||$('state'))loadFilterOptions();
   // WebMCP is an opt-in browser API; unsupported browsers behave normally.
