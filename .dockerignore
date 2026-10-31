@@ -11,3 +11,5 @@ __pycache__/
 .venv/
 wheelhouse/
 **/*.pyc
+# Built by the assets stage; do not copy local WSL/npm artifacts
+static/vendor/
