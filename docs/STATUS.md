@@ -157,3 +157,12 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Return `scored_calls` from the server's aggregate query so the dashboard can show score coverage for its **current filters**, without hardcoding historical samples. `AVG` continues to ignore NULL scores.
 - Other sampled fields: `call_time` 993/1000, `tellnum` 1000/1000, acquisition-source name 0/1000, follow-up-stage name 0/1000, and `invoiced_target` 0/1000. Do not expose unknown/sensitive fields before verifying meaning and access policies.
 - [ ] Confirm source model calibration/score scale, and define whether `call_time` is a clock time or duration before adding further UI fields.
+
+
+## Sensitive customer phone click-to-call (2026-10-31)
+
+- [x] Add a user-triggered `tel:` link next to `customertell` in the authorized call detail drawer, with an accessible call label and LTR digits. No automatic call or third-party dialing integration.
+- [x] Preserve source formatting for display; normalize Persian/Arabic numerals and presentation separators only for the dialable URL. Malformed, ambiguous, non-text, multi-number or too-short values remain plain text without a call button.
+- [x] Reuse the existing `calls:sensitive` server-side permission boundary. Do not add phone numbers to public list, metrics, WebMCP, MCP summary, or unauthenticated responses.
+- [ ] Verify the meaning and representation of `tellnum` from source data before using it. It is `double precision` and can discard leading zeroes; do not treat it as an authoritative customer phone number or use it as a fallback.
+- [ ] Visual / keyboard smoke test on mobile and desktop; `tel:` opens the device's dialer if one is configured. No call is placed by Panadan itself.
