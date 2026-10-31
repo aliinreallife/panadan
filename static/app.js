@@ -1,6 +1,7 @@
 import {parseTranscript} from './transcript.js';
 import {enhanceSelects} from './selects.js';
 import {registerPanadanWebMcp} from './webmcp.js';
+import {formatVoiceDuration} from './formatters.js';
 import {callTypeLabel, callStateLabel, knownTypeOptions, knownStateOptions} from './labels.js';
 'use strict';
 const $ = id => document.getElementById(id);
@@ -85,7 +86,7 @@ async function metrics(){
     $('metric-total').textContent=numberFormat(data.total);
     $('metric-sold').textContent=numberFormat(data.sold_out);
     $('metric-score').textContent=numberFormat(data.avg_ai_score);
-    $('metric-length').textContent=numberFormat(data.avg_voice_length);
+    $('metric-length').textContent=formatVoiceDuration(data.avg_voice_length);
   }catch(error){showError(error)}
 }
 async function loadFilterOptions(){
@@ -121,7 +122,7 @@ async function loadFilterOptions(){
   makeOptions('destination',foundDestinations,v=>v);
   makeOptions('team',foundTeams,v=>v);
 }
-const labels={id:'شناسه تماس',CALLDATE:'تاریخ تماس',call_id:'شناسه سیستمی',tellstate:'نوع تماس',tellside:'جهت تماس',aicallinfostate:'وضعیت AI',voice_length:'مدت صوت',possibility_of_sale_ai:'امتیاز AI',deal_value:'ارزش معامله',vw_danix_base_info_users_name:'کارشناس',customername:'نام مشتری',customertell:'شماره مشتری',outcome:'نتیجه تماس',ai_recommendation:'پیشنهاد AI',summary:'خلاصه',transcription:'متن مکالمه',tell_state_desc:'دلیل دسته‌بندی',create_date:'زمان ثبت'};
+const labels={id:'شناسه تماس',CALLDATE:'تاریخ تماس',call_id:'شناسه سیستمی',tellstate:'نوع تماس',tellside:'جهت تماس',aicallinfostate:'وضعیت AI',voice_length:'مدت صوت',possibility_of_sale_ai:'امتیاز AI',deal_value:'ارزش معامله (تأییدنشده)',vw_danix_base_info_users_name:'کارشناس',customername:'نام مشتری',customertell:'شماره مشتری',outcome:'نتیجه تماس',ai_recommendation:'پیشنهاد AI',summary:'خلاصه',transcription:'متن مکالمه',tell_state_desc:'دلیل دسته‌بندی',create_date:'زمان ثبت'};
 function transcriptPanel(raw){
   const parsed=parseTranscript(raw);
   const panel=el('section','transcript-panel');
@@ -219,6 +220,8 @@ function metaValue(key,value){
   if(key==='tellstate')return callTypeLabel(value);
   if(key==='aicallinfostate')return callStateLabel(value);
   if(key==='possibility_of_sale_ai')return numberFormat(value);
+  if(key==='voice_length')return formatVoiceDuration(value);
+  if(key==='deal_value')return numberFormat(value);
   if(key==='create_date'&&window.PanadanDate)
     return PanadanDate.format(value,{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23',timeZone:'Asia/Tehran'});
   return typeof value==='object'?JSON.stringify(value):String(value);
@@ -299,6 +302,10 @@ async function detail(id){
       for(const [key,val] of extra){
         const item=el('div','detail-item');
         item.append(el('strong','',labels[key]||key),el('div','detail-value',metaValue(key,val)));
+        if(key==='deal_value'){
+          item.title='مقدار مستقیم از سامانه مبدأ؛ معنای عدد، واحد پول و تأیید مالی آن هنوز مشخص نیست.';
+          item.append(el('span','form-hint','مقدار مبدأ؛ صفر بودن به‌تنهایی به معنی نبود فروش نیست.'));
+        }
         grid.append(item);
       }
       block.append(grid);$('detail').append(block);
