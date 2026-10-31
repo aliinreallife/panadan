@@ -39,7 +39,7 @@ test('multi-select has tappable rows with checkmarks and no footer/checkboxes',(
   const selects=readFileSync('static/selects.js','utf8');
   const multi=readFileSync('static/multiselect.js','utf8');
   assert.match(selects,/:not\(\[multiple\]\)/);
-  assert.match(multi,/search\.type='search'/);
+  assert.match(multi,/search\.type\s*=\s*'search'/);
   assert.match(multi,/row\.type = 'button'/);
   assert.match(multi,/row\.setAttribute\('role', 'option'\)/);
   assert.match(multi,/row\.setAttribute\('aria-selected'/);
