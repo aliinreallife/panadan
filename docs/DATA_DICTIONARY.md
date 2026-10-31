@@ -205,3 +205,26 @@ activity are displayed as Tehran-local interpretations; token expiry/use
 timestamps remain explicitly labeled UTC. No PostgreSQL fields, storage or
 raw API timestamp values are modified. Doran date/time input widgets remain
 third-party components and require device-level QA.
+
+## Report filtering semantics (2026-10-31)
+
+The dashboard permits a choice between **all selected conditions (AND)** and
+**at least one selected condition (OR)** for operator name, locally assigned
+team, locally assigned destination, call type, source AI state, and source
+direction `tellside`. The call-date start/end boundaries are mandatory
+constraints in either mode and are never part of the OR disjunction. Team and
+destination mappings are locally maintained **report filters, not access
+restrictions**. Restricted row-level RBAC remains blocked pending stable
+source operator identities and cross-surface tests.
+
+The direction dropdown uses raw source `tellside` codes; no localized
+incoming/outgoing guesses are made. PostgreSQL comparisons use fixed
+parameterized SQL, casting `tellside` to text because the view may return
+numeric enums. API callers still receive the original raw source values.
+The dashboard KPI and call list use the same filter combination; existing
+REST/MCP filtering behavior is not broadened.
+
+The optional creation-time filter UI was removed to simplify the dashboard,
+but existing programmatic date-time parameters remain unchanged for backward
+compatibility. This is a presentation-only decision, not evidence about the
+storage meaning of `create_date`.
