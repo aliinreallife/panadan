@@ -90,3 +90,16 @@ def test_semantics_error_messages_hide_sensitive_details(monkeypatch, capsys):
     assert "RuntimeError" in printed
     assert "09120000000" not in printed
     assert "secret password" not in printed
+
+
+def test_default_semantics_audit_uses_small_bounded_slices(monkeypatch):
+    queries = []
+    @contextmanager
+    def connect():
+        yield Connection(queries)
+    monkeypatch.setattr(semantic.database, "connect", connect)
+    out = semantic.audit()
+    assert out["limit_per_offset"] == 100
+    assert [params for _, params in queries] == [
+        (100, 0), (100, 1000), (100, 5000)
+    ]
