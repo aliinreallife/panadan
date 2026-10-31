@@ -265,3 +265,11 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Remove unwanted desktop sidebar **horizontal** scrolling by constraining links to sidebar width and allowing labels to wrap, without hiding vertical navigation or logout.
 - [x] Add automated UI contract checks for buttons, checkmarks, no dropdown footer, max selection cap, bottom positioning and absence of desktop sidebar horizontal overflow.
 - [ ] Test real Chrome/Android layouts at 320px, 375px, 430px, and desktop widths. Verify focus, on-screen keyboard, Android safe area, fixed bottom bar and long Persian navigation labels visually; CI alone is not visual QA.
+
+## Dashboard data 503 observability (2026-10-31)
+
+- [x] After a clean 141 Python + 47 Node test run and WSL FastAPI startup, the user observed `/dashboard/data`, `/dashboard/metrics`, and `/dashboard/filter-options` returning HTTP 503. Static assets and `/dashboard` itself responded normally.
+- [x] Preserve the privacy-safe generic 503 to callers, but log **only** validated SQLSTATE and backend exception class server-side; never log SQL, parameters, connection strings, customer records or exception message.
+- [x] Add tests covering all three reporting endpoints and invalid SQLSTATE scrubbing.
+- [ ] On the user's local WSL/VPN, run `./panadan.sh diagnose-db` while FastAPI is running, and use sanitized new logs after FastAPI restart to determine whether the failure is transport, query/permission, or statement timeout. Container health is not sufficient evidence.
+- [ ] Verify the dashboard loads actual reporting data on desktop and mobile. This was not checked against the private live DB from CI.

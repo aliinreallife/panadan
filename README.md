@@ -239,6 +239,34 @@ Interpretation:
   (`--limit 100 --offsets 0`) and investigate server-side query execution,
   statement timeouts and view complexity.
 
+### Dashboard loads but metrics, calls and filters all return 503
+
+The dashboard HTML and static assets can load even when its reporting queries
+cannot reach PostgreSQL. A healthy VPN container means only that its tunnel
+interface and route were detected; it does not prove database reachability.
+
+Run `./panadan.sh diagnose-db` from **another WSL terminal** while
+`./panadan.sh dev` keeps serving the dashboard. If the read-only
+`SELECT 1` succeeds but the reporting endpoints still fail, inspect the
+**WSL server terminal** after requesting `/dashboard/data` again.
+
+The server logs a restricted diagnostic such as
+`Reporting backend failed type=ConnectionTimeout SQLSTATE=unknown`
+or `... type=UndefinedColumn SQLSTATE=42703`.
+Only the exception class and validated five-character SQLSTATE are logged:
+no SQL, query parameters, credentials, hostnames, or customer records.
+All unexpected reporting failures still return the existing generic HTTP
+503 to the browser.
+
+Typical categories: SQLSTATE `08xxx` indicates a connection failure;
+`57014` indicates a canceled query (possibly a statement timeout);
+`42xxx` indicates a SQL/schema error; `42501` indicates inadequate
+privileges. Do not assume a 503 proves the VPN is down.
+
+These safe logs are available **after restarting the WSL FastAPI process**
+with the new code. No need to restart Docker or the remote database just
+to enable logging. Do not share full VPN logs or environment secrets.
+
 ### Reload a previously running relay after updating Panadan
 
 Panadan bind-mounts the **stable `./tools` directory** into the relay
