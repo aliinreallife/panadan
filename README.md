@@ -166,6 +166,22 @@ To verify that your reporting login cannot **create or change source data**, run
 
 Technical details: `docs/PRD.md`, `docs/DECISIONS.md`, `docs/SECURITY.md`, `docs/STATUS.md`, `docs/TRANSCRIPTS.md`.
 
+## Odoo source updates + new calls (adapter prepared)
+
+The multi-source foundation now has a **read-only, opt-in** Odoo view
+adapter that covers (1) bounded initial history backfill, (2) ongoing
+**new calls** detected by increasing `id`, and (3) edits to **existing
+calls** detected by a verified `updated_at` or `sync_updated_at`.
+Every cursor is durable and local ingestion stays transactional.
+The initial update cursor must be seeded **before** starting backfill.
+
+The current live view **does not yet expose** either update field. No
+live ingestion, scheduling, customer-data copying, schema changes or
+dashboard cutover are performed by these libraries. See
+[Odoo updated-at sync](docs/ODOO_UPDATED_AT_SYNC.md) for source
+requirements, limitations (especially deletions), synthetic CI tests
+and the steps required before enabling a pilot.
+
 ## Multi-source platform foundation (opt-in)
 
 Panadan's long-term architecture is a separate PostgreSQL data platform with
