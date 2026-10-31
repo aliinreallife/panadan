@@ -239,9 +239,30 @@ function metaValue(key,value){
   if(key==='voice_length')return formatVoiceDuration(value);
   if(key==='call_time')return formatSourceCallClock(value);
   if(key==='deal_value')return numberFormat(value);
-  if(key==='create_date'&&window.PanadanDate)
-    return PanadanDate.format(value,{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23',timeZone:'Asia/Tehran'});
+
   return typeof value==='object'?JSON.stringify(value):String(value);
+}
+// Shared RTL time/date display: first child (clock) is rightmost; date is left.
+function dateTimeNode({clock,day,zone='',className=''}) {
+  const wrapper=el('span','datetime-inline'+(className?' '+className:''));
+  wrapper.dir='rtl';
+  const hour=el('bdi','datetime-clock',clock);
+  const date=el('bdi','datetime-date',day);
+  hour.dir=date.dir='ltr';
+  wrapper.append(hour,date);
+  if(zone)wrapper.append(el('span','datetime-zone',zone));
+  return wrapper;
+}
+function recordedDateTime(value) {
+  if(!window.PanadanDate)return el('span','',String(value));
+  const opts={timeZone:'Asia/Tehran'};
+  const day=PanadanDate.format(value,{year:'numeric',month:'2-digit',day:'2-digit',...opts});
+  const clock=PanadanDate.format(value,{hour:'2-digit',minute:'2-digit',hourCycle:'h23',...opts});
+  // Date/time are formatted independently so browser bidi reordering cannot
+  // place the Persian date to the right of the time.
+  const stamp=dateTimeNode({clock,day,className:'recorded-datetime'});
+  stamp.title='تاریخ و ساعت ثبت به وقت تهران';
+  return stamp;
 }
 function conversationSection(raw){
   const section=el('details','conversation-section');
@@ -301,8 +322,19 @@ async function detail(id){
     const hero=el('section','detail-overview');
     hero.append(el('h3','detail-section-title','نمای کلی تماس'));
     const chips=el('div','detail-chips');
+    // One visual date/time group: clock on the RIGHT, date on the LEFT.
+    // The source has not confirmed which call event the time denotes.
+    const when=el('div','detail-chip detail-chip-datetime');
+    when.append(el('span','detail-chip-label','تاریخ و ساعت تماس'));
+    when.append(dateTimeNode({
+      clock:formatSourceCallClock(data.call_time),
+      day:dateFormat(data.CALLDATE),
+      className:'call-datetime'
+    }));
+    when.append(el('span','detail-clock-hint','ساعت احتمالی به وقت تهران · رویداد تماس هنوز تأیید نشده'));
+    when.title='ساعت استخراج‌شده از ثانیه‌های روز در سامانه مبدأ؛ زمان شروع یا پایان تماس تأیید نشده است.';
+    chips.append(when);
     for(const [key,text] of [
-      ['CALLDATE',dateFormat(data.CALLDATE)],
       ['vw_danix_base_info_users_name',safe(data.vw_danix_base_info_users_name)],
       ['tellstate',callTypeLabel(data.tellstate)],
       ['aicallinfostate',callStateLabel(data.aicallinfostate)]
@@ -311,16 +343,6 @@ async function detail(id){
       chip.append(el('span','detail-chip-label',labels[key]||key),el('strong','',text));
       if(key==='tellstate'||key==='aicallinfostate')chip.title='مقدار اصلی: '+safe(data[key]);
       chips.append(chip);
-    }
-    if(Object.hasOwn(data,'call_time')){
-      const time=el('div','detail-chip detail-chip-clock');
-      time.append(el('span','detail-chip-label',labels.call_time));
-      const clock=el('bdi','detail-clock-value',formatSourceCallClock(data.call_time));
-      clock.dir='ltr';
-      time.append(clock);
-      time.append(el('span','detail-clock-hint','احتمالاً به وقت تهران · شروع یا پایان تماس تأیید نشده'));
-      time.title='ساعت استخراج‌شده از ثانیه‌های روز در سامانه مبدأ؛ نوع رویداد هنوز تأیید نشده است.';
-      chips.append(time);
     }
     hero.append(chips);
     if(Object.hasOwn(data,'possibility_of_sale_ai')){
@@ -363,6 +385,10 @@ async function detail(id){
             call.setAttribute('aria-label','تماس با شماره '+String(val));
             value.append(call);
           }
+          item.append(value);
+        }else if(key==='create_date'){
+          const value=el('div','detail-value');
+          value.append(recordedDateTime(val));
           item.append(value);
         }else{
           item.append(el('div','detail-value',metaValue(key,val)));

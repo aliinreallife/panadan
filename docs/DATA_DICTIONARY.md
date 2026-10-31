@@ -190,3 +190,18 @@ close button, keyboard Escape / Tab containment, returning focus to the
 invoking control, scroll-lock while open and stale-request cancellation.
 This is a code-level accessibility enhancement; physical mobile and
 screen-reader verification is still required.
+
+## Right-to-left date/time presentation (2026-10-31)
+
+When both a date and clock are shown in one element, Panadan renders the
+**clock on the right** and the **date on the left**. The two values are
+separate DOM elements inside an RTL inline-flex wrapper, and their numeric
+sequences use isolated LTR direction, preventing bidi punctuation from
+rearranging numbers. This applies to call detail date+source clock,
+`create_date`, activity audit events, and API-token expiry/last use.
+
+Timezone meanings do not change: source call-clock/record creation and
+activity are displayed as Tehran-local interpretations; token expiry/use
+timestamps remain explicitly labeled UTC. No PostgreSQL fields, storage or
+raw API timestamp values are modified. Doran date/time input widgets remain
+third-party components and require device-level QA.

@@ -343,3 +343,30 @@ def test_customer_phone_only_readable_with_sensitive_permission(client, monkeypa
     assert calls[-1] == (5, False)
     assert "'customertell'" in Path('server/database.py').read_text()
     assert "dialablePhone(val)" in Path('static/app.js').read_text()
+
+
+def test_token_datetime_rtl_order_and_utc_semantics(client):
+    """Clock renders before date (right to left), without changing UTC storage."""
+    import re
+    from datetime import datetime, timezone
+    c, main = client
+    admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    cookie, _ = main.store.create_session(admin)
+    c.cookies.set('panadan_session', cookie)
+    main.store.create_token('datetime-rtl-test', 'api:read', 7, admin)
+    page = c.get('/dashboard/tokens')
+    assert page.status_code == 200
+    token_time = re.search(
+        r'<time class="datetime-inline token-datetime"[^>]*>(.*?)</time>',
+        page.text,
+    )
+    assert token_time is not None
+    rendered = token_time.group(1)
+    assert rendered.index('class="datetime-clock"') < rendered.index('class="datetime-date"')
+    assert 'class="datetime-zone">UTC</span>' in rendered
+
+    epoch = int(datetime(2026, 10, 29, 4, 39, tzinfo=timezone.utc).timestamp())
+    assert main.templates.env.filters['date_time_clock'](epoch) == '04:39'
+    assert main.templates.env.filters['date_time_day'](epoch) == '2026-10-29'
+    assert main.templates.env.filters['date_time_iso'](epoch).endswith('+00:00')
+    assert main.templates.env.filters['date_time_clock'](None) == '—'

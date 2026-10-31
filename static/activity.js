@@ -153,11 +153,12 @@ function renderEvents(items){
     const cell=node('td','activity-event-when');
     const stamp=formatEventTimestamp(event.created_at);
     if(stamp){
-      const time=node('time','activity-time');
+      const time=node('time','activity-time datetime-inline');
       time.dateTime=stamp.iso;
       time.title='زمان تهران';
-      time.append(node('span','activity-date',stamp.date),
-        node('span','activity-clock',stamp.time));
+      // RTL flex: first child is on the right. Clock before date.
+      time.append(node('span','activity-clock datetime-clock',stamp.time),
+        node('span','activity-date datetime-date',stamp.date));
       cell.append(time);
     }else cell.textContent='—';
     tr.append(cell);

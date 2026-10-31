@@ -9,7 +9,7 @@ window.PanadanDate = (() => {
     const dateOnly=/^\d{4}-\d{2}-\d{2}$/.test(input);
     const iso=dateOnly?`${input}T12:00:00Z`:/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(input)?input.replace(' ','T')+'Z':input;
     const d=new Date(iso);
-    return Number.isNaN(d.valueOf()) ? String(date) : new Intl.DateTimeFormat('fa-IR-u-ca-persian', opts.year ? opts : {year:'numeric',month:'2-digit',day:'2-digit', timeZone:'Asia/Tehran'}).format(d);
+    return Number.isNaN(d.valueOf()) ? String(date) : new Intl.DateTimeFormat('fa-IR-u-ca-persian', Object.keys(opts).length ? opts : {year:'numeric',month:'2-digit',day:'2-digit', timeZone:'Asia/Tehran'}).format(d);
   };
   function ymd(jsDate) {
     const pad = x => String(x).padStart(2, '0');

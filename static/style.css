@@ -740,8 +740,6 @@ doran-datepicker::part(dialog){
  
 /* Call detail: source-clock metadata is informative, never a confirmed event. */
 .drawer-open{overflow:hidden}
-.detail-chip-clock{grid-column:1 / -1;background:linear-gradient(115deg,#f3faf4,#fff);border-color:#cfe5d5;gap:6px}
-.detail-clock-value{direction:ltr;unicode-bidi:isolate;align-self:flex-start;color:#1d6247;font-size:clamp(19px,3vw,25px);font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:1px;line-height:1.5}
 .detail-clock-hint{display:block;color:#63796e;font-size:11px;line-height:1.8}
 .drawer .icon-btn:focus-visible{outline:3px solid #88bd53;outline-offset:3px}
 @media(max-width:600px){
@@ -750,8 +748,27 @@ doran-datepicker::part(dialog){
  .detail-chips{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
  .detail-chip{padding:11px;min-width:0}
  .detail-meta-grid{grid-template-columns:minmax(0,1fr)}
- .detail-clock-value{font-size:22px}
 }
 @media(max-width:365px){
  .detail-chips{grid-template-columns:minmax(0,1fr)}
+}
+
+
+/* Shared RTL datetime contract: visual RIGHT = clock, visual LEFT = date.
+   Each numeric run is LTR-isolated to prevent the browser bidi algorithm
+   from reversing the date or the clock within a Persian page. */
+.datetime-inline{display:inline-flex;direction:rtl;flex-direction:row;align-items:baseline;gap:10px;max-width:100%;white-space:nowrap;vertical-align:baseline}
+.datetime-clock,.datetime-date{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums;display:inline-block}
+.datetime-clock{font-weight:750;color:#275f49}
+.datetime-date{color:#5e7167}
+.datetime-zone{color:#818d85;font-size:10px;direction:ltr;unicode-bidi:isolate}
+.detail-chip-datetime{grid-column:1 / -1;background:linear-gradient(115deg,#f3faf4,#fff);border-color:#cfe5d5;gap:7px}
+.call-datetime{gap:clamp(10px,3vw,22px)}
+.call-datetime .datetime-clock{font-size:clamp(19px,3vw,25px);font-weight:800;letter-spacing:.5px}
+.call-datetime .datetime-date{font-size:clamp(15px,2.5vw,19px);font-weight:650}
+.recorded-datetime{gap:12px}
+.token-time-cell{text-align:right}
+.token-datetime{font-size:12px}
+@media(max-width:370px){
+ .call-datetime{flex-wrap:wrap;row-gap:2px;white-space:normal}
 }

@@ -51,7 +51,9 @@ def test_call_time_only_selected_for_single_call_metadata(monkeypatch):
 
 def test_call_details_ui_keeps_misleading_fields_out_of_primary_content():
     app = Path("static/app.js").read_text()
-    assert "labels.call_time" in app
+    assert "dateTimeNode({" in app
+    assert "call-datetime" in app
+    assert "تاریخ و ساعت تماس" in app
     assert "formatSourceCallClock(data.call_time)" in app
     assert "hasDisplayableDealValue(val)" in app
     assert "key!=='deal_value'" in app
@@ -66,7 +68,7 @@ def test_call_details_ui_keeps_misleading_fields_out_of_primary_content():
 def test_call_detail_mobile_responsiveness_and_accessibility_contract():
     css = Path("static/style.css").read_text()
     html = Path("templates/dashboard.html").read_text()
-    assert ".detail-chip-clock" in css
+    assert ".detail-chip-datetime" in css
     assert ".detail-clock-hint" in css
     assert ".drawer-open{overflow:hidden}" in css
     assert "safe-area-inset-bottom" in css
