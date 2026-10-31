@@ -123,6 +123,22 @@ SELECT
 FROM sampled
 """
 
+def parse_offsets(raw: str) -> tuple[int, ...]:
+    """Parse fixed numeric slice positions without accepting SQL or long input."""
+    if type(raw) is not str or len(raw) > 64:
+        raise ValueError("Invalid offsets")
+    parts = raw.split(",")
+    if not 1 <= len(parts) <= 3 or any(
+        not part.isascii() or not part.isdecimal() or len(part) > 5
+        for part in parts
+    ):
+        raise ValueError("Invalid offsets")
+    offsets = tuple(int(part) for part in parts)
+    if any(value > 50000 for value in offsets):
+        raise ValueError("Invalid offsets")
+    return offsets
+
+
 def audit(*, limit: int = 300, offsets: tuple[int, ...] = (0, 1000, 5000)) -> dict:
     """Return metadata and bounded aggregate metrics; never raw source records."""
     if type(limit) is not int or not 1 <= limit <= 1000:
@@ -164,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="comma-separated ID-order offsets (up to 3)")
     args = parser.parse_args(argv)
     try:
-        offsets = tuple(int(x) for x in args.offsets.split(","))
+        offsets = parse_offsets(args.offsets)
         result = audit(limit=args.limit, offsets=offsets)
     except (ValueError, RuntimeError) as exc:
         # Validation failures are authored locally; DB errors below are masked.
