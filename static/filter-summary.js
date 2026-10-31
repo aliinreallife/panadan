@@ -43,3 +43,20 @@ export function appliedFilterGroups(params, {
   }
   return groups;
 }
+
+/**
+ * Keep selected raw values when a refreshed distinct-values endpoint omits
+ * them. This does not invent filters or change what will be submitted.
+ */
+export function preserveSelectedFacetOptions(values, selectedOptions) {
+  const previous=new Map([...selectedOptions]
+    .filter(option=>option.value)
+    .map(option=>[String(option.value),String(option.textContent||option.value)]));
+  const fresh=new Set(values
+    .filter(value=>value!==null&&value!==undefined&&String(value).trim())
+    .map(String));
+  return [...new Set([...fresh,...previous.keys()])].map(value=>({
+    value, selected:previous.has(value), available:fresh.has(value),
+    previousLabel:previous.get(value)||value
+  }));
+}
