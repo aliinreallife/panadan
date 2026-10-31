@@ -736,3 +736,22 @@ doran-datepicker::part(dialog){
 .call-link:hover{background:#daf1e4;border-color:#9dcbb6}
 .call-link:focus-visible{outline:3px solid #168465;outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.call-link{transition:none}}
+
+ 
+/* Call detail: source-clock metadata is informative, never a confirmed event. */
+.drawer-open{overflow:hidden}
+.detail-chip-clock{grid-column:1 / -1;background:linear-gradient(115deg,#f3faf4,#fff);border-color:#cfe5d5;gap:6px}
+.detail-clock-value{direction:ltr;unicode-bidi:isolate;align-self:flex-start;color:#1d6247;font-size:clamp(19px,3vw,25px);font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:1px;line-height:1.5}
+.detail-clock-hint{display:block;color:#63796e;font-size:11px;line-height:1.8}
+.drawer .icon-btn:focus-visible{outline:3px solid #88bd53;outline-offset:3px}
+@media(max-width:600px){
+ .drawer{width:100%;height:100dvh;max-height:100dvh;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));overscroll-behavior:contain}
+ .drawer>header{top:-18px;padding-top:calc(14px + env(safe-area-inset-top,0px))}
+ .detail-chips{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+ .detail-chip{padding:11px;min-width:0}
+ .detail-meta-grid{grid-template-columns:minmax(0,1fr)}
+ .detail-clock-value{font-size:22px}
+}
+@media(max-width:365px){
+ .detail-chips{grid-template-columns:minmax(0,1fr)}
+}
