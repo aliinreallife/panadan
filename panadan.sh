@@ -59,6 +59,12 @@ case "$cmd" in
       uvicorn server.main:app --host 127.0.0.1 --port "$port" --no-proxy-headers "$@"
     ;;
   vpn-up) check_config; compose_dev up -d --no-build; compose_dev ps ;;
+  relay-recreate)
+    # Recreate only the relay; Git updates can invalidate single-file WSL bind
+    # mounts. The VPN service should already be running.
+    check_config
+    compose_dev up -d --no-deps --force-recreate pgrelay
+    ;;
   vpn-down) compose_dev down ;;
   up)
     check_config
@@ -123,7 +129,7 @@ case "$cmd" in
     done
     ;;
   *)
-    echo 'Usage: ./panadan.sh {setup|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|audit-db|audit-fields|diagnose-db|diagnose}'
+    echo 'Usage: ./panadan.sh {setup|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|audit-db|audit-fields|diagnose-db|relay-recreate|diagnose}'
     echo 'dev = native WSL uv FastAPI + Docker-isolated VPN; up = GHCR production images'
     ;;
 esac
