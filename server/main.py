@@ -268,6 +268,23 @@ def dashboard_filter_groups(destination: str | None, team: str | None,
     return directory_operator_names(destination, team), None
 
 
+def dashboard_multi_facets(operators: list[str] | None, states: list[str] | None,
+                           call_types: list[str] | None, directions: list[str] | None,
+                           destinations: list[str] | None, teams: list[str] | None):
+    """Bounded UI report selections only. Never interpreted as permissions."""
+    selections = {
+        'operators': operators or [], 'states': states or [],
+        'call_types': call_types or [], 'directions': directions or [],
+    }
+    directory = []
+    for values, field in ((destinations or [], 'destination'), (teams or [], 'team')):
+        if len(values) > 20 or any(not v or len(v) > 80 for v in values):
+            raise ValueError('Invalid report directory selections')
+        for value in dict.fromkeys(values):
+            directory.append(directory_operator_names(**{field: value}))
+    return selections, (directory or None)
+
+
 def operator_display(name: str) -> str:
     return 'نامشخص' if name == database.UNSPECIFIED else name
 
@@ -368,21 +385,24 @@ def revoke_token(request: Request, tid: int, csrf: str = Form(...),
 @app.get('/dashboard/data', include_in_schema=False)
 def dashboard_data(request: Request, limit: int = Query(20, ge=1, le=100),
                    offset: int = Query(0, ge=0, le=10000), after: date | None = None,
-                   before: date | None = None, state: str | None = None,
-                   call_type: str | None = None, operator: str | None = Query(None,max_length=180),
-                   destination: str | None = Query(None,max_length=80),
-                   team: str | None = Query(None,max_length=80),
+                   before: date | None = None,
+                   operator: str | None = Query(None, max_length=180),
+                   operators: list[str] | None = Query(None),
+                   state: list[str] | None = Query(None),
+                   call_type: list[str] | None = Query(None),
+                   direction: list[str] | None = Query(None),
+                   destination: list[str] | None = Query(None),
+                   team: list[str] | None = Query(None),
                    created_after: datetime | None = None, created_before: datetime | None = None,
-                   direction: str | None = Query(None,max_length=60),
-                   filter_mode: Literal['all', 'any'] = 'all',
                    session: dict = Depends(current_session)):
     required(session, 'calls:read')
     try:
-        names, groups = dashboard_filter_groups(destination, team, filter_mode)
-        return {'items':database.list_calls(limit,offset,after,before,state,created_after,created_before,
-                                            call_type,operator,names,
-                                            direction=direction,filter_mode=filter_mode,
-                                            any_operator_groups=groups)}
+        selected, groups = dashboard_multi_facets(
+            operators, state, call_type, direction, destination, team)
+        return {'items': database.list_calls(
+            limit, offset, after, before, None, created_after, created_before,
+            operator=operator, filter_mode='any', selected_facets=selected,
+            any_operator_groups=groups)}
     except Exception as e: json_failure(e)
 
 @app.get('/dashboard/filter-options', include_in_schema=False)
@@ -449,19 +469,21 @@ def dashboard_detail(call_id: int, session: dict = Depends(current_session)):
 def dashboard_metrics(after: date | None = None, before: date | None = None,
                       created_after: datetime | None = None, created_before: datetime | None = None,
                       operator: str | None = Query(None,max_length=180),
-                      destination: str | None = Query(None,max_length=80),
-                      team: str | None = Query(None,max_length=80),
-                      state: str | None = Query(None,max_length=60),
-                      call_type: str | None = Query(None,max_length=60),
-                      direction: str | None = Query(None,max_length=60),
-                      filter_mode: Literal['all', 'any'] = 'all',
+                      operators: list[str] | None = Query(None),
+                      destination: list[str] | None = Query(None),
+                      team: list[str] | None = Query(None),
+                      state: list[str] | None = Query(None),
+                      call_type: list[str] | None = Query(None),
+                      direction: list[str] | None = Query(None),
                       session: dict = Depends(current_session)):
     required(session,'metrics:read')
     try:
-        names, groups = dashboard_filter_groups(destination, team, filter_mode)
-        return database.stats(after,before,created_after,created_before,operator,names,
-                              state=state,call_type=call_type,direction=direction,
-                              filter_mode=filter_mode,any_operator_groups=groups)
+        selected, groups = dashboard_multi_facets(
+            operators, state, call_type, direction, destination, team)
+        return database.stats(
+            after, before, created_after, created_before, operator,
+            state=None, filter_mode='any', selected_facets=selected,
+            any_operator_groups=groups)
     except Exception as e: json_failure(e)
 
 @app.get('/api/v1/calls', dependencies=[Depends(require_api)], tags=['Calls'])
