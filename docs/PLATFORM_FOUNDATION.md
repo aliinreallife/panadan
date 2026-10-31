@@ -69,7 +69,7 @@ purges and privileged maintenance procedures before ingesting personal data.
 ## How to validate safely
 
 GitHub CI runs a dedicated `platform-integration` job with a disposable
-PostgreSQL 17 container using **synthetic data only**, and tests:
+PostgreSQL 18.6 container using **synthetic data only**, and tests:
 disabled sources, per-source identity, stable replay, edit revisions,
 tombstones, resurrection, stale checkpoint, crash rollback, queue
 processing and omission of sensitive fields.
