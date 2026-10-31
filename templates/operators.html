@@ -2,6 +2,7 @@
 <body><div class="shell">
 <aside class="sidebar"><a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
 <nav><a href="/dashboard">▦ گزارش تماس‌ها</a><a class="active" href="/dashboard/operators">♙ کارشناسان و مقاصد</a>
+{% if can_manage %}<a href="/dashboard/connect">◈ اتصال هوش مصنوعی</a><a href="/dashboard/tokens">♢ توکن‌های دسترسی</a><a href="/dashboard/api">⌘ راهنمای API</a><a href="/dashboard/oauth">◉ اتصال امن OAuth</a>{% endif %}
 {% if can_manage %}<a href="/dashboard/users">♙ کاربران و دسترسی‌ها</a><a href="/dashboard/activity">▤ فعالیت کاربران</a>{% endif %}</nav>
 <div class="side-footer"><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{csrf}}"><button class="link-button">خروج</button></form></div>
 </aside>
@@ -33,4 +34,4 @@
 import {normalizeSearch} from '/static/selects.js';
 const search=document.getElementById('operator-search'), rows=[...document.querySelectorAll('#operator-directory tr[data-search]')];
 search?.addEventListener('input',()=>{const q=normalizeSearch(search.value);let visible=0;for(const row of rows){const match=normalizeSearch(row.dataset.search).includes(q);row.hidden=!match;if(match)visible++;}document.getElementById('operator-empty').hidden=visible>0||!q;});
-</script></body></html>
+</script><script src="/static/mobile-nav.js" defer></script></body></html>

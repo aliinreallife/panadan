@@ -210,16 +210,19 @@ def test_operator_directory_filter_and_profile(client, monkeypatch):
     seen={}
     def list_calls(*args,**kwargs):
         seen['args']=args
+        seen['kwargs']=kwargs
         return []
     monkeypatch.setattr(main.database,'list_calls',list_calls)
     response=c.get('/dashboard/data?operator=Test%20Op&destination=مشهد')
     assert response.status_code==200
-    assert seen['args'][8]=='Test Op'
-    assert seen['args'][9]==['Test Op']
+    assert seen['args'][:2] == (20, 0)
+    assert seen['kwargs']['operator'] == 'Test Op'
+    assert seen['kwargs']['any_operator_groups'] == [['Test Op']]
     assert c.get('/dashboard/data?destination=نامشخص').status_code==200
-    assert '__unspecified__' in seen['args'][9]
-    assert 'Other Op' in seen['args'][9]
-    assert 'Test Op' not in seen['args'][9]
+    flattened = seen['kwargs']['any_operator_groups'][0]
+    assert '__unspecified__' in flattened
+    assert 'Other Op' in flattened
+    assert 'Test Op' not in flattened
 
 
 def test_operator_assignment_admin_only_and_unknown_source_rejected(client):
@@ -373,10 +376,10 @@ def test_token_datetime_rtl_order_and_utc_semantics(client):
     assert main.templates.env.filters['date_time_clock'](None) == '—'
 
 
-def test_report_mode_is_report_only_and_reused_by_metrics(client, monkeypatch):
+def test_multi_value_report_filters_are_or_and_match_metrics(client, monkeypatch):
     c, main = client
     admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
-    cookie, csrf = main.store.create_session(admin)
+    cookie, _ = main.store.create_session(admin)
     c.cookies.set('panadan_session', cookie)
     main.store.set_operator_assignment('Test Op', 'مشهد', 'غرب آسیا')
     calls, metrics = [], []
@@ -389,30 +392,29 @@ def test_report_mode_is_report_only_and_reused_by_metrics(client, monkeypatch):
                 'avg_ai_score': None, 'avg_voice_length': None}
     monkeypatch.setattr(main.database, 'list_calls', fake_list)
     monkeypatch.setattr(main.database, 'stats', fake_stats)
-    qs = '?after=2026-10-01&operator=Other%20Op&direction=Incoming&destination=مشهد&team=غرب%20آسیا&state=Unchecked&filter_mode=any'
-    r = c.get('/dashboard/data' + qs)
-    assert r.status_code == 200
+    qs = ('?after=2026-10-01&operators=Test%20Op&operators=Other%20Op'
+          '&direction=Incoming&direction=Outgoing'
+          '&destination=مشهد&team=غرب%20آسیا&state=Unchecked&state=SoldOut')
+    assert c.get('/dashboard/data' + qs).status_code == 200
     args, kw = calls[-1]
-    assert args[8] == 'Other Op'
-    assert args[9] is None
+    assert args[2].isoformat() == '2026-10-01'
+    assert kw['operator'] is None
     assert kw['filter_mode'] == 'any'
-    assert kw['direction'] == 'Incoming'
-    assert len(kw['any_operator_groups']) == 2
-    assert kw['any_operator_groups'][0] == ['Test Op']
-    assert kw['any_operator_groups'][1] == ['Test Op']
-    r = c.get('/dashboard/metrics' + qs)
-    assert r.status_code == 200
-    _, metric_kwargs = metrics[-1]
-    assert metric_kwargs['filter_mode'] == kw['filter_mode']
-    assert metric_kwargs['direction'] == kw['direction']
-    assert metric_kwargs['state'] == 'Unchecked'
-    assert metric_kwargs['any_operator_groups'] == kw['any_operator_groups']
-    assert c.get('/dashboard/data?filter_mode=unsafe').status_code == 422
-    assert c.get('/dashboard/metrics?filter_mode=unsafe').status_code == 422
+    assert kw['selected_facets']['operators'] == ['Test Op','Other Op']
+    assert kw['selected_facets']['directions'] == ['Incoming','Outgoing']
+    assert kw['selected_facets']['states'] == ['Unchecked','SoldOut']
+    assert kw['any_operator_groups'] == [['Test Op'], ['Test Op']]
+    assert c.get('/dashboard/metrics' + qs).status_code == 200
+    _, metric_kw = metrics[-1]
+    assert metric_kw['filter_mode'] == 'any'
+    assert metric_kw['selected_facets'] == kw['selected_facets']
+    assert metric_kw['any_operator_groups'] == kw['any_operator_groups']
     assert c.get('/dashboard/filter-options').json()['directions'] == ['Incoming','Outgoing']
+    # Unknown/overlong selection lists are never allowed into SQL.
+    assert c.get('/dashboard/data?'+'&'.join('state=S'+str(i) for i in range(21))).status_code == 400
 
 
-def test_filters_template_removes_optional_creation_time_and_has_logic(client):
+def test_multi_filter_template_has_no_logic_switch(client):
     c, main = client
     admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
     cookie, _ = main.store.create_session(admin)
@@ -421,12 +423,13 @@ def test_filters_template_removes_optional_creation_time_and_has_logic(client):
     assert page.status_code == 200
     assert 'فیلتر زمان ثبت (اختیاری)' not in page.text
     assert 'id="created_after-doran"' not in page.text
-    assert 'id="direction"' in page.text
-    assert 'name="filter_mode" value="any"' in page.text
-    assert 'name="filter_mode" value="all"' in page.text
+    for name in ('operator','destination','team','call_type','state','direction'):
+        assert f'<select id="{name}" multiple data-multi' in page.text
+    assert 'name="filter_mode"' not in page.text
     profile = c.get('/dashboard/operator?name=Test%20Op')
     assert profile.status_code == 200
-    assert 'name="filter_mode" value="any"' not in profile.text
+    assert 'id="operator"' not in profile.text
+    assert '<select id="state" multiple data-multi' in profile.text
 
 
 def test_sticky_navigation_logout_available_on_all_admin_pages(client):

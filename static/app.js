@@ -1,9 +1,10 @@
 import {parseTranscript} from './transcript.js';
 import {enhanceSelects} from './selects.js';
+import {enhanceMultiSelects, multiValues} from './multiselect.js';
 import {registerPanadanWebMcp} from './webmcp.js';
 import {formatVoiceDuration, voiceDurationSegments, formatSourceCallClock, hasDisplayableDealValue} from './formatters.js';
 import {dialablePhone} from './phone.js';
-import {callTypeLabel, callStateLabel, knownTypeOptions, knownStateOptions} from './labels.js';
+import {callTypeLabel, callStateLabel, directionLabel, knownTypeOptions, knownStateOptions} from './labels.js';
 'use strict';
 const $ = id => document.getElementById(id);
 let offset=0;
@@ -32,12 +33,20 @@ const showError=error=>{const target=$('error');if(target){target.textContent=er
 const clearError=()=>{if($('error'))$('error').hidden=true;};
 const filters=()=>{
   const values=new URLSearchParams({limit,offset});
-  for(const key of ['after','before','state','call_type','operator','destination','team','direction'])if($(key)?.value)values.set(key,$(key).value);
-  const mode=document.querySelector('input[name="filter_mode"]:checked')?.value||'all';
-  values.set('filter_mode',profileOperator?'all':mode);
+  for(const key of ['after','before'])if($(key)?.value)values.set(key,$(key).value);
+  for(const [id,key] of [
+    ['operator','operators'],['destination','destination'],
+    ['team','team'],['call_type','call_type'],
+    ['state','state'],['direction','direction']
+  ]){
+    const select=$(id);
+    if(select)for(const value of multiValues(select))values.append(key,value);
+  }
+  // Operator profile identity is fixed independently from OR report facets.
   if(profileOperator)values.set('operator',profileOperator);
   return values;
 };
+
 async function load(){
   if(!$('rows'))return;
   clearError();
@@ -125,16 +134,17 @@ async function metrics(){
 async function loadFilterOptions(){
   const makeOptions=(id,values,translate)=>{
     const select=$(id);if(!select)return;
-    const current=select.value;
-    const placeholder=select.options[0]?.textContent || 'همه';
+    const current=new Set(multiValues(select));
     select.replaceChildren();
-    const initial=document.createElement('option');initial.value='';initial.textContent=placeholder;select.append(initial);
     for(const raw of [...new Set(values.filter(v=>v!==null && v!==undefined && String(v).trim()).map(String))]){
-      const option=document.createElement('option');option.value=raw;option.textContent=translate(raw);
-      option.title=raw;select.append(option);
+      const option=document.createElement('option');
+      option.value=raw;option.textContent=translate(raw);
+      option.title=raw;option.selected=current.has(raw);
+      select.append(option);
     }
-    select.value=current;
+    select.dispatchEvent(new Event('change',{bubbles:true}));
   };
+
   // Static fallback works even if distinct-value lookup is unavailable.
   let types=knownTypeOptions(),states=knownStateOptions();
   let foundOperators=[],foundDestinations=['نامشخص'],foundTeams=['نامشخص'],foundDirections=[];
@@ -151,8 +161,9 @@ async function loadFilterOptions(){
   }
   makeOptions('call_type',types,callTypeLabel);
   makeOptions('state',states,callStateLabel);
-  // Raw source direction labels until upstream confirms incoming/outgoing codes.
-  makeOptions('direction',foundDirections,v=>String(v));
+  // Source owner confirmed IntoOut=outgoing, OutToIn=incoming.
+  // Raw source codes remain option values for backend filtering.
+  makeOptions('direction',foundDirections,directionLabel);
   const directory=Array.isArray(foundOperators)?foundOperators:[];
   makeOptions('operator',directory.map(v=>v.value),v=>operatorName(v));
   makeOptions('destination',foundDestinations,v=>v);
@@ -254,6 +265,7 @@ function longTextSection(key, value){
 function metaValue(key,value){
   if(key==='CALLDATE')return dateFormat(value);
   if(key==='tellstate')return callTypeLabel(value);
+  if(key==='tellside')return directionLabel(value);
   if(key==='aicallinfostate')return callStateLabel(value);
   if(key==='possibility_of_sale_ai')return numberFormat(value);
   if(key==='voice_length')return formatVoiceDuration(value);
@@ -436,15 +448,17 @@ async function detail(id){
   }
 }
 function clearDates(){
-  const all=document.querySelector('input[name="filter_mode"][value="all"]');
-  if(all)all.checked=true;
   for(const key of ['after','before','state','call_type','operator','destination','team','direction']){
-    if($(key))$(key).value='';
+    if($(key)){
+      if($(key).multiple){for(const option of $(key).options)option.selected=false;$(key).dispatchEvent(new Event('change',{bubbles:true}));}
+      else $(key).value='';
+    }
     const component=$(key+'-doran');if(component){component.removeAttribute('value');component.value=null;}
   }
 }
 function initialize(){
   enhanceSelects();
+  enhanceMultiSelects();
   for(const key of ['after','before'])PanadanDate.attach(key);
   // The optional creation-time controls are removed from the dashboard.
   // Legacy created_after/created_before API support stays server-side.
