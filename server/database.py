@@ -107,7 +107,10 @@ def filters(after: date | None, before: date | None, state: str | None,
     for column, value in [('aicallinfostate', state),
                           ('tellstate', call_type), ('tellside', direction)]:
         if value:
-            selections.append(f'"{column}" = %s')
+            # tellside may be a numeric enum; the UI sends string option values.
+            # Compare its textual representation without guessing enum mappings.
+            selections.append(f'"{column}"::text = %s' if column == 'tellside'
+                              else f'"{column}" = %s')
             select_args.append(value)
 
     if operator == UNSPECIFIED:
