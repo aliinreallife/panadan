@@ -58,9 +58,12 @@ docker exec "$container" postgres -V | grep -qE '^postgres \(PostgreSQL\) 18\.6(
 
 export PANADAN_PLATFORM_TEST_DSN="postgresql://panadan_ci:synthetic_ci_password_only@127.0.0.1:${port}/panadan_ci"
 export PANADAN_PLATFORM_TEST_ALLOW_RESET=YES
-echo "Running synthetic-only ingestion, Odoo adapter and checkpoint tests ..."
+echo "Running synthetic-only ingestion and checkpoint tests ..."
 uv sync --locked --dev
-uv run --locked python -m pytest -q \
-  tests/test_platform_ingest.py tests/test_odoo_sync_adapter.py \
-  tests/test_sync_readiness_audit.py
+tests=(tests/test_platform_ingest.py tests/test_sync_readiness_audit.py)
+# The Odoo adapter is in a separate feature PR; include it when present.
+if [[ -f tests/test_odoo_sync_adapter.py ]]; then
+  tests+=(tests/test_odoo_sync_adapter.py)
+fi
+uv run --locked python -m pytest -q "${tests[@]}"
 echo "Integration test finished. Disposable database will be deleted."
