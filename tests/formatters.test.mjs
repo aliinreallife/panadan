@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {formatVoiceDuration, formatSourceCallClock, hasDisplayableDealValue} from '../static/formatters.js';
+import {formatVoiceDuration, voiceDurationSegments, formatSourceCallClock, hasDisplayableDealValue} from '../static/formatters.js';
 
 test('voice_length in seconds formats in compact readable Persian units',()=>{
   assert.equal(formatVoiceDuration(0),'۰ ثانیه');
@@ -42,4 +42,12 @@ test('zero deal values are hidden in UI while nonzero raw values remain',()=>{
   assert.equal(hasDisplayableDealValue(123.45),true);
   assert.equal(hasDisplayableDealValue(-10),true);
   assert.equal(hasDisplayableDealValue('200'),true);
+});
+
+
+test('RTL durations retain largest unit first as DOM segments',()=>{
+  assert.deepEqual(voiceDurationSegments(178),['۲ دقیقه','۵۸ ثانیه']);
+  assert.deepEqual(voiceDurationSegments(3661),['۱ ساعت','۱ دقیقه','۱ ثانیه']);
+  assert.deepEqual(voiceDurationSegments(0),['۰ ثانیه']);
+  assert.deepEqual(voiceDurationSegments(null),[]);
 });
