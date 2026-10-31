@@ -99,3 +99,24 @@ CREATE TABLE IF NOT EXISTS panadan_ingest.sync_runs (
 );
 
 -- No tables in this schema are connected to /dashboard, REST or MCP today.
+
+
+-- A restricted writer must lock source enablement for the full ingest batch.
+-- PostgreSQL FOR SHARE requires UPDATE privilege on the underlying table;
+-- never give runtime ingestion UPDATE on the source registry merely to lock it.
+-- This narrowly scoped, owner-executed function performs only the row lock.
+-- It returns NULL for an unregistered source; callers reject NULL/FALSE.
+CREATE OR REPLACE FUNCTION panadan_ingest.lock_source_for_ingest(p_source_key TEXT)
+RETURNS BOOLEAN
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $source_lock$
+    SELECT enabled
+    FROM panadan_ingest.sources
+    WHERE source_key = p_source_key
+    FOR SHARE;
+$source_lock$;
+-- PostgreSQL otherwise defaults new FUNCTION EXECUTE privileges to PUBLIC.
+-- The separate restricted-role migration explicitly grants only the writer.
+REVOKE ALL ON FUNCTION panadan_ingest.lock_source_for_ingest(TEXT) FROM PUBLIC;
