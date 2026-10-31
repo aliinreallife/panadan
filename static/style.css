@@ -575,3 +575,150 @@ doran-datepicker::part(dialog){
   .conversation-toggle{padding:8px 11px}
 }
 @media(prefers-reduced-motion:reduce){.conversation-section,.conversation-chevron,.analysis-toggle-icon{transition:none}}
+
+/* v0.8 admin polish: consistent input geometry, readable bilingual data and
+   compact user editing. Scope carefully to avoid changing other forms. */
+.login-card .stack label > input{width:100%;min-height:46px}
+.login-card input[name="username"],
+.login-card input[name="password"],
+.management-form input[name="username"],
+.management-form input[name="password"]{
+  direction:ltr;
+  text-align:left;
+  unicode-bidi:plaintext;
+  font-variant-numeric:tabular-nums;
+}
+
+.report-filters{gap:12px;align-items:flex-end}
+.report-filters > label{
+  flex:1 1 195px;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  align-self:stretch;
+  justify-content:flex-end;
+  gap:8px;
+  line-height:1.6;
+}
+.report-filters > label > select,
+.report-filters > label > input:not([hidden]),
+.report-filters > label > .ui-select,
+.report-filters > label > doran-datepicker{
+  width:100%;
+  min-width:0;
+  min-height:46px;
+}
+.report-filters doran-datepicker::part(input),
+.report-filters doran-datepicker::part(trigger){
+  box-sizing:border-box;
+  min-height:46px;
+  width:100%;
+}
+.report-filters .advanced-filters{flex-basis:100%;min-width:0}
+.report-filters .advanced-filters .filters > label{
+  flex:1 1 200px;min-width:0;
+}
+
+/* Each person is a single accessible, collapsed card. Editing no longer
+   stretches the entire user table into a large empty row. */
+.users-list{display:grid;gap:10px}
+.user-card{border:1px solid #dfeae4;border-radius:14px;background:#fff;overflow:hidden}
+.user-card[open]{border-color:#b7d9c7;box-shadow:0 5px 18px #0b4a2b0c}
+.user-card-summary{
+  display:grid;
+  grid-template-areas:"name role caps edit";
+  grid-template-columns:minmax(125px,1.1fr) auto minmax(210px,2fr) auto;
+  align-items:center;
+  gap:14px;
+  padding:15px 17px;
+  cursor:pointer;
+  list-style:none;
+}
+.user-card-summary::-webkit-details-marker{display:none}
+.user-card-summary::marker{content:""}
+.user-card-summary:hover{background:#f7fbf8}
+.user-card-summary:focus-visible{outline:3px solid #168465;outline-offset:-3px}
+.user-card[open] .user-card-summary{border-bottom:1px solid #e3ede6;background:#f8fcfa}
+.user-card-name{grid-area:name;display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}
+.user-card-name bdi{color:#28463b;font-size:13px;font-weight:750;overflow-wrap:anywhere}
+.user-card-role{grid-area:role}
+.user-card-summary .user-capabilities{grid-area:caps;max-width:none;min-width:0}
+.user-card-edit{
+  grid-area:edit;display:inline-flex;gap:8px;align-items:center;
+  color:#176d55;font-size:12px;font-weight:750;white-space:nowrap;
+  padding:7px 11px;background:#eff8f2;border:1px solid #d3e8da;border-radius:9px;
+}
+.user-card-edit span{display:inline-block;transition:transform .14s}
+.user-card[open] .user-card-edit span{transform:rotate(180deg)}
+.user-edit-form{
+  display:grid;grid-template-columns:minmax(180px,1fr) minmax(180px,1fr);
+  gap:16px 22px;align-items:end;padding:18px;
+}
+.user-edit-role{max-width:350px}
+.user-edit-role > select,.user-edit-role > .ui-select{width:100%}
+.user-edit-active{
+  display:flex;flex-direction:row;align-items:center;justify-content:flex-start;
+  gap:9px;min-height:46px;
+}
+.user-edit-active input,.user-edit-grants input{
+  min-height:0;width:17px;height:17px;flex:none;margin:0;accent-color:#168465;
+}
+.user-edit-grants{grid-column:1/-1;border:0;margin:0;padding:0;min-width:0}
+.user-edit-grants legend{font-size:12px;font-weight:750;color:#416354;padding-bottom:9px}
+.user-edit-grants .permissions{display:flex;gap:8px;flex-wrap:wrap}
+.user-edit-grants .permissions label{padding:7px 11px;font-size:11px;line-height:1.7}
+.user-edit-footer{
+  grid-column:1/-1;display:flex;align-items:center;
+  justify-content:space-between;gap:15px;flex-wrap:wrap;
+  border-top:1px solid #e7efe9;padding-top:13px;
+}
+.user-edit-footer p{margin:0;flex:1;min-width:210px}
+.user-edit-footer button{min-height:42px}
+.users-panel .panel-head{align-items:center}
+.users-panel .panel-head p{margin:2px 0 0}
+
+/* RTL: first column is the right-hand Tehran timestamp; elapsed duration
+   stays at the far left. Keep dates and hours in isolated numeric runs. */
+.activity-table{table-layout:fixed;min-width:790px}
+.activity-table th:first-child{width:195px;text-align:right}
+.activity-table th:nth-child(2){width:110px}
+.activity-table th:nth-child(3){width:115px}
+.activity-table th:nth-child(5){width:85px}
+.activity-table th:last-child{width:85px;text-align:left}
+.activity-table td:first-child{text-align:right}
+.activity-table td:last-child{text-align:left}
+.activity-table td:nth-child(4){
+  direction:rtl;text-align:right;font:inherit;
+  font-size:12px;white-space:normal;overflow-wrap:anywhere;unicode-bidi:plaintext;
+}
+.activity-event-username{unicode-bidi:plaintext}
+.activity-time{display:inline-flex;direction:rtl;gap:10px;align-items:baseline;white-space:nowrap}
+.activity-date,.activity-clock{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}
+.activity-clock{font-weight:750;color:#356650}
+.activity-event-duration{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}
+
+@media(max-width:1000px){
+  .user-card-summary{
+    grid-template-areas:"name role edit" "caps caps caps";
+    grid-template-columns:minmax(0,1fr) auto auto;
+    gap:10px 14px;
+  }
+}
+@media(max-width:700px){
+  .report-filters > label{flex:1 1 calc(50% - 8px);min-width:0}
+  .user-card-summary{
+    grid-template-areas:"name edit" "role role" "caps caps";
+    grid-template-columns:minmax(0,1fr) auto;
+    padding:13px;gap:9px;
+  }
+  .user-edit-form{grid-template-columns:1fr;padding:14px;gap:13px}
+  .user-edit-grants,.user-edit-footer{grid-column:1}
+  .user-edit-role{max-width:none}
+  .user-edit-footer button{width:100%}
+}
+@media(max-width:390px){
+  .report-filters > label{flex-basis:100%}
+}
+@media(prefers-reduced-motion:reduce){
+  .user-card-edit span{transition:none}
+}
