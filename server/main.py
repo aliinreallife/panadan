@@ -31,6 +31,11 @@ COOKIE_SECURE = os.getenv('PANADAN_COOKIE_SECURE', 'true').lower() == 'true'
 COOKIE_NAME = 'panadan_session'
 templates = Jinja2Templates(directory='templates')
 templates.env.filters['date_time'] = lambda value: datetime.fromtimestamp(value, timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if value else '—'
+# Date/time are separate isolated runs in RTL templates (clock on the right).
+# Token timestamps remain UTC; never silently reinterpret them as Tehran.
+templates.env.filters['date_time_day'] = lambda value: datetime.fromtimestamp(value, timezone.utc).strftime('%Y-%m-%d') if value else '—'
+templates.env.filters['date_time_clock'] = lambda value: datetime.fromtimestamp(value, timezone.utc).strftime('%H:%M') if value else '—'
+templates.env.filters['date_time_iso'] = lambda value: datetime.fromtimestamp(value, timezone.utc).isoformat() if value else ''
 
 
 @asynccontextmanager
