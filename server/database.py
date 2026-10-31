@@ -17,6 +17,10 @@ PUBLIC_COLUMNS = (
     'voice_length', 'possibility_of_sale_ai', 'deal_value',
     'vw_danix_base_info_users_name',
 )
+// Detail-only metadata; do not expand list/stats or sensitive source fields.
+// Observed clock correlation strongly suggests seconds after Tehran midnight;
+// event meaning (started/answered/ended) is not yet verified upstream.
+DETAIL_COLUMNS = ('call_time',)
 SENSITIVE_COLUMNS = (
     'call_id','customername','customertell','outcome','ai_recommendation',
     'summary','transcription','tell_state_desc','create_date',
@@ -112,7 +116,7 @@ def list_calls(limit: int = 20, offset: int = 0, after: date | None = None,
 
 
 def get_call(call_id: int, sensitive: bool = False):
-    columns = PUBLIC_COLUMNS + (SENSITIVE_COLUMNS if sensitive else ())
+    columns = PUBLIC_COLUMNS + DETAIL_COLUMNS + (SENSITIVE_COLUMNS if sensitive else ())
     q = ('SELECT ' + ','.join('"' + c + '"' for c in columns) + ' FROM ' + VIEW + ' WHERE id=%s LIMIT 1')
     with connect() as c: row = c.execute(q, (call_id,)).fetchone()
     return normalized(row) if row else None
