@@ -42,7 +42,7 @@ def test_platform_secret_example_tracked_but_real_secret_ignored():
     example = Path(".env.platform.example").read_text()
     assert ".env.*" in ignore
     assert "!.env.platform.example" in ignore
-    assert re.search(r"(?m)^PANADAN_PLATFORM_DB_PASSWORD=\\s*$", example)
+    assert re.search(r"(?m)^PANADAN_PLATFORM_DB_PASSWORD=\s*$", example)
     assert "PANADAN_PLATFORM_DB_PORT=15433" in example
 
 
