@@ -190,7 +190,7 @@ disposable-PostgreSQL integration cases unless the dedicated guarded
 not needed for offline test execution.
 
 To verify the otherwise-skipped PostgreSQL transaction tests against a
-**disposable PostgreSQL 17 Docker container** using synthetic data only:
+**disposable PostgreSQL 18.6 Docker container** using synthetic data only:
 
 ```bash
 cd ~/panadan-sync-test
@@ -200,7 +200,7 @@ bash tools/test-platform-integration.sh
 The helper publishes a random loopback-only port, creates a clean
 `panadan_ci` test database with synthetic credentials, runs the relevant
 tests, and deletes the container automatically. It may download the
-`postgres:17-alpine` Docker image on first use. It never reads `.env.db`,
+`postgres:18.6-alpine3.24` Docker image on first use. It never reads `.env.db`,
 `.env.app` or VPN secrets, and cannot connect to live Odoo.
 ## Odoo source updates + new calls (adapter prepared)
 
