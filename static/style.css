@@ -1235,3 +1235,26 @@ doran-datepicker::part(dialog){
 @media(max-width:600px){
  .ui-multi-popup{border-radius:18px 18px 0 0;padding:15px 14px calc(14px + env(safe-area-inset-bottom,0px))}
 }
+
+
+/* Recoverable data-source failures, without misleading empty KPIs. */
+.report-error{
+  display:flex;align-items:center;justify-content:space-between;gap:15px;
+  border:1px solid #efd9b5;background:#fff8ee;color:#845a2b;
+  padding:12px 15px;border-radius:13px;margin:0 0 14px;
+  font-size:12px;line-height:1.9;
+}
+.report-error[hidden]{display:none!important}
+.report-error button{min-height:39px;flex:none;font-size:12px}
+.source-health{
+  font-size:11px;font-weight:650;white-space:nowrap;color:#65796e;
+  border:1px solid #dae4db;border-radius:99px;padding:6px 10px;
+  background:#f7faf7;
+}
+.source-health[data-state="available"]{color:#126d4f;border-color:#cde8d6;background:#edf8f0}
+.source-health[data-state="intermittent"]{color:#925c21;border-color:#efd7af;background:#fff5e8}
+@media(max-width:600px){
+  .report-error{flex-wrap:wrap;gap:10px;padding:11px 13px}
+  .report-error button{width:100%}
+  .source-health{font-size:10px}
+}
