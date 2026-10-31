@@ -197,3 +197,108 @@ def test_bad_source_event_does_not_create_any_rows(pg):
         )
     assert len(_rows(pg, "sync_runs")) == before
     assert checkpoint(pg, source_key="calls", stream="changes") == {"sequence": 15}
+
+
+def test_versioned_processing_extracts_safe_facts_only(pg):
+    from server.platform_processing import public_call_facts, process_next
+    payload = {
+        "tellside": "IntoOut", "tellstate": "FirstToch",
+        "aicallinfostate": "SoldOut", "voice_length": 178,
+        "possibility_of_sale_ai": 50, "transcription": "SENSITIVE-TRANSCRIPT",
+        "customertell": "09120000000", "customername": "PRIVATE-NAME",
+    }
+    facts = public_call_facts(payload)
+    assert facts["call_direction"] == {"code":"IntoOut","meaning":"outgoing"}
+    assert facts["ai_sales_estimate"]["is_confirmed_sale"] is False
+    assert facts["recording_duration"] == {"seconds":178}
+    assert "customername" not in facts and "transcription" not in facts
+    assert "customertell" not in facts
+
+    _enable(pg, "extract")
+    assert ingest_batch(
+        pg, source_key="extract", stream="feed",
+        events=[SourceEvent("42","upsert",payload)],
+        expected_cursor=None, next_cursor={"s":1}
+    ) == BatchResult(1,1,0,0)
+    for _ in range(50):
+        if not process_next(pg):
+            break
+    else:
+        pytest.fail("Unexpected unbounded pending processing jobs")
+
+    rows = pg.execute(
+        """SELECT fact_key, value FROM panadan_ingest.derived_facts
+           WHERE revision_id IN (
+             SELECT revision_id FROM panadan_ingest.raw_revisions
+             WHERE source_key = 'extract')"""
+    ).fetchall()
+    stored = {row["fact_key"]:row["value"] for row in rows}
+    assert stored["call_direction"]["meaning"] == "outgoing"
+    assert stored["ai_sales_estimate"]["score_0_100"] == 50
+    assert set(stored) == {
+        "call_direction", "call_type", "ai_call_status",
+        "recording_duration", "ai_sales_estimate",
+    }
+    assert "PRIVATE" not in str(stored)
+    assert "09120000000" not in str(stored)
+    assert "SENSITIVE-TRANSCRIPT" not in str(stored)
+    assert not process_next(pg)
+    # Re-running the worker is idempotent; facts belong to immutable revision.
+    assert len(pg.execute(
+        """SELECT fact_id FROM panadan_ingest.derived_facts
+           WHERE revision_id IN (
+             SELECT revision_id FROM panadan_ingest.raw_revisions
+             WHERE source_key = 'extract')"""
+    ).fetchall()) == 5
+
+
+def test_processing_versions_keep_history_and_tombstones_out_of_current_view(pg):
+    from server.platform_processing import process_next
+    assert ingest_batch(
+        pg, source_key="extract", stream="feed",
+        events=[SourceEvent("42","upsert",{"tellside":"OutToIn"})],
+        expected_cursor={"s":1}, next_cursor={"s":2}
+    ) == BatchResult(1,1,0,0)
+    assert process_next(pg)
+    current = pg.execute(
+        """SELECT r.revision_no, d.value FROM panadan_ingest.source_records s
+           JOIN panadan_ingest.raw_revisions r
+             ON r.source_key=s.source_key AND r.external_id=s.external_id
+            AND r.revision_no=s.revision_no
+           JOIN panadan_ingest.derived_facts d ON d.revision_id=r.revision_id
+           WHERE s.source_key = 'extract' AND s.external_id = '42'
+             AND d.fact_key='call_direction'"""
+    ).fetchone()
+    assert current["revision_no"] == 2
+    assert current["value"]["meaning"] == "incoming"
+
+    assert ingest_batch(
+        pg, source_key="extract", stream="feed",
+        events=[SourceEvent("42","delete")],
+        expected_cursor={"s":2}, next_cursor={"s":3}
+    ) == BatchResult(1,0,1,0)
+    assert process_next(pg)
+    deleted = pg.execute(
+        """SELECT is_deleted FROM panadan_ingest.source_records
+           WHERE source_key = 'extract' AND external_id='42'"""
+    ).fetchone()
+    assert deleted["is_deleted"] is True
+    current_facts = pg.execute(
+        """SELECT d.fact_id FROM panadan_ingest.source_records s
+           JOIN panadan_ingest.raw_revisions r
+             ON r.source_key=s.source_key AND r.external_id=s.external_id
+            AND r.revision_no=s.revision_no
+           JOIN panadan_ingest.derived_facts d ON d.revision_id=r.revision_id
+           WHERE s.source_key = 'extract' AND s.external_id = '42'
+             AND s.is_deleted = FALSE"""
+    ).fetchall()
+    assert current_facts == []
+
+
+def test_cleaning_rejects_unknown_fields_and_invalid_scores():
+    from server.platform_processing import public_call_facts
+    assert public_call_facts({"tellside":"Unknown", "customertell":"100",
+                              "voice_length":-4, "possibility_of_sale_ai":101}) == {}
+    assert public_call_facts({"voice_length":True, "possibility_of_sale_ai":False}) == {}
+    with pytest.raises(ValueError):
+        public_call_facts("not an object")
