@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Panadan</title>
+  <rect x="2" y="2" width="60" height="60" rx="17" fill="#102e2a"/>
+  <path d="M19 48V17h14c9 0 14 5 14 12.5S42 42 33 42H19" fill="none" stroke="#a6e8cb" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="49" cy="49" r="5" fill="#c4f879"/>
+</svg>

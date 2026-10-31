@@ -23,7 +23,7 @@
 - [ ] OAuth 2.1 authorization-code/PKCE and remote MCP interoperability
 - [ ] Public domain, TLS, proxy/Origin/Host security and rate limiting before public exposure
 - [ ] PostgreSQL administrator revokes unnecessary CREATE privilege for reporting user
-- [ ] Clarify `SoldOut`, `voice_length` and `deal_value` semantics with the source owner
+- [ ] Clarify `SoldOut` and `deal_value` semantics with the source owner; `voice_length` was confirmed as seconds on 2026-10-31
 
 The dashboard/API/MCP must remain read-only against the source reporting database. Only Panadan's separate local authentication store may write user and token records.
 
@@ -140,3 +140,10 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Add explicit MCP transport Host/Origin allowlists and v2-native protocol tests
 - [x] Build both Docker images in PR CI without publishing them
 - [ ] Verify on the user's local WSL/VPN installation, and complete one-click OAuth login/consent
+
+## Reporting display clarification (2026-10-31)
+
+- [x] Display `voice_length` (seconds confirmed by source owner) as human-readable Persian durations in call details and the average-audio-duration metric, without changing API values.
+- [x] Mark the raw `deal_value` display as unverified; 3,000 sampled calls contained zeros, which must not be construed as confirmed zero sales or revenue.
+- [x] Add a self-hosted SVG favicon linked from all dashboard and login templates.
+- [ ] Verify exact upstream definition, currency and population of `deal_value` before treating it as financial reporting.
