@@ -32,7 +32,6 @@ admin_psql() {
 confirm_target() {
   local values
   values="$(admin_psql -A -t -c 'SELECT current_database(); SHOW server_version_num;')"
-  [[ "$values" == "$(printf 'panadan\n' )"18????" ]] && return 0
   # Explicit validation without interpolating arbitrary database identifiers.
   [[ "$(printf '%s\n' "$values" | head -1)" == "panadan" ]] ||
     die "Wrong target database: expected panadan."
