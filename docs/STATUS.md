@@ -226,3 +226,12 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Add source column-selection regression tests and Node unit tests for Persian clock formatting and source-zero filtering.
 - [ ] Visual and assistive-tech smoke tests on desktop Chrome and an Android phone before production rollout. The current changes have code/CI tests but no actual device screenshots.
 - [ ] Source owner to confirm the `call_time` event definition, `tellnum` short-code meaning, and `create_date` timezone contract before further reporting features.
+
+## RTL timestamp presentation consistency (2026-10-31)
+
+- [x] Standardized combined date/time displays so the **clock sits on the right** and the **date on the left**, including call detail overview, recorded creation timestamp, activity audit rows, and token expiry/last-use rows.
+- [x] Isolate numeric clock and date fragments from the Persian text direction with RTL flex layout and LTR-isolated subparts; preserve missing values as em dashes.
+- [x] Correct the Doran-backed Jalali formatter to honor time-only options (previously only options containing `year` were respected), leaving date-only input behavior unchanged.
+- [x] Keep original timezone semantics: call/record/activity displays use Tehran when applicable, token expiry and use retain labeled UTC values, no database/API transformation.
+- [x] Add Node locale/format/layout contract tests and a Python authenticated-token template smoke test for visual component order.
+- [ ] Perform actual Chrome/Android browser visual checks, including narrow layouts and the third-party Doran input internal layout.
