@@ -93,6 +93,11 @@ cd ~/panadan
 This operates **only** on the independently named `panadan-platform`
 Compose service. It refuses symlinked/group-readable credentials and
 checks the PostgreSQL major version, database name and owner identity.
+It refuses to rotate while PostgreSQL's `log_statement` setting is not
+`none`, to avoid logging the literal password during `ALTER ROLE`.
+Other server-side audit extensions may log SQL separately: review those
+settings independently and never assume stdout suppression protects
+the database's own logs.
 It generates a fresh cryptographic secret, stages an updated local
 `.env.platform` with mode 600, and changes the PostgreSQL
 `panadan_owner` role using a local psql connection (secret over stdin,
