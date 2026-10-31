@@ -247,11 +247,15 @@ install an independent PostgreSQL server or client on WSL.
 ./panadan.sh platform-db init
 ./panadan.sh platform-db check
 ./panadan.sh platform-db backup
+./panadan.sh platform-db rotate-password  # Only when rotating exposed owner credentials
 ./panadan.sh platform-db down
 ```
 
 It safely generates a private local password, applies the additive
 schema, checks the version/tables and creates a private local backup.
+The explicit `rotate-password` command stages a new owner secret,
+changes it over local psql stdin and recreates only the platform DB
+container; an ordinary Compose env edit does not rotate PostgreSQL credentials.
 Stopping does not remove the volume; none of these commands connects
 to Odoo or enables live imports. The disposable test runner also
 checks a synthetic backup/restore and PostgreSQL restart. **Local
