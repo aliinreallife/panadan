@@ -246,3 +246,13 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Improve mobile report filters, activity error-only checkbox, touch targets, metric cards, and call-list presentation as small readable cards.
 - [x] Add synthetic tests for parameterized AND/OR SQL, date constraints, source direction type, matching KPI filters, unsupported mode validation and no-sensitive bypass.
 - [ ] Validate visually at 320/375/430px and desktop in actual Chrome/Android, including open searchable dropdowns and Doran datepickers; automated tests are not a replacement for device QA.
+
+## Simplified reporting and mobile navigation, revised after UI feedback (2026-10-31)
+
+- [x] Remove user-facing AND/OR switch and its large filter-logic panel. Implement searchable multi-select controls with checkboxes for operator, team, destination, call type, AI status and direction; selected values combine via OR, while dates and fixed operator-profile scope remain AND constraints.
+- [x] Use parameterized `= ANY(%s)` comparisons and bounded lists (20 per filter); expose repeated parameters on the dashboard endpoints and keep lists and KPI values aligned. No changes to source Odoo rows or user authorization.
+- [x] Confirm and translate source direction labels: `IntoOut` = `خروجی` (outgoing); `OutToIn` = `ورودی` (incoming). Preserve raw codes and show unknown values unchanged.
+- [x] Replace the crowded mobile strip with up to four grouped, permission-aware button tabs: گزارش‌ها، کارشناسان، اتصالات، مدیریت. Add the Operators link across admin navigation.
+- [x] Tighten vertical spacing and wasted grid space: four columns on desktop, two on mobile, compact actions, tighter header/metrics, and mobile bottom-sheet searchable selection lists.
+- [x] Add unit/test contracts for multi-option request handling, OR predicate safety, fixed operator profile scope, mapping direction labels and four mobile groups.
+- [ ] Validate actual Android/desktop screenshots for 320–430px and 700–800px viewport widths, Doran shadow DOM sizing, mobile dropdown keyboard, mobile menu overlay and screen-reader focus. Do not claim device QA from CI.
