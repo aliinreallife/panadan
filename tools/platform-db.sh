@@ -124,7 +124,7 @@ SELECT 'active_sources=' || count(*) FROM panadan_ingest.sources WHERE enabled;"
     # subsequent rename is atomic on ordinary local filesystems.
     staged="$(mktemp ".env.platform.rotate.XXXXXXXX")" ||
       fail "Could not stage new private credentials."
-    trap 'rm -f -- "${staged:-}"' EXIT
+    trap '[[ -z "${staged:-}" ]] || rm -f -- "$staged"' EXIT
     chmod 600 "$staged"
     new_secret="$(openssl rand -hex 32)" ||
       fail "Could not generate a new random password."
