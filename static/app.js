@@ -2,6 +2,7 @@ import {parseTranscript} from './transcript.js';
 import {enhanceSelects} from './selects.js';
 import {registerPanadanWebMcp} from './webmcp.js';
 import {formatVoiceDuration} from './formatters.js';
+import {dialablePhone} from './phone.js';
 import {callTypeLabel, callStateLabel, knownTypeOptions, knownStateOptions} from './labels.js';
 'use strict';
 const $ = id => document.getElementById(id);
@@ -316,7 +317,26 @@ async function detail(id){
       const grid=el('div','detail-meta-grid');
       for(const [key,val] of extra){
         const item=el('div','detail-item');
-        item.append(el('strong','',labels[key]||key),el('div','detail-value',metaValue(key,val)));
+        item.append(el('strong','',labels[key]||key));
+        if(key==='customertell'){
+          // Sensitive details only: the server omits this field for callers
+          // without calls:sensitive. Never fall back to numeric tellnum.
+          const value=el('div','detail-value customer-phone-row');
+          const digits=el('bdi','customer-phone-number',String(val));
+          digits.dir='ltr';
+          value.append(digits);
+          const dialHref=dialablePhone(val);
+          if(dialHref){
+            const call=el('a','call-link','تماس');
+            call.href=dialHref;
+            call.title='باز کردن شماره‌گیر دستگاه';
+            call.setAttribute('aria-label','تماس با شماره '+String(val));
+            value.append(call);
+          }
+          item.append(value);
+        }else{
+          item.append(el('div','detail-value',metaValue(key,val)));
+        }
         if(key==='deal_value'){
           item.title='مقدار مستقیم از سامانه مبدأ؛ معنای عدد، واحد پول و تأیید مالی آن هنوز مشخص نیست.';
           item.append(el('span','form-hint','مقدار مبدأ؛ صفر بودن به‌تنهایی به معنی نبود فروش نیست.'));
