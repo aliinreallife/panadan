@@ -163,7 +163,8 @@ def test_source_rejects_bad_identifiers_times_and_unordered_pages():
     with pytest.raises(ValueError):
         o._normalized(fake_row(1,T.replace(tzinfo=None)),mode='timestamptz')
     with pytest.raises(ValueError):
-        o.read_id_page(FakeSource([fake_row(0,T.replace(tzinfo=None))]),
+        o.read_id_page(FakeSource([fake_row(1,T.replace(tzinfo=None)),
+                                   fake_row(1,T.replace(tzinfo=None))]),
                        after_id=0,mode='utc_naive')
     with pytest.raises(ValueError):
         o._parse('bad timestamp')
