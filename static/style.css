@@ -722,3 +722,17 @@ doran-datepicker::part(dialog){
 @media(prefers-reduced-motion:reduce){
   .user-card-edit span{transition:none}
 }
+
+/* Phone actions: shown only for customer numbers already authorized in call
+   details. Preserve the original digits and their LTR reading order. */
+.customer-phone-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;direction:rtl}
+.customer-phone-number{direction:ltr;unicode-bidi:isolate;text-align:left;font-variant-numeric:tabular-nums;white-space:nowrap;color:#183b2c}
+.call-link{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:38px;padding:7px 14px;border:1px solid #c1ddce;
+  border-radius:10px;background:#e9f7ef;color:#17654c;
+  font-size:12px;font-weight:750;white-space:nowrap;transition:background .15s;
+}
+.call-link:hover{background:#daf1e4;border-color:#9dcbb6}
+.call-link:focus-visible{outline:3px solid #168465;outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.call-link{transition:none}}
