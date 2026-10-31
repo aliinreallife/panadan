@@ -256,3 +256,12 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Tighten vertical spacing and wasted grid space: four columns on desktop, two on mobile, compact actions, tighter header/metrics, and mobile bottom-sheet searchable selection lists.
 - [x] Add unit/test contracts for multi-option request handling, OR predicate safety, fixed operator profile scope, mapping direction labels and four mobile groups.
 - [ ] Validate actual Android/desktop screenshots for 320–430px and 700–800px viewport widths, Doran shadow DOM sizing, mobile dropdown keyboard, mobile menu overlay and screen-reader focus. Do not claim device QA from CI.
+
+## Selection and navigation refinement (2026-10-31)
+
+- [x] Replace multi-select checkboxes with full-width clickable choices that display an inline checkmark only when selected. Preserve the searchable list, selected count, bounded selection and native multi-select state.
+- [x] Remove the unnecessary per-dropdown Clear and Confirm footer. Tapping a choice updates the selection immediately; the dropdown remains open for further choices, and closes on outside interaction or Escape. The main dashboard still has its usual report submit/reset actions.
+- [x] Apply the four-tab ULTOR mobile navigation pattern: fixed safe-area-aware bottom bar of true buttons, active tab highlighting, compact grouped section chooser displayed **above** the bar, and logout available in a slim sticky top header. Show only authorized destinations.
+- [x] Remove unwanted desktop sidebar **horizontal** scrolling by constraining links to sidebar width and allowing labels to wrap, without hiding vertical navigation or logout.
+- [x] Add automated UI contract checks for buttons, checkmarks, no dropdown footer, max selection cap, bottom positioning and absence of desktop sidebar horizontal overflow.
+- [ ] Test real Chrome/Android layouts at 320px, 375px, 430px, and desktop widths. Verify focus, on-screen keyboard, Android safe area, fixed bottom bar and long Persian navigation labels visually; CI alone is not visual QA.
