@@ -9,6 +9,7 @@ import secrets
 import time
 import re
 import json
+import logging
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -174,9 +175,18 @@ def audit_auth_event(user_id: int | None, action: str, status_code: int):
         pass
 
 
+REPORT_LOG = logging.getLogger("panadan.reporting")
+
+
 def json_failure(error: Exception):
-    # Do not expose the database server details or customer data in HTTP errors.
-    if isinstance(error, ValueError): raise HTTPException(400, str(error))
+    # Do not expose database connection details, SQL, exception messages,
+    # user inputs, customer data, or the traceback in logs or HTTP errors.
+    if isinstance(error, ValueError):
+        raise HTTPException(400, str(error))
+    code = getattr(error, 'sqlstate', None)
+    sqlstate = code if isinstance(code, str) and re.fullmatch(r'[0-9A-Z]{5}', code) else 'unknown'
+    REPORT_LOG.warning('Reporting backend failed type=%s SQLSTATE=%s',
+                       type(error).__name__, sqlstate)
     raise HTTPException(503, 'Reporting database unavailable or query timed out')
 
 
