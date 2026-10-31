@@ -181,6 +181,29 @@ GitHub CI tests the new path against a disposable PostgreSQL database with
 synthetic source payloads. **Do not** apply the migration to Odoo or ingest
 personal data before agreeing on the source update/delete feed and retention.
 
+## Optional Panadan PostgreSQL 18.6 platform database
+
+The future multi-source ingestion database uses the **official PostgreSQL
+18.6** Docker image, pinned to an immutable multi-platform image digest.
+The platform database is **separate from Odoo, its VPN relay, and the
+existing SQLite authentication database**. It is disabled unless explicitly
+started, and it doesn't ingest any customer data automatically.
+
+An opt-in `compose.platform.yaml` exposes only
+`127.0.0.1:15433` and persists data under PostgreSQL 18's
+`/var/lib/postgresql` parent directory. Set up the ignored
+`.env.platform` from `.env.platform.example` first. See
+[PostgreSQL 18 platform setup](docs/POSTGRESQL_18_PLATFORM.md).
+Never upgrade an existing PostgreSQL data volume by changing an image tag.
+
+Offline integration test (requires Docker, **synthetic data only**):
+
+```bash
+bash tools/test-platform-integration.sh
+```
+
+No VPN, Odoo credentials, or platform credentials are used by this test.
+
 ## Assess local reporting mirror readiness (read-only)
 
 Before moving dashboard/REST/MCP reads to a private Panadan PostgreSQL mirror,
