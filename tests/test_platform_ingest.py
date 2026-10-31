@@ -19,9 +19,9 @@ from server.platform_ingest import (
 
 
 def test_platform_pg_version_is_18(pg):
-    """Future Panadan-owned platform test DB is PostgreSQL 18, never Odoo."""
-    server_version = pg.execute("SHOW server_version_num").fetchone()["server_version_num"]
-    assert 180000 <= int(server_version) < 190000
+    """The Panadan-owned integration server is PG18, independent of Odoo."""
+    version = pg.execute("SHOW server_version_num").fetchone()["server_version_num"]
+    assert 180000 <= int(version) < 190000
 
 
 def test_json_validation_is_bounded_and_does_not_need_a_database():
@@ -308,3 +308,147 @@ def test_cleaning_rejects_unknown_fields_and_invalid_scores():
     assert public_call_facts({"voice_length":True, "possibility_of_sale_ai":False}) == {}
     with pytest.raises(ValueError):
         public_call_facts("not an object")
+
+
+def test_odoo_adapter_backfill_new_rows_and_old_updates_both_work(pg):
+    """Synthetic source only; Panadan owns the writable CI target PostgreSQL."""
+    from datetime import datetime, date, timedelta, timezone
+    from server import odoo_sync_adapter as adapter
+    from server import odoo_sync_coordinator as sync
+
+    clock = datetime(2026,10,31,12,0,0,tzinfo=timezone.utc)
+    def row(i, ts, status):
+        return dict(
+            id=i, CALLDATE=date(2026,10,31), tellstate='FollowUp',
+            tellside='IntoOut', aicallinfostate=status, voice_length=180,
+            possibility_of_sale_ai=50, deal_value=0,
+            sync_updated_at=ts.replace(tzinfo=None),
+        )
+
+    class Result:
+        def __init__(self, *, rows=None, row=None):
+            self.rows = rows or []
+            self.row = row
+        def fetchall(self):return self.rows
+        def fetchone(self):return self.row
+
+    class OdooFixture:
+        def __init__(self):
+            self.clock = clock
+            self.data = {i:row(i,clock-timedelta(hours=1),'Unchecked') for i in [1,2,3]}
+            self.queries=[]
+        def execute(self, sql, args=None):
+            self.queries.append((sql,args))
+            if sql==adapter.SCHEMA_SQL:
+                return Result(rows=[
+                    {'column_name':column,'data_type':
+                     ('integer' if column=='id'
+                      else 'timestamp without time zone' if column==adapter.UPDATE_COLUMN
+                      else 'text')}
+                    for column in adapter.COLUMNS
+                ])
+            if sql==adapter.SOURCE_CLOCK_SQL:
+                return Result(row={'source_now':self.clock})
+            if sql==adapter.ID_SQL:
+                after, limit=args
+                return Result(rows=sorted(
+                    (r for i,r in self.data.items() if i>after),
+                    key=lambda r:r['id'])[:limit])
+            if sql==adapter.CHANGE_SQL:
+                lo,hi,at,after_id,limit=args
+                return Result(rows=sorted(
+                    (r for r in self.data.values()
+                     if lo<=r['sync_updated_at']<=hi
+                     and (r['sync_updated_at'],r['id'])>(at,after_id)),
+                    key=lambda r:(r['sync_updated_at'],r['id']))[:limit])
+            raise AssertionError('Source SQL must be fixed, parameterized SELECT')
+    source=OdooFixture()
+    key='odoo_synthetic'
+    _enable(pg,key,kind='database')
+
+    with pytest.raises(ValueError,match='Seed update stream'):
+        sync.poll_id_page(source,pg,mode='utc_naive',source_key=key,limit=2)
+    seed=sync.seed_update_stream(source,pg,mode='utc_naive',source_key=key)
+    assert 'completed_through' in seed
+    with pytest.raises(ValueError,match='already seeded'):
+        sync.seed_update_stream(source,pg,mode='utc_naive',source_key=key)
+    pages=[]
+    for _ in range(5):
+        p=sync.poll_id_page(source,pg,mode='utc_naive',source_key=key,limit=2)
+        pages.append(p)
+        if not p.has_more:break
+    assert [p.examined for p in pages]==[2,1]
+    assert checkpoint(pg,source_key=key,stream=sync.BACKFILL_STREAM)=={'last_id':3}
+    assert pg.execute(
+        'SELECT COUNT(*) AS n FROM panadan_ingest.source_records WHERE source_key=%s',
+        (key,)).fetchone()['n']==3
+
+    # Two historical calls change, and two NEW calls appear. All four receive
+    # the same source timestamp, so cursor ID tie-breaking is essential.
+    source.clock=clock+timedelta(minutes=6)
+    updated=clock+timedelta(minutes=2)
+    source.data[1]=row(1,updated,'SoldOut')
+    source.data[2]=row(2,updated,'FollowUp')
+    source.data[4]=row(4,updated,'Unchecked')
+    source.data[5]=row(5,updated,'Unchecked')
+    a=sync.poll_update_page(source,pg,mode='utc_naive',source_key=key,limit=2)
+    b=sync.poll_update_page(source,pg,mode='utc_naive',source_key=key,limit=2)
+    c=sync.poll_update_page(source,pg,mode='utc_naive',source_key=key,limit=2)
+    assert [a.examined,b.examined,c.examined]==[2,2,0]
+    assert a.has_more and b.has_more and not c.has_more
+    assert a.changed==2 and b.changed==2
+    assert 'window' not in checkpoint(pg,source_key=key,stream=sync.UPDATES_STREAM)
+
+    # A new call may have an old (backdated) update timestamp; ID polling
+    # must still discover it independently of the change cursor.
+    source.data[6]=row(6,clock-timedelta(hours=3),'Unchecked')
+    next_ids=sync.poll_id_page(source,pg,mode='utc_naive',source_key=key,limit=2)
+    assert next_ids.examined==2
+    assert next_ids.skipped==2  # IDs 4 and 5 were already ingested by changes
+    later=sync.poll_id_page(source,pg,mode='utc_naive',source_key=key,limit=2)
+    assert later.changed==1 and later.cursor=={'last_id':6}
+    assert pg.execute(
+        'SELECT COUNT(*) AS n FROM panadan_ingest.source_records WHERE source_key=%s',
+        (key,)).fetchone()['n']==6
+    assert pg.execute(
+        'SELECT COUNT(*) AS n FROM panadan_ingest.raw_revisions WHERE source_key=%s',
+        (key,)).fetchone()['n']==8  # 3 initial + 2 edits + 2 new + backdated 6
+
+    # Next window replays timestamp overlap; hashes avoid extra revisions.
+    source.clock+=timedelta(minutes=2)
+    replay=sync.poll_update_page(source,pg,mode='utc_naive',source_key=key,limit=20)
+    assert replay.examined==4 and replay.changed==0 and replay.skipped==4
+
+    assert all(sql.lstrip().upper().startswith('SELECT') for sql,_ in source.queries)
+    assert all(' OFFSET ' not in sql.upper() for sql,_ in source.queries)
+
+
+def test_odoo_update_poll_requires_seed_and_known_source_contract(pg):
+    from datetime import datetime, timezone
+    from server import odoo_sync_coordinator as sync
+    from server import odoo_sync_adapter as src
+    class Result:
+        def __init__(self, rows=None):
+            self.rows=rows or []
+        def fetchall(self):return self.rows
+    class MissingTimestamp:
+        def execute(self, sql, params=None):
+            if sql==src.SCHEMA_SQL:
+                return Result([
+                    {'column_name':n,'data_type':'integer' if n=='id' else 'text'}
+                    for n in src.COLUMNS if n!='sync_updated_at'
+                ])
+            raise AssertionError('Missing schema should block before any source reads')
+    _enable(pg,'odoo_unready',kind='database')
+    before=pg.execute(
+        'SELECT COUNT(*) AS n FROM panadan_ingest.raw_revisions WHERE source_key=%s',
+        ('odoo_unready',)).fetchone()['n']
+    with pytest.raises(RuntimeError,match='lacks required'):
+        sync.seed_update_stream(MissingTimestamp(),pg,mode='utc_naive',
+                                source_key='odoo_unready')
+    assert checkpoint(pg,source_key='odoo_unready',
+                      stream=sync.UPDATES_STREAM) is None
+    after=pg.execute(
+        'SELECT COUNT(*) AS n FROM panadan_ingest.raw_revisions WHERE source_key=%s',
+        ('odoo_unready',)).fetchone()['n']
+    assert before==after

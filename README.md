@@ -181,6 +181,59 @@ GitHub CI tests the new path against a disposable PostgreSQL database with
 synthetic source payloads. **Do not** apply the migration to Odoo or ingest
 personal data before agreeing on the source update/delete feed and retention.
 
+### Test a feature branch in an isolated Git worktree
+
+Git worktrees do **not** share untracked/ignored `.env.db`, `.env.app`,
+or `vpn/client.ovpn` files with the main checkout. These files are
+needed only for live VPN/database operations and app startup, **not**
+for Python unit tests or JavaScript tests. Do not copy production
+credentials into a test worktree just to execute unit tests.
+
+```bash
+cd ~/panadan
+git fetch origin
+git worktree add --detach ../panadan-sync-test origin/feat/updated-at-only-odoo-sync-adapter
+cd ../panadan-sync-test
+./panadan.sh test
+npm test
+```
+
+If the worktree already exists, just `cd ~/panadan-sync-test` and
+run the last two commands. The normal Python test run skips opt-in
+disposable-PostgreSQL integration cases unless the dedicated guarded
+`panadan_ci` test database is configured. Production secrets are
+not needed for offline test execution.
+
+To verify the otherwise-skipped PostgreSQL transaction tests against a
+**disposable PostgreSQL 18.6 Docker container** using synthetic data only:
+
+```bash
+cd ~/panadan-sync-test
+bash tools/test-platform-integration.sh
+```
+
+The helper publishes a random loopback-only port, creates a clean
+`panadan_ci` test database with synthetic credentials, runs the relevant
+tests, and deletes the container automatically. It may download the
+`postgres:18.6-alpine3.24` Docker image on first use. It never reads `.env.db`,
+`.env.app` or VPN secrets, and cannot connect to live Odoo.
+
+## Odoo source updates + new calls (adapter prepared)
+
+The multi-source foundation now has a **read-only, opt-in** Odoo view
+adapter that covers (1) bounded initial history backfill, (2) ongoing
+**new calls** detected by increasing `id`, and (3) edits to **existing
+calls** detected by a verified `updated_at` or `sync_updated_at`.
+Every cursor is durable and local ingestion stays transactional.
+The initial update cursor must be seeded **before** starting backfill.
+
+The current live view **does not yet expose** either update field. No
+live ingestion, scheduling, customer-data copying, schema changes or
+dashboard cutover are performed by these libraries. See
+[Odoo updated-at sync](docs/ODOO_UPDATED_AT_SYNC.md) for source
+requirements, limitations (especially deletions), synthetic CI tests
+and the steps required before enabling a pilot.
+
 ## Optional Panadan PostgreSQL 18.6 platform database
 
 The future multi-source ingestion database uses the **official PostgreSQL

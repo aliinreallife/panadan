@@ -304,3 +304,15 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Provide an ignored platform password configuration template and `docs/POSTGRESQL_18_PLATFORM.md` setup/retention/upgrade guidance.
 - [x] Add a disposable synthetic PostgreSQL 18.6 test runner and a PostgreSQL-major integration assertion. Running `./panadan.sh dev` or `./panadan.sh up` never starts the optional platform database.
 - [ ] Confirm CI runner availability and actual PG18 integration pass before merging. No real data copied, source updates or production migration performed.
+
+## Odoo new-row and updated-row sync readiness (2026-10-31)
+
+- [x] Build a read-only Odoo adapter with a fixed, approved field allowlist and hardcoded SQL, supporting either `updated_at` or `sync_updated_at` (both strict, allowlisted identifiers) and an explicitly verified UTC-naive or timestamptz source contract.
+- [x] Implement bounded ID keyset pages for both **historical backfill** and **subsequent new calls**. No OFFSET pagination, max 200 records/page (default 100), no full source scan on one request.
+- [x] Implement modified-call polling in frozen, paginated timestamp+ID windows with a source-clock settling delay and a replay overlap; cursor persists marker name to fail closed on schema changes.
+- [x] Seed the update stream before the ID backfill to capture edits that occur during import; ingestion writes raw revisions, processing jobs and checkpoints using the pre-existing one-transaction Panadan-owned PostgreSQL pipeline. Source remains READ ONLY.
+- [x] Add synthetic PostgreSQL end-to-end tests for edited old calls, new calls, backdated new-row timestamps, same-timestamp ID ties, replay idempotence and incomplete source schema.
+- [ ] Obtain source owner's global stable-ID guarantee, view-wide edit marker contract, timestamp storage mode, field retention approval and separate writable Panadan PostgreSQL environment.
+- [ ] Enable an explicitly approved, supervised source adapter runner and verify a bounded 100-row pilot before any actual history import; no CLI/cron/live import is enabled by this PR.
+- [ ] Build cautious periodic ID reconciliation for disappeared rows (do **not** infer deletion from an incomplete page or transient VPN failure) and implement purge/retention policies before sensitive payloads.
+- [ ] Set up scheduling/health alerts and parity/authorization tests before dashboard/REST/MCP cutover. Redis remains deferred.

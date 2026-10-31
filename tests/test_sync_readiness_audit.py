@@ -67,6 +67,10 @@ def test_schema_markers_are_only_candidates_not_proven(monkeypatch):
     monkeypatch.setattr(audit.database,'connect',conn)
     out=audit.inspect(sample=0,explain=False)
     assert out['update_marker_candidates']==['write_date']
+    assert out['update_marker_details'] == [
+        {'name':'write_date','data_type':'timestamp without time zone',
+         'nullable':True}
+    ]
     assert out['deletion_marker_candidates']==['deleted_at']
     assert out['readiness']['can_detect_updates']=='unverified'
     assert out['readiness']['can_detect_deletes']=='unverified'
