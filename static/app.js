@@ -1,6 +1,7 @@
 import {parseTranscript} from './transcript.js';
 import {enhanceSelects} from './selects.js';
 import {enhanceMultiSelects, multiValues} from './multiselect.js';
+import {appliedFilterGroups} from './filter-summary.js';
 import {registerPanadanWebMcp} from './webmcp.js';
 import {formatVoiceDuration, voiceDurationSegments, formatSourceCallClock, hasDisplayableDealValue} from './formatters.js';
 import {dialablePhone} from './phone.js';
@@ -14,6 +15,7 @@ let callListRequestId=0;
 let metricRequestId=0;
 let shownCallsKey=null;
 let shownMetricsKey=null;
+let appliedCallsParams=null;
 const failedAreas=new Set();
 const completedAreas=new Set();
 let lastGoodFilterOptions=null;
@@ -73,6 +75,37 @@ const filters=()=>{
   return values;
 };
 
+/**
+ * Display only filters from the last successfully loaded call list.
+ * Draft select/date changes never masquerade as applied report filters.
+ * Use textContent throughout: source-derived names are untrusted text.
+ */
+function renderAppliedFilterSummary(){
+  const wrapper=$('applied-filters');
+  const list=$('applied-filter-chips');
+  if(!wrapper || !list)return;
+  list.replaceChildren();
+  if(!appliedCallsParams){wrapper.hidden=true;return;}
+  const groups=appliedFilterGroups(appliedCallsParams,{
+    formatDate:dateFormat,
+    labelFor:(key,raw)=>{
+      const id=key==='operators'?'operator':key;
+      const options=$(id)?.options;
+      return options ? [...options].find(option=>option.value===raw)?.textContent||raw : raw;
+    }
+  });
+  for(const group of groups){
+    const chip=el('span','applied-filter-chip');
+    chip.append(el('span','applied-filter-name',group.label),
+                el('bdi','applied-filter-value',group.summary));
+    chip.title=group.label+': '+group.summary;
+    list.append(chip);
+  }
+  const count=$('applied-filters-count');
+  if(count)count.textContent=numberFormat(groups.length)+' دسته';
+  wrapper.hidden=groups.length===0;
+}
+
 async function load(){
   if(!$('rows'))return;
   const requestId=++callListRequestId;
@@ -130,11 +163,15 @@ async function load(){
     }
     if(!data.items.length){const tr=el('tr'),td=el('td','muted','موردی پیدا نشد');td.colSpan=6;tr.append(td);$('rows').append(tr)}
     shownCallsKey=requestKey;
+    appliedCallsParams=new URLSearchParams(requestKey);
+    renderAppliedFilterSummary();
     reportState('calls',true);
   }catch(error){
     if(requestId!==callListRequestId)return;
     const stale=shownCallsKey===requestKey;
     if(!stale){
+      appliedCallsParams=null;
+      renderAppliedFilterSummary();
       const tr=el('tr'),td=el('td','muted','گزارش موقتاً در دسترس نیست. با «تلاش دوباره» درخواست را تکرار کنید.');
       td.colSpan=6;tr.append(td);$('rows').replaceChildren(tr);
     }
@@ -234,6 +271,7 @@ async function loadFilterOptions(){
   makeOptions('operator',directory.map(v=>v.value),v=>operatorName(v));
   makeOptions('destination',foundDestinations,v=>v);
   makeOptions('team',foundTeams,v=>v);
+  renderAppliedFilterSummary();
 }
 const labels={id:'شناسه تماس',CALLDATE:'تاریخ تماس',call_id:'شناسه سیستمی',tellstate:'نوع تماس',tellside:'جهت تماس',aicallinfostate:'وضعیت AI',voice_length:'مدت صوت',possibility_of_sale_ai:'امتیاز احتمال فروش (AI)',deal_value:'ارزش معامله (تأییدنشده)',call_time:'ساعت تماس (طبق مبدأ)',vw_danix_base_info_users_name:'کارشناس',customername:'نام مشتری',customertell:'شماره مشتری',outcome:'نتیجه تماس',ai_recommendation:'پیشنهاد AI',summary:'خلاصه',transcription:'متن مکالمه',tell_state_desc:'دلیل دسته‌بندی',create_date:'زمان ثبت'};
 function transcriptPanel(raw){
