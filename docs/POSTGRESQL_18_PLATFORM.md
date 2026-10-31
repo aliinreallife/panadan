@@ -77,7 +77,13 @@ backup automatically. This does not replace a production backup drill.
 `pg_dump` does not back up external files, nor guarantee a recovery
 point for concurrent source writes once ingestion is enabled.
 
-## Optional local platform database (WSL + Docker)
+## Manual Compose alternative (WSL + Docker)
+
+The CLI above is preferred because it generates and checks the private
+credentials automatically. If using the manual alternative below, your
+password must be a **64-character lowercase/uppercase hexadecimal value**
+(e.g. generated privately using `openssl rand -hex 32`), and `.env.platform`
+must be mode 600. Never print or commit the generated password.
 
 No database is started automatically by `./panadan.sh dev`,
 `./panadan.sh up`, or CI. This is an **independent** Docker Compose
