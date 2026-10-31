@@ -178,3 +178,12 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [ ] Confirm `call_time`, `tellnum`, `tellside`, `CALLDATE` and `create_date` semantics with source owner. Do not change time conversion or introduce raw phone numbers before verification.
 - [ ] Implement numeric-ID operator directory migration and **fail-closed, cross-surface row-level RBAC** only after source identity validation; name filters remain visual filters.
 - [ ] DBA-reviewed least-privilege PostgreSQL account; live encrypted MCP/OAuth end-to-end validation; device/browser UX and redaction review.
+
+
+## WSL PostgreSQL relay timeout diagnosis (2026-10-31)
+
+- [x] Add `./panadan.sh diagnose-db` to isolate VPN route, VPN->PostgreSQL TCP reachability, local relay socket and end-to-end read-only SQL connection without exposing credentials or customer data.
+- [x] Improve relay logging to distinguish remote DB connect failures from forwarding failures by exception **type only**, not message/addresses/credentials.
+- [x] Add synthetic diagnostic unit tests and a README troubleshooting decision tree.
+- [ ] Live user run of `./panadan.sh audit-fields` failed with `ConnectionTimeout` using both 300x3 and 100x1 sample scopes, despite a healthy VPN container and running pgrelay. This suggests a transport/handshake issue; not yet proven which network stage.
+- [ ] Run `./panadan.sh diagnose-db` on the WSL host, review its sanitized outputs and relay logs, and retry `audit-fields` only when PostgreSQL read-only SELECT succeeds.
