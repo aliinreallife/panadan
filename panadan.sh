@@ -58,6 +58,10 @@ case "$cmd" in
     uv run --locked --env-file .env.db --env-file .env.app \
       uvicorn server.main:app --host 127.0.0.1 --port "$port" --no-proxy-headers "$@"
     ;;
+  platform-db)
+    # Independent, opt-in local PG18 management. Never check Odoo credentials.
+    bash tools/platform-db.sh "$@"
+    ;;
   vpn-up) check_config; compose_dev up -d --no-build; compose_dev ps ;;
   relay-recreate)
     # Recreate only the relay; Git updates can invalidate single-file WSL bind
@@ -148,7 +152,7 @@ case "$cmd" in
     done
     ;;
   *)
-    echo 'Usage: ./panadan.sh {setup|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|audit-db|audit-fields|audit-semantics|audit-sync|diagnose-db|relay-recreate|diagnose}'
+    echo 'Usage: ./panadan.sh {setup|platform-db|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|audit-db|audit-fields|audit-semantics|audit-sync|diagnose-db|relay-recreate|diagnose}'
     echo 'dev = native WSL uv FastAPI + Docker-isolated VPN; up = GHCR production images'
     ;;
 esac
