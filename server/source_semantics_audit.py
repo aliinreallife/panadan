@@ -67,10 +67,10 @@ SELECT
     COUNT(*) FILTER (WHERE tehran_clock_lag_seconds BETWEEN 0 AND 3600)
         AS tehran_clock_creation_after_within_hour,
     ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP
-        (ORDER BY naive_clock_lag_seconds))::numeric, 0)
+        (ORDER BY naive_clock_lag_seconds::double precision))::numeric, 0)
         AS naive_clock_median_lag_seconds,
     ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP
-        (ORDER BY tehran_clock_lag_seconds))::numeric, 0)
+        (ORDER BY tehran_clock_lag_seconds::double precision))::numeric, 0)
         AS tehran_clock_median_lag_seconds,
     COUNT(tellnum) AS tellnum_present,
     COUNT(*) FILTER (WHERE tellnum IS NOT NULL
