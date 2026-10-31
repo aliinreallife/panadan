@@ -10,6 +10,13 @@ const $ = id => document.getElementById(id);
 let offset=0;
 let detailRequestId=0;
 let drawerReturnFocus=null;
+let callListRequestId=0;
+let metricRequestId=0;
+let shownCallsKey=null;
+let shownMetricsKey=null;
+const failedAreas=new Set();
+const completedAreas=new Set();
+let lastGoodFilterOptions=null;
 const profileOperator=document.getElementById('dashboard-content')?.dataset.profileOperator||'';
 const operatorName=value=>value==='__unspecified__'||!String(value||'').trim()?'نامشخص':String(value);
 const limit=20;
@@ -29,8 +36,27 @@ const el = (tag,cls,text) => {
   if(text!==undefined)element.textContent=safe(text);
   return element;
 };
-const showError=error=>{const target=$('error');if(target){target.textContent=error.message;target.hidden=false;}};
-const clearError=()=>{if($('error'))$('error').hidden=true;};
+// A reporting outage never silently wipes the last successful result.
+function reportState(area, succeeded, hasStaleData=false){
+  if(succeeded){failedAreas.delete(area);completedAreas.add(area);}
+  else failedAreas.add(area);
+  const health=$('source-health');
+  if(health){
+    const problem=failedAreas.size>0;
+    health.dataset.state=problem?'intermittent':(completedAreas.size?'available':'checking');
+    health.textContent=problem?'منبع گزارش · ناپایدار':(completedAreas.size?'منبع گزارش · در دسترس':'منبع گزارش · در حال بررسی');
+  }
+  const target=$('error');
+  if(target){
+    target.hidden=failedAreas.size===0;
+    const label=$('report-error-message');
+    if(label && failedAreas.size){
+      label.textContent='ارتباط با منبع گزارش‌گیری موقتاً برقرار نشد. '
+        +(hasStaleData?'آخرین دادهٔ موفق همان فیلتر نمایش داده می‌شود. ':'')
+        +'برای تلاش مجدد از دکمه استفاده کنید.';
+    }
+  }
+}
 const filters=()=>{
   const values=new URLSearchParams({limit,offset});
   for(const key of ['after','before'])if($(key)?.value)values.set(key,$(key).value);
@@ -49,10 +75,15 @@ const filters=()=>{
 
 async function load(){
   if(!$('rows'))return;
-  clearError();
-  const spinner=el('tr');const message=el('td','muted','در حال دریافت...');message.colSpan=6;spinner.append(message);$('rows').replaceChildren(spinner);
+  const requestId=++callListRequestId;
+  const requestKey=filters().toString();
+  if(shownCallsKey!==requestKey){
+    const spinner=el('tr');const message=el('td','muted','در حال دریافت...');message.colSpan=6;spinner.append(message);$('rows').replaceChildren(spinner);
+    $('count').textContent='—';
+  }
   try{
-    const data=await fetchJSON('/dashboard/data?'+filters());
+    const data=await fetchJSON('/dashboard/data?'+requestKey);
+    if(requestId!==callListRequestId)return;
     $('rows').replaceChildren();
     $('count').textContent=numberFormat(data.items.length)+' مورد';
     $('page').textContent='صفحه '+numberFormat(Math.floor(offset/limit)+1);
@@ -98,15 +129,32 @@ async function load(){
       button.onclick=()=>detail(item.id);td.append(button);tr.append(td);$('rows').append(tr);
     }
     if(!data.items.length){const tr=el('tr'),td=el('td','muted','موردی پیدا نشد');td.colSpan=6;tr.append(td);$('rows').append(tr)}
-  }catch(error){showError(error)}
+    shownCallsKey=requestKey;
+    reportState('calls',true);
+  }catch(error){
+    if(requestId!==callListRequestId)return;
+    const stale=shownCallsKey===requestKey;
+    if(!stale){
+      const tr=el('tr'),td=el('td','muted','گزارش موقتاً در دسترس نیست. با «تلاش دوباره» درخواست را تکرار کنید.');
+      td.colSpan=6;tr.append(td);$('rows').replaceChildren(tr);
+    }
+    reportState('calls',false,stale);
+  }
 }
 async function metrics(){
   if(!$('metric-total'))return;
+  const requestId=++metricRequestId;
+  const params=filters();
+  params.delete('limit');
+  params.delete('offset');
+  const key=params.toString();
+  if(shownMetricsKey!==key){
+    for(const id of ['metric-total','metric-sold','metric-score','metric-length'])$(id).textContent='—';
+    if($('metric-score-coverage'))$('metric-score-coverage').textContent='در انتظار دادهٔ این فیلتر';
+  }
   try{
-    const params=filters();
-    params.delete('limit');
-    params.delete('offset');
     const data=await fetchJSON('/dashboard/metrics?'+params);
+    if(requestId!==metricRequestId)return;
     $('metric-total').textContent=numberFormat(data.total);
     $('metric-sold').textContent=numberFormat(data.sold_out);
     $('metric-score').textContent=numberFormat(data.avg_ai_score);
@@ -129,7 +177,12 @@ async function metrics(){
       duration.append(part);
     }
     duration.setAttribute('aria-label',formatVoiceDuration(data.avg_voice_length));
-  }catch(error){showError(error)}
+    shownMetricsKey=key;
+    reportState('metrics',true);
+  }catch(error){
+    if(requestId!==metricRequestId)return;
+    reportState('metrics',false,shownMetricsKey===key);
+  }
 }
 async function loadFilterOptions(){
   const makeOptions=(id,values,translate)=>{
@@ -150,6 +203,8 @@ async function loadFilterOptions(){
   let foundOperators=[],foundDestinations=['نامشخص'],foundTeams=['نامشخص'],foundDirections=[];
   try{
     const found=await fetchJSON('/dashboard/filter-options');
+    lastGoodFilterOptions=found;
+    reportState('options',true);
     if(Array.isArray(found.call_types))types=[...new Set([...types,...found.call_types])];
     if(Array.isArray(found.states))states=[...new Set([...states,...found.states])];
     if(Array.isArray(found.operators))foundOperators=found.operators;
@@ -157,7 +212,18 @@ async function loadFilterOptions(){
     if(Array.isArray(found.teams))foundTeams=found.teams;
     if(Array.isArray(found.directions))foundDirections=found.directions;
   }catch{
-    // Filters remain functional with common known values.
+    // Keep the most recent successful options in memory, never browser storage.
+    // Missing options do not erase other successfully loaded report data.
+    reportState('options',false,Boolean(lastGoodFilterOptions));
+    const found=lastGoodFilterOptions;
+    if(found){
+      if(Array.isArray(found.call_types))types=[...new Set([...types,...found.call_types])];
+      if(Array.isArray(found.states))states=[...new Set([...states,...found.states])];
+      if(Array.isArray(found.operators))foundOperators=found.operators;
+      if(Array.isArray(found.destinations))foundDestinations=found.destinations;
+      if(Array.isArray(found.teams))foundTeams=found.teams;
+      if(Array.isArray(found.directions))foundDirections=found.directions;
+    }
   }
   makeOptions('call_type',types,callTypeLabel);
   makeOptions('state',states,callStateLabel);
@@ -376,13 +442,16 @@ async function detail(id){
       if(key==='tellstate'||key==='aicallinfostate')chip.title='مقدار اصلی: '+safe(data[key]);
       chips.append(chip);
     }
+    // Fourth card belongs in the same balanced 2x2 grid; missing ≠ zero.
+    const hasScore=data.possibility_of_sale_ai!==null&&data.possibility_of_sale_ai!==undefined;
+    const score=el('div','detail-chip detail-chip-score');
+    score.append(
+      el('span','detail-chip-label','امتیاز احتمال فروش (AI)'),
+      el('strong','detail-score-value',hasScore?numberFormat(data.possibility_of_sale_ai):'ثبت نشده')
+    );
+    score.title='امتیاز تخمینی از سامانه مبدأ است؛ معادل احتمال قطعی یا فروش تأییدشده نیست.';
+    chips.append(score);
     hero.append(chips);
-    if(Object.hasOwn(data,'possibility_of_sale_ai')){
-      const present=data.possibility_of_sale_ai!==null&&data.possibility_of_sale_ai!==undefined;
-      const score=el('p','detail-score','امتیاز احتمال فروش (AI): '+(present?numberFormat(data.possibility_of_sale_ai):'ثبت نشده'));
-      score.title='امتیاز تخمینی از سامانه مبدأ است؛ معادل احتمال قطعی یا فروش تأییدشده نیست.';
-      hero.append(score);
-    }
     $('detail').append(hero);
     const analyzed=priorityFields.filter(key=>data[key]!==null&&data[key]!==undefined&&String(data[key]).trim());
     if(analyzed.length){
@@ -441,7 +510,13 @@ async function detail(id){
     }
   }catch(error){
     if(requestId===detailRequestId && !$('veil').hidden){
-      $('detail').replaceChildren(el('p','error','دریافت جزئیات ممکن نشد. دوباره تلاش کنید.'));
+      const notice=el('div','detail-fetch-error');
+      notice.append(el('p','muted','دریافت جزئیات تماس موقتاً ممکن نشد.'));
+      const retry=el('button','secondary','تلاش دوباره');
+      retry.type='button';
+      retry.onclick=()=>detail(id);
+      notice.append(retry);
+      $('detail').replaceChildren(notice);
     }
   }finally{
     if(requestId===detailRequestId)$('detail')?.removeAttribute('aria-busy');
@@ -464,7 +539,11 @@ function initialize(){
   // Legacy created_after/created_before API support stays server-side.
   const form=$('filters');if(form)form.onsubmit=event=>{event.preventDefault();offset=0;load();metrics()};
   if($('reset'))$('reset').onclick=()=>{clearDates();offset=0;load();metrics()};
-  if($('refresh'))$('refresh').onclick=()=>{load();metrics()};
+  if($('refresh'))$('refresh').onclick=()=>{load();metrics();loadFilterOptions()};
+  if($('report-retry'))$('report-retry').onclick=()=>{
+    const button=$('report-retry');button.disabled=true;
+    Promise.allSettled([load(),metrics(),loadFilterOptions()]).finally(()=>{button.disabled=false;});
+  };
   if($('previous'))$('previous').onclick=()=>{offset=Math.max(0,offset-limit);load()};
   if($('next'))$('next').onclick=()=>{offset+=limit;load()};
   if($('close-drawer'))$('close-drawer').onclick=closeDetail;
