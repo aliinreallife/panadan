@@ -56,7 +56,7 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Dashboard and REST reporting endpoints expose GET, and MCP exposes only the four reviewed read-only tools.
 - [x] Add a non-mutating local permissions checker: `./panadan.sh audit-db`.
 - [x] Add automated regression tests for read-only queries, HTTP route methods, MCP tools and simulated effective write privileges.
-- [ ] Run `./panadan.sh audit-db` with the actual VPN-connected PostgreSQL login; previous audit indicated CREATE on public.
+- [x] 2026-10-31: inspected the live `report_user` grants via read-only audit; effective `CREATE` on schema `public` was traced to a `PUBLIC` grant. **Not PASS** for strict least-privilege.
 - [ ] DBA resolves unnecessary effective CREATE/write grants and verifies the account independently, preferably with a dedicated least-privilege reader.
 
 ## Experimental WebMCP browser tools
@@ -166,3 +166,15 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Reuse the existing `calls:sensitive` server-side permission boundary. Do not add phone numbers to public list, metrics, WebMCP, MCP summary, or unauthenticated responses.
 - [ ] Verify the meaning and representation of `tellnum` from source data before using it. It is `double precision` and can discard leading zeroes; do not treat it as an authoritative customer phone number or use it as a fallback.
 - [ ] Visual / keyboard smoke test on mobile and desktop; `tel:` opens the device's dialer if one is configured. No call is placed by Panadan itself.
+
+## Source correctness + privacy audit (2026-10-31)
+
+- [x] Document all 36 known view fields and distinguish confirmed values, plausible hypotheses, and unknown source semantics in `docs/DATA_DICTIONARY.md`.
+- [x] Add `./panadan.sh audit-fields --limit 300 --offsets 0,1000,5000`, a bounded SQL SELECT-only, aggregated, PII-free source audit for date/time formats, caller-number comparisons, enum coverage, operator ID collisions and incomplete CRM/financial data.
+- [x] Include synthetic tests for fixed queries, input bounds, source view restrictions and non-leaking error output.
+- [x] Correct the MCP tool count in `docs/READ_ONLY.md`: four summary tools and a fifth separately permissioned redacted-transcript tool.
+- [x] Update operator-scope documentation to acknowledge numeric source operator IDs observed in 3,000 sampled rows without claiming that historical stability or user-level authorization is verified.
+- [ ] Run the new audit against the VPN-connected source and review only its aggregate JSON output. This step cannot be completed from GitHub CI or ChatGPT without your local VPN.
+- [ ] Confirm `call_time`, `tellnum`, `tellside`, `CALLDATE` and `create_date` semantics with source owner. Do not change time conversion or introduce raw phone numbers before verification.
+- [ ] Implement numeric-ID operator directory migration and **fail-closed, cross-surface row-level RBAC** only after source identity validation; name filters remain visual filters.
+- [ ] DBA-reviewed least-privilege PostgreSQL account; live encrypted MCP/OAuth end-to-end validation; device/browser UX and redaction review.

@@ -156,7 +156,7 @@ the one-click OAuth consent experience.
 
 - Dashboard/API/MCP can query only explicit read-only PostgreSQL transactions and allowlisted reporting columns; they cannot execute arbitrary user SQL or modify the reporting database.
 - Panadan's own SQLite store *does* write accounts, permissions, sessions and token records. This is independent of the reporting database.
-- The PostgreSQL reporting role historically had `CREATE` on `public`; ask the database administrator to revoke unnecessary privileges for defense in depth.
+- A 2026-10-31 privilege audit confirmed that PostgreSQL `report_user` inherits `CREATE` on `public` from `PUBLIC`. The app still enforces read-only transactions; ask the DBA to review dependencies and move to a true least-privilege reader without blindly revoking shared production grants.
 - User permissions are capability-based (for example metrics, call summaries, sensitive details, MCP use and user administration). MCP tokens are revocable.
 - Call details show **Panadan formatted** speaker turns and an unchanged **Raw original** transcript. Ambiguous speakers are not guessed.
 - MCP supports two **mutually exclusive** modes: local/manual bearer by default or RS256 JWT verification from a configured external OAuth 2.1 identity provider. The admin must explicitly link each provider subject to a locally authorized Panadan account. See `docs/MCP_SETUP.md`.
@@ -165,6 +165,32 @@ the one-click OAuth consent experience.
 To verify that your reporting login cannot **create or change source data**, run `./panadan.sh audit-db` and follow `docs/READ_ONLY.md` for the resulting PASS/FAIL and DBA recommendations. The application runs read-only transactions, but database grants must be independently verified.
 
 Technical details: `docs/PRD.md`, `docs/DECISIONS.md`, `docs/SECURITY.md`, `docs/STATUS.md`, `docs/TRANSCRIPTS.md`.
+
+## Audit unknown source fields safely
+
+The reporting view has 36 known columns, but not every column is reliable or
+populated. To inspect structure and bounded aggregate statistics **without
+printing customer names, phone numbers or transcripts**, run:
+
+```bash
+cd ~/panadan
+./panadan.sh audit-fields --limit 300 --offsets 0,1000,5000
+```
+
+This requires the same WSL VPN as `audit-db` and returns JSON with only
+metadata, counts, date bounds and numeric plausibility checks. Offsets follow
+the reporting row ID, not necessarily the call date. Smaller samples may help
+avoid the source database's 12-second statement timeout:
+
+```bash
+./panadan.sh audit-fields --limit 100 --offsets 0
+```
+
+See [Source data dictionary](docs/DATA_DICTIONARY.md) for the confirmed units,
+unverified call-time/phone/date/status semantics, and the prerequisites for
+stable numeric-ID operator authorization. **Do not turn metadata filters into
+team/department security permissions** before the cross-surface RBAC checks
+described in [Operator scopes](docs/OPERATOR_SCOPES.md).
 
 ## Preproduction SDK v2 migration
 
