@@ -38,6 +38,8 @@ test('applied chips represent successful responses only and render source labels
   const html = readFileSync('templates/dashboard.html','utf8');
   const css = readFileSync('static/style.css','utf8');
   assert.match(app,/appliedCallsParams=new URLSearchParams\(requestKey\)/);
+  assert.match(app,/\$\('applied-filters'\)\)\$\('applied-filters'\)\.hidden=true/);
+  assert.match(app,/numberFormat\(data\.items\.length\)\+' مورد در این صفحه'/);
   assert.match(app,/shownCallsKey=requestKey;[\s\S]*?renderAppliedFilterSummary\(\);/);
   assert.match(app,/chip\.append\(el\('span','applied-filter-name'/);
   assert.doesNotMatch(app,/chip\.innerHTML/);
