@@ -65,7 +65,12 @@ async function load(){
           link.title='مشاهده آمار و تماس‌های '+operatorName(name);
           td.append(link);
         }
-        else if(key==='possibility_of_sale_ai')td.textContent=numberFormat(item[key]);
+        else if(key==='possibility_of_sale_ai'){
+          td.textContent=numberFormat(item[key]);
+          td.title=item[key]===null||item[key]===undefined
+            ? 'امتیاز AI برای این تماس ثبت نشده است.'
+            : 'امتیاز تخمینی احتمال فروش از سامانه مبدأ؛ به معنی فروش قطعی یا احتمال تضمین‌شده نیست.';
+        }
         else td.textContent=value;
         tr.append(td);
       }
@@ -86,6 +91,14 @@ async function metrics(){
     $('metric-total').textContent=numberFormat(data.total);
     $('metric-sold').textContent=numberFormat(data.sold_out);
     $('metric-score').textContent=numberFormat(data.avg_ai_score);
+    const coverage=$('metric-score-coverage');
+    if(coverage){
+      const counted=data.scored_calls!==null&&data.scored_calls!==undefined;
+      const totalKnown=data.total!==null&&data.total!==undefined;
+      coverage.textContent=counted&&totalKnown
+        ? numberFormat(data.scored_calls)+' از '+numberFormat(data.total)+' تماس دارای امتیاز'
+        : 'میانگین صرفاً از تماس‌های دارای امتیاز';
+    }
     $('metric-length').textContent=formatVoiceDuration(data.avg_voice_length);
   }catch(error){showError(error)}
 }
@@ -122,7 +135,7 @@ async function loadFilterOptions(){
   makeOptions('destination',foundDestinations,v=>v);
   makeOptions('team',foundTeams,v=>v);
 }
-const labels={id:'شناسه تماس',CALLDATE:'تاریخ تماس',call_id:'شناسه سیستمی',tellstate:'نوع تماس',tellside:'جهت تماس',aicallinfostate:'وضعیت AI',voice_length:'مدت صوت',possibility_of_sale_ai:'امتیاز AI',deal_value:'ارزش معامله (تأییدنشده)',vw_danix_base_info_users_name:'کارشناس',customername:'نام مشتری',customertell:'شماره مشتری',outcome:'نتیجه تماس',ai_recommendation:'پیشنهاد AI',summary:'خلاصه',transcription:'متن مکالمه',tell_state_desc:'دلیل دسته‌بندی',create_date:'زمان ثبت'};
+const labels={id:'شناسه تماس',CALLDATE:'تاریخ تماس',call_id:'شناسه سیستمی',tellstate:'نوع تماس',tellside:'جهت تماس',aicallinfostate:'وضعیت AI',voice_length:'مدت صوت',possibility_of_sale_ai:'امتیاز احتمال فروش (AI)',deal_value:'ارزش معامله (تأییدنشده)',vw_danix_base_info_users_name:'کارشناس',customername:'نام مشتری',customertell:'شماره مشتری',outcome:'نتیجه تماس',ai_recommendation:'پیشنهاد AI',summary:'خلاصه',transcription:'متن مکالمه',tell_state_desc:'دلیل دسته‌بندی',create_date:'زمان ثبت'};
 function transcriptPanel(raw){
   const parsed=parseTranscript(raw);
   const panel=el('section','transcript-panel');
@@ -280,8 +293,10 @@ async function detail(id){
       chips.append(chip);
     }
     hero.append(chips);
-    if(data.possibility_of_sale_ai!==undefined&&data.possibility_of_sale_ai!==null){
-      const score=el('p','detail-score','امتیاز ثبت‌شده: '+numberFormat(data.possibility_of_sale_ai));
+    if(Object.hasOwn(data,'possibility_of_sale_ai')){
+      const present=data.possibility_of_sale_ai!==null&&data.possibility_of_sale_ai!==undefined;
+      const score=el('p','detail-score','امتیاز احتمال فروش (AI): '+(present?numberFormat(data.possibility_of_sale_ai):'ثبت نشده'));
+      score.title='امتیاز تخمینی از سامانه مبدأ است؛ معادل احتمال قطعی یا فروش تأییدشده نیست.';
       hero.append(score);
     }
     $('detail').append(hero);

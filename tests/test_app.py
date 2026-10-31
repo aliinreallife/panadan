@@ -15,7 +15,7 @@ def client(tmp_path, monkeypatch):
     main = importlib.reload(main)
     monkeypatch.setattr(main.database, 'list_calls',lambda *a,**k:[{'id':5,'CALLDATE':'2026-10-01','aicallinfostate':'Unchecked'}])
     monkeypatch.setattr(main.database, 'get_call',lambda *a,**k:{'id':5,'summary':'synthetic'} if k.get('sensitive') else {'id':5})
-    monkeypatch.setattr(main.database, 'stats',lambda *a,**k:{'total':1,'sold_out':0,'avg_ai_score':10,'avg_voice_length':20})
+    monkeypatch.setattr(main.database, 'stats',lambda *a,**k:{'total':1,'sold_out':0,'scored_calls':1,'avg_ai_score':10,'avg_voice_length':20})
     monkeypatch.setattr(main.database, 'statuses',lambda *a,**k:['Unchecked','System Invalid'])
     monkeypatch.setattr(main.database, 'call_types',lambda *a,**k:['FollowUp','FirstToch'])
     monkeypatch.setattr(main.database, 'operators',lambda *a,**k:['__unspecified__','Test Op','Other Op'])
@@ -292,3 +292,20 @@ def test_favicon_and_voice_unit_are_available(client):
         assert 'rel="icon" type="image/svg+xml"' in (templates / name).read_text()
     assert 'میانگین مدت صوت' in (templates / 'dashboard.html').read_text()
     assert 'ارزش معامله (تأییدنشده)' in Path('static/app.js').read_text()
+
+
+def test_sales_ai_score_label_and_metric_coverage(client):
+    c, main = client
+    admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    cookie, _ = main.store.create_session(admin)
+    c.cookies.set('panadan_session', cookie)
+    html = c.get('/dashboard')
+    assert html.status_code == 200
+    assert 'id="metric-score-coverage"' in html.text
+    assert 'امتیاز احتمال فروش' in html.text
+    stats = c.get('/dashboard/metrics')
+    assert stats.status_code == 200
+    assert stats.json()['scored_calls'] == 1
+    assert stats.json()['avg_ai_score'] == 10
+    assert 'امتیاز ثبت‌شده: ' not in Path('static/app.js').read_text()
+    assert 'ثبت نشده' in Path('static/app.js').read_text()

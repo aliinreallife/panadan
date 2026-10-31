@@ -155,6 +155,7 @@ def stats(after: date | None = None, before: date | None = None,
           operator: str | None = None, operator_names: list[str] | None = None):
     where, params = filters(after, before, None, created_after, created_before, operator=operator, operator_names=operator_names)
     q = ('SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE "aicallinfostate" = %s) AS sold_out, '
+         'COUNT("possibility_of_sale_ai") AS scored_calls, '
          'ROUND(AVG("possibility_of_sale_ai")::numeric, 1) AS avg_ai_score, '
          'ROUND(AVG("voice_length")::numeric, 1) AS avg_voice_length '
          'FROM ' + VIEW + where)

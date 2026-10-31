@@ -147,3 +147,13 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Mark the raw `deal_value` display as unverified; 3,000 sampled calls contained zeros, which must not be construed as confirmed zero sales or revenue.
 - [x] Add a self-hosted SVG favicon linked from all dashboard and login templates.
 - [ ] Verify exact upstream definition, currency and population of `deal_value` before treating it as financial reporting.
+
+
+## AI-estimated likelihood score audit (2026-10-31)
+
+- Source column: `possibility_of_sale_ai` (AI-estimated likelihood of a sale). Treat it as an **estimated source score**, not a calibrated probability or confirmed sale.
+- A read-only sample of the 1,000 highest call IDs had 817 non-null scores, 183 missing, min 0, max 100, average 59.19 **among non-null scores**, 21 distinct values, and 14 scores exactly equal to 100. These observations apply only to that sample.
+- [x] Label the estimate clearly in the UI; show missing scores as absent rather than zero.
+- [x] Return `scored_calls` from the server's aggregate query so the dashboard can show score coverage for its **current filters**, without hardcoding historical samples. `AVG` continues to ignore NULL scores.
+- Other sampled fields: `call_time` 993/1000, `tellnum` 1000/1000, acquisition-source name 0/1000, follow-up-stage name 0/1000, and `invoiced_target` 0/1000. Do not expose unknown/sensitive fields before verifying meaning and access policies.
+- [ ] Confirm source model calibration/score scale, and define whether `call_time` is a clock time or duration before adding further UI fields.
