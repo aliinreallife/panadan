@@ -73,7 +73,7 @@ def test_help_does_not_need_secret_or_docker():
         ["bash", str(SCRIPT), "help"],
         cwd=ROOT, capture_output=True, text=True, check=True, timeout=10,
     )
-    assert "{setup|up|init|check|backup|down}" in r.stdout
+    assert "{setup|up|init|check|backup|rotate-password|down}" in r.stdout
 
 
 def test_disposable_docker_container_name_expands_bash_pid():
