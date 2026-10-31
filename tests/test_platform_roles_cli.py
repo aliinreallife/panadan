@@ -1,0 +1,63 @@
+"""Offline regression guards for private role credential generation.
+
+Runs only against a disposable temporary directory. No Docker or DB used.
+"""
+from pathlib import Path
+import re
+import shutil
+import stat
+import subprocess
+
+ROOT = Path(__file__).resolve().parents[1]
+ROLES = ROOT / "tools/platform-roles.sh"
+
+
+def test_role_password_setup_is_private_unique_and_cannot_overwrite(tmp_path):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    shutil.copyfile(ROLES, tools / "platform-roles.sh")
+    script = tools / "platform-roles.sh"
+    result = subprocess.run(
+        ["bash", str(script), "setup"], cwd=tmp_path,
+        check=True, capture_output=True, text=True, timeout=10,
+    )
+    env = tmp_path / ".env.platform.roles"
+    assert env.is_file() and not env.is_symlink()
+    assert stat.S_IMODE(env.stat().st_mode) == 0o600
+    contents = env.read_text()
+    pw = re.findall(r"^PANADAN_(?:WRITER|READER)_PASSWORD=([a-f0-9]{64})$", contents, re.M)
+    assert len(pw) == 2 and pw[0] != pw[1]
+    assert all(p not in (result.stdout + result.stderr) for p in pw)
+    repeat = subprocess.run(
+        ["bash", str(script), "setup"], cwd=tmp_path,
+        capture_output=True, text=True, timeout=10,
+    )
+    assert repeat.returncode != 0
+    assert "never overwrite" in repeat.stderr
+    assert env.read_text() == contents
+
+
+def test_permission_sql_prevents_raw_report_access_and_requires_disabled_sources():
+    migration = (ROOT / "database/permissions/002_platform_runtime_roles.sql").read_text()
+    assert "REVOKE ALL ON ALL TABLES IN SCHEMA panadan_ingest" in migration
+    assert "GRANT SELECT ON panadan_ingest.sources TO panadan_ingest_writer" in migration
+    assert "GRANT SELECT, INSERT, UPDATE ON panadan_ingest.source_records" in migration
+    assert "GRANT SELECT ON panadan_ingest.safe_call_facts_v1 TO panadan_report_reader" in migration
+    assert "GRANT SELECT ON panadan_ingest.raw_revisions TO panadan_report_reader" not in migration
+    assert "REVOKE ALL ON SCHEMA public FROM PUBLIC" in migration
+    assert "s.is_deleted = false" in migration
+    assert "d.processor_version = 'v1'" in migration
+
+
+def test_role_provisioning_only_via_explicit_owner_db_stdin():
+    sh = ROLES.read_text()
+    assert "compose.platform.yaml" in sh
+    assert "panadan_owner -d panadan" in sh
+    assert "admin_psql --single-transaction" in sh
+    assert "PANADAN_WRITER_PASSWORD" in sh and "PANADAN_READER_PASSWORD" in sh
+    assert "No Odoo" in sh or "Never connects to remote Odoo" in sh
+    assert ".env.db" not in sh and ".env.app" not in sh
+    assert "192.168.3.9" not in sh
+    assert "docker volume rm" not in sh
+    assert "PASSWORD '%s'" in sh
+    assert 'cat "$SQL_FILE"' in sh
