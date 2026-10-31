@@ -19,8 +19,9 @@
       paths:['/dashboard/users','/dashboard/activity']}
   ];
   const current = window.location.pathname;
-  const mobile = document.createElement('nav');
+  const mobile = document.createElement('div');
   mobile.className = 'mobile-nav';
+  mobile.setAttribute('role', 'navigation');
   mobile.setAttribute('aria-label', 'ناوبری اصلی موبایل');
 
   let menu = null;
