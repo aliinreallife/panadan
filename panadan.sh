@@ -85,6 +85,15 @@ case "$cmd" in
     uv run --locked --env-file .env.db --env-file .env.app \
       python -m server.readonly_audit
     ;;
+  audit-fields)
+    # Uses only read-only source-view aggregates; never prints customer records.
+    check_config; require_uv; lock_if_needed
+    compose_dev up -d --no-build
+    export PGHOST=127.0.0.1
+    export PGPORT="$proxy_port"
+    uv run --locked --env-file .env.db --env-file .env.app \
+      python -m server.data_dictionary_audit "$@"
+    ;;
   check)
     check_config
     echo 'VPN route:'
@@ -100,7 +109,7 @@ case "$cmd" in
     done
     ;;
   *)
-    echo 'Usage: ./panadan.sh {setup|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|audit-db|diagnose}'
+    echo 'Usage: ./panadan.sh {setup|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|audit-db|audit-fields|diagnose}'
     echo 'dev = native WSL uv FastAPI + Docker-isolated VPN; up = GHCR production images'
     ;;
 esac
