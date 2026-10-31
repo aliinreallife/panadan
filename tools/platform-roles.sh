@@ -9,6 +9,7 @@ ROLES_FILE=.env.platform.roles
 PLATFORM_FILE=.env.platform
 COMPOSE=compose.platform.yaml
 SQL_FILE=database/permissions/002_platform_runtime_roles.sql
+FOUNDATION_SQL=database/migrations/001_multisource_foundation.sql
 
 die() { echo "Panadan roles: $*" >&2; exit 1; }
 need_runtime() {
@@ -72,6 +73,8 @@ SELECT CASE WHEN
   AND NOT has_schema_privilege('panadan_report_reader','panadan_ingest','CREATE')
   AND NOT has_schema_privilege('panadan_report_reader','public','CREATE')
   AND has_table_privilege('panadan_ingest_writer','panadan_ingest.sources','SELECT')
+  AND has_function_privilege('panadan_ingest_writer','panadan_ingest.lock_source_for_ingest(text)','EXECUTE')
+  AND NOT has_function_privilege('panadan_report_reader','panadan_ingest.lock_source_for_ingest(text)','EXECUTE')
   AND NOT has_table_privilege('panadan_ingest_writer','panadan_ingest.sources','INSERT,UPDATE,DELETE,TRUNCATE')
   AND NOT has_table_privilege('panadan_ingest_writer','panadan_ingest.safe_call_facts_v1','SELECT')
   AND has_table_privilege('panadan_report_reader','panadan_ingest.safe_call_facts_v1','SELECT')
@@ -107,7 +110,10 @@ case "${1:-help}" in
     check_permissions "$PLATFORM_FILE"
     check_roles_file
     confirm_target
-    [[ -s "$SQL_FILE" ]] || die "Missing reviewed database permission migration."
+    [[ -s "$SQL_FILE" && -s "$FOUNDATION_SQL" ]] || die "Missing reviewed schema or permission migration."
+    # Schema must already exist: provisioning should never silently bootstrap a DB.
+    schema_count="$(admin_psql -A -t -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'panadan_ingest' AND table_type = 'BASE TABLE' AND table_name IN ('sources','source_records','raw_revisions','processing_jobs','derived_facts','sync_checkpoints','sync_runs')")"
+    [[ "$schema_count" == "7" ]] || die "Initialize the 7-table platform schema before provisioning roles."
     # Feed role passwords only on stdin to local psql. Never use -v for
     # secrets, echo the SQL, enable shell tracing, or embed them in Docker argv.
     {
@@ -125,6 +131,8 @@ $create$;
 ROLE_SQL
       printf "ALTER ROLE panadan_ingest_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" "$writer"
       printf "ALTER ROLE panadan_report_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" "$reader"
+      # Additive foundation migration installs the lock helper on existing DBs.
+      cat "$FOUNDATION_SQL"
       cat "$SQL_FILE"
     } | admin_psql --single-transaction >/dev/null
     audit_roles
