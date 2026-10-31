@@ -27,7 +27,10 @@ services:
         restart: true
     command: [python, -u, /relay/pgrelay.py]
     volumes:
-      - ./tools/pgrelay.py:/relay/pgrelay.py:ro
+      # Mount the stable directory, not a single Git-replaced file inode.
+      # Docker Desktop + WSL can retain a stale source for single-file mounts
+      # across git pull; a fresh container will bind the current directory.
+      - ./tools:/relay:ro
     environment:
       PANADAN_PG_TARGET: '192.168.3.9'
       PANADAN_PG_TARGET_PORT: '5432'
