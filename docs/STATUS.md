@@ -285,3 +285,14 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [ ] Measure safe sample batch latency and actual record/transcript sizes before sizing database or scheduling full history backfill.
 - [ ] After contract approval, implement isolated local PostgreSQL schema and resumable keyset backfill with transactional checkpoints, then incremental worker, parity checks and authorization-safe read cutover.
 - [ ] Redis remains deferred pending measured need. No customer records have been copied by the audit.
+
+## Multi-source data platform foundation (2026-10-31)
+
+- [x] Add an **opt-in**, source-agnostic PostgreSQL schema for connector registry, disabled-by-default sources, current source records, versioned raw payloads, explicit deletion tombstones, versioned processing jobs/facts, per-stream checkpoints and aggregate sync runs.
+- [x] Implement a synthetic-only ingestion library with bounded JSON batches, deterministic hashes, idempotent UPSERTs, revision history, per-stream checkpoint row locks and atomic checkpoint/jobs/revisions commits. A stale worker cannot overwrite an advanced checkpoint.
+- [x] Implement a library-only public call metadata normalizer (`normalize:v1`) that reads allowlisted fields and never copies customer names, phone numbers, transcripts or AI prose to derived facts; retain exact raw revision provenance.
+- [x] Add a dedicated disposable PostgreSQL integration CI job covering duplicate deliveries, updates, explicit tombstones, resurrection, stale checkpoint conflicts, transaction rollback, provenance, jobs and no-sensitive-field facts.
+- [x] Document how to use the migration safely on a new Panadan-owned database and why the existing auth SQLite and source Odoo read path remain unchanged.
+- [ ] Confirm source-owner stable IDs, full-view update events/timestamps, deletion tombstones and permission/retention for raw customer data **before any live copying**.
+- [ ] Provision separate encrypted reporting PostgreSQL with least-privilege users, tested backups and a lawful retention/purge policy before ingesting real source payloads.
+- [ ] Build the read-only Odoo adapter, bounded backfill, supervised job scheduler, authorized serving path, deletion/reconciliation, data-quality metrics, and cross-surface RBAC checks. No live mirror/cutover has occurred.

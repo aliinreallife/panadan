@@ -166,6 +166,21 @@ To verify that your reporting login cannot **create or change source data**, run
 
 Technical details: `docs/PRD.md`, `docs/DECISIONS.md`, `docs/SECURITY.md`, `docs/STATUS.md`, `docs/TRANSCRIPTS.md`.
 
+## Multi-source platform foundation (opt-in)
+
+Panadan's long-term architecture is a separate PostgreSQL data platform with
+a source registry, versioned raw JSONB records, durable processing jobs,
+versioned facts, and atomic per-source sync checkpoints. An initial schema and
+synthetic-only ingestion/processing libraries are now available in
+[Platform Foundation](docs/PLATFORM_FOUNDATION.md). The existing auth SQLite,
+Odoo read-only reporting path, API and MCP are **unchanged**. No source
+connector, scheduler, raw customer import, database deployment or Redis cache
+is enabled by this change.
+
+GitHub CI tests the new path against a disposable PostgreSQL database with
+synthetic source payloads. **Do not** apply the migration to Odoo or ingest
+personal data before agreeing on the source update/delete feed and retention.
+
 ## Assess local reporting mirror readiness (read-only)
 
 Before moving dashboard/REST/MCP reads to a private Panadan PostgreSQL mirror,
