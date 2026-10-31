@@ -94,6 +94,20 @@ case "$cmd" in
     uv run --locked --env-file .env.db --env-file .env.app \
       python -m server.data_dictionary_audit "$@"
     ;;
+  diagnose-db)
+    # Distinguish a healthy tunnel from an actually reachable PostgreSQL server.
+    # Never emit DB credentials or customer reporting rows.
+    check_config; require_uv; lock_if_needed
+    compose_dev up -d --no-build
+    echo "[VPN route to PostgreSQL]"
+    compose_dev exec -T vpn ip -4 route get 192.168.3.9 || true
+    echo "[VPN -> PostgreSQL server: TCP readiness only; no login]"
+    compose_dev exec -T vpn pg_isready -h 192.168.3.9 -p 5432 -t 5 || true
+    export PGHOST=127.0.0.1
+    export PGPORT="$proxy_port"
+    uv run --locked --env-file .env.db --env-file .env.app \
+      python -m server.connection_diagnostics
+    ;;
   check)
     check_config
     echo 'VPN route:'
@@ -109,7 +123,7 @@ case "$cmd" in
     done
     ;;
   *)
-    echo 'Usage: ./panadan.sh {setup|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|audit-db|audit-fields|diagnose}'
+    echo 'Usage: ./panadan.sh {setup|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|audit-db|audit-fields|diagnose-db|diagnose}'
     echo 'dev = native WSL uv FastAPI + Docker-isolated VPN; up = GHCR production images'
     ;;
 esac
