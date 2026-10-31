@@ -20,13 +20,20 @@ from . import database
 from .platform_ingest import SourceEvent
 
 VIEW = database.VIEW  # fixed SQL identifier, never taken from user input
-UPDATE_COLUMN = 'sync_updated_at'  # preferred source contract; verify before use
+UPDATE_COLUMN = 'sync_updated_at'  # preferred; 'updated_at' is also accepted
+UPDATE_COLUMNS = ('sync_updated_at', 'updated_at')
 DATA_COLUMNS = (
     'id', 'CALLDATE', 'tellstate', 'tellside', 'aicallinfostate',
     'voice_length', 'possibility_of_sale_ai', 'deal_value',
 )
 COLUMNS = DATA_COLUMNS + (UPDATE_COLUMN,)
-SELECT_COLUMNS = ', '.join('"' + name + '"' for name in COLUMNS)
+# Only hardcoded, reviewed identifiers can appear in SQL. Never use an
+# arbitrary source-column name or request parameter to construct SQL.
+SELECT_COLUMNS_BY_MARKER = {
+    marker: ', '.join('"' + name + '"' for name in DATA_COLUMNS + (marker,))
+    for marker in UPDATE_COLUMNS
+}
+SELECT_COLUMNS = SELECT_COLUMNS_BY_MARKER[UPDATE_COLUMN]
 PAGE_MIN, PAGE_MAX = 1, 200
 OVERLAP = timedelta(minutes=5)
 SAFETY_DELAY = timedelta(seconds=60)
@@ -38,14 +45,22 @@ FROM information_schema.columns
 WHERE table_schema = %s AND table_name = %s
 """
 SOURCE_CLOCK_SQL = 'SELECT clock_timestamp() AS source_now'
-ID_SQL = (f'SELECT {SELECT_COLUMNS} FROM {VIEW} '
-          'WHERE id > %s ORDER BY id ASC LIMIT %s')
+ID_SQL_BY_MARKER = {
+    marker: (f'SELECT {columns} FROM {VIEW} '
+             'WHERE id > %s ORDER BY id ASC LIMIT %s')
+    for marker, columns in SELECT_COLUMNS_BY_MARKER.items()
+}
 # The row-value comparison guarantees same-timestamp pagination does not skip
 # any IDs. Fixed inclusive bound supports overlap re-reading.
-CHANGE_SQL = (f'SELECT {SELECT_COLUMNS} FROM {VIEW} '
-              'WHERE "sync_updated_at" >= %s AND "sync_updated_at" <= %s '
-              'AND ("sync_updated_at", id) > (%s, %s) '
-              'ORDER BY "sync_updated_at" ASC, id ASC LIMIT %s')
+CHANGE_SQL_BY_MARKER = {
+    marker: (f'SELECT {columns} FROM {VIEW} '
+             f'WHERE "{marker}" >= %s AND "{marker}" <= %s '
+             f'AND ("{marker}", id) > (%s, %s) '
+             f'ORDER BY "{marker}" ASC, id ASC LIMIT %s')
+    for marker, columns in SELECT_COLUMNS_BY_MARKER.items()
+}
+ID_SQL = ID_SQL_BY_MARKER[UPDATE_COLUMN]
+CHANGE_SQL = CHANGE_SQL_BY_MARKER[UPDATE_COLUMN]
 # Could be faster with source indexes; no indexes/DDL are created in Odoo.
 
 
@@ -91,22 +106,26 @@ def _source_time(value: datetime, mode: Literal['utc_naive', 'timestamptz']) -> 
     return _utc(value)
 
 
-def validate_schema(source_conn, *, mode: Literal['utc_naive', 'timestamptz']) -> None:
+def validate_schema(source_conn, *, mode: Literal['utc_naive', 'timestamptz']) -> str:
     if mode not in ('utc_naive', 'timestamptz'):
         raise ValueError('Source timestamp mode must be explicitly configured')
     schema, table = VIEW.split('.', 1)
     rows = source_conn.execute(SCHEMA_SQL, (schema, table)).fetchall()
     columns = {row['column_name']: row['data_type'] for row in rows}
-    if not set(COLUMNS) <= columns.keys():
+    markers = [name for name in UPDATE_COLUMNS if name in columns]
+    if not set(DATA_COLUMNS) <= columns.keys() or not markers:
         raise RuntimeError('Odoo view lacks required allowlisted sync columns')
+    # Prefer source-owned whole-view change marker when both are present.
+    marker = markers[0]
     expected_type = ('timestamp without time zone' if mode == 'utc_naive'
                      else 'timestamp with time zone')
-    if columns[UPDATE_COLUMN] != expected_type:
+    if columns[marker] != expected_type:
         raise RuntimeError('Odoo sync timestamp type does not match configured mode')
     if columns['id'] not in ('integer', 'bigint'):
         raise RuntimeError('Odoo source ID must be an integer')
-    if columns[UPDATE_COLUMN] not in TIMESTAMP_TYPES:
+    if columns[marker] not in TIMESTAMP_TYPES:
         raise RuntimeError('Odoo source timestamp must be a PostgreSQL timestamp')
+    return marker
 
 
 def source_upper_bound(source_conn) -> datetime:
@@ -115,13 +134,16 @@ def source_upper_bound(source_conn) -> datetime:
     return _utc(row['source_now'])
 
 
-def _normalized(row: dict, *, mode: Literal['utc_naive', 'timestamptz']) -> tuple[int, datetime, SourceEvent]:
-    if not isinstance(row, dict) or set(row) != set(COLUMNS):
+def _normalized(row: dict, *, mode: Literal['utc_naive', 'timestamptz'],
+                marker: str = UPDATE_COLUMN) -> tuple[int, datetime, SourceEvent]:
+    if marker not in UPDATE_COLUMNS:
+        raise ValueError('Unsupported source marker')
+    if not isinstance(row, dict) or set(row) != set(DATA_COLUMNS + (marker,)):
         raise ValueError('Unexpected source columns')
     record_id = row['id']
     if type(record_id) is not int or record_id < 1:
         raise ValueError('Invalid Odoo record ID')
-    updated = _source_time(row[UPDATE_COLUMN], mode)
+    updated = _source_time(row[marker], mode)
     payload = {}
     for key in DATA_COLUMNS:
         if key == 'id':
@@ -137,17 +159,20 @@ def _normalized(row: dict, *, mode: Literal['utc_naive', 'timestamptz']) -> tupl
     payload['id'] = record_id
     # Keep source event time as metadata so local hash reflects changes in
     # update marker, but never guess any business semantics from it.
-    payload[UPDATE_COLUMN] = _iso(updated)
+    payload[marker] = _iso(updated)
     return record_id, updated, SourceEvent(str(record_id), 'upsert', payload)
 
 
 def read_id_page(source_conn, *, after_id: int, limit: int = 100,
-                 mode: Literal['utc_naive', 'timestamptz']) -> list[tuple[int, datetime, SourceEvent]]:
+                 mode: Literal['utc_naive', 'timestamptz'],
+                 marker: str = UPDATE_COLUMN) -> list[tuple[int, datetime, SourceEvent]]:
     _limit(limit)
     if type(after_id) is not int or after_id < 0:
         raise ValueError('Invalid ID checkpoint')
-    rows = source_conn.execute(ID_SQL, (after_id, limit)).fetchall()
-    values = [_normalized(row, mode=mode) for row in rows]
+    if marker not in ID_SQL_BY_MARKER:
+        raise ValueError('Unsupported source marker')
+    rows = source_conn.execute(ID_SQL_BY_MARKER[marker], (after_id, limit)).fetchall()
+    values = [_normalized(row, mode=mode, marker=marker) for row in rows]
     last = after_id
     for record_id, _, _ in values:
         if record_id <= last:
@@ -158,19 +183,22 @@ def read_id_page(source_conn, *, after_id: int, limit: int = 100,
 
 def read_change_page(source_conn, *, lower: datetime, upper: datetime,
                      position: tuple[datetime, int], limit: int = 100,
-                     mode: Literal['utc_naive', 'timestamptz']) -> list[tuple[int, datetime, SourceEvent]]:
+                     mode: Literal['utc_naive', 'timestamptz'],
+                     marker: str = UPDATE_COLUMN) -> list[tuple[int, datetime, SourceEvent]]:
     _limit(limit)
     if type(position[1]) is not int or position[1] < 0:
         raise ValueError('Invalid change ID checkpoint')
     lo, hi, at = _utc(lower), _utc(upper), _utc(position[0])
     if hi < lo or at < lo or at > hi:
         raise ValueError('Invalid change window')
+    if marker not in CHANGE_SQL_BY_MARKER:
+        raise ValueError('Unsupported source marker')
     rows = source_conn.execute(
-        CHANGE_SQL,
+        CHANGE_SQL_BY_MARKER[marker],
         (_source_param(lo, mode), _source_param(hi, mode),
          _source_param(at, mode), position[1], limit),
     ).fetchall()
-    values = [_normalized(row, mode=mode) for row in rows]
+    values = [_normalized(row, mode=mode, marker=marker) for row in rows]
     previous = (at, position[1])
     for record_id, updated, _ in values:
         if updated < lo or updated > hi or (updated, record_id) <= previous:
