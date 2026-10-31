@@ -121,6 +121,7 @@ def test_change_pages_include_same_timestamp_different_ids():
 def test_update_window_does_not_repeat_first_page_after_a_full_page():
     cursor=o.initial_change_cursor(T)
     assert cursor['completed_through']==o._iso(T-timedelta(seconds=60))
+    assert cursor['marker']=='sync_updated_at'
     window=o.plan_change_window(cursor,T+timedelta(minutes=4))
     assert window[1]==T+timedelta(minutes=3)
     rows = [(1,T+timedelta(minutes=1),None),
@@ -132,8 +133,10 @@ def test_update_window_does_not_repeat_first_page_after_a_full_page():
     )
     assert o.change_next_cursor(next_cursor,resumed,[],2)=={
         'completed_through':o._iso(window[1]),
+        'marker':'sync_updated_at',
     }
-    next_window=o.plan_change_window({'completed_through':o._iso(window[1])},
+    next_window=o.plan_change_window({'completed_through':o._iso(window[1]),
+                                      'marker':'sync_updated_at'},
                                       T+timedelta(minutes=7))
     assert next_window[0]==window[1]-o.OVERLAP
 
@@ -168,3 +171,43 @@ def test_source_rejects_bad_identifiers_times_and_unordered_pages():
                        after_id=0,mode='utc_naive')
     with pytest.raises(ValueError):
         o._parse('bad timestamp')
+
+
+def test_updated_at_alias_is_supported_without_dynamic_untrusted_sql():
+    src = FakeSource(has_timestamp=False)
+    original=src.execute
+    def execute(sql,params=None):
+        if sql == o.SCHEMA_SQL:
+            return Result(rows=[
+                {'column_name': n,
+                 'data_type':'integer' if n=='id'
+                             else 'timestamp without time zone' if n=='updated_at'
+                             else 'text'}
+                for n in o.DATA_COLUMNS + ('updated_at',)
+            ])
+        if sql == o.ID_SQL_BY_MARKER['updated_at']:
+            return Result(rows=[{
+                **{key:value for key,value in fake_row(7,T.replace(tzinfo=None)).items()
+                   if key!='sync_updated_at'},
+                'updated_at':T.replace(tzinfo=None),
+            }])
+        return original(sql,params)
+    src.execute=execute
+    marker=o.validate_schema(src,mode='utc_naive')
+    assert marker=='updated_at'
+    result=o.read_id_page(src,after_id=0,mode='utc_naive',marker=marker)
+    assert result[0][2].payload['updated_at']==o._iso(T)
+    assert 'sync_updated_at' not in result[0][2].payload
+    assert 'updated_at' in o.ID_SQL_BY_MARKER
+    assert 'updated_at' in o.CHANGE_SQL_BY_MARKER
+    assert o.ID_SQL_BY_MARKER['updated_at'].startswith('SELECT ')
+    with pytest.raises(ValueError):
+        o.read_id_page(src,after_id=0,mode='utc_naive',marker='malicious SQL;')
+
+
+def test_active_cursor_preserves_selected_source_marker():
+    cursor=o.initial_change_cursor(T,marker='updated_at')
+    window=o.plan_change_window(cursor,T+timedelta(minutes=5))
+    completed=o.change_next_cursor(cursor,window,[],2)
+    assert completed['marker']=='updated_at'
+    assert o.plan_change_window(completed,T+timedelta(minutes=7)) is not None
