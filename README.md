@@ -228,19 +228,34 @@ Interpretation:
 
 ### Reload a previously running relay after updating Panadan
 
-The development relay mounts `tools/pgrelay.py` as source code, but its
-already-running Python process does **not** automatically reload that source
-after `git pull`. If the logs still show the old generic warning
-`Connection to reporting database ended or unavailable`, reload **only**
-the relay process:
+Panadan bind-mounts the **stable `./tools` directory** into the relay
+container, keeping generated Docker Desktop/WSL mount references independent
+of individual files replaced by Git.
+
+An already-running relay's Python process will not reload `pgrelay.py`
+after `git pull`. **Recreate only the relay** to pick up the updated code
+and mount configuration, without restarting the VPN:
 
 ```bash
-docker compose --env-file .env.app -f compose.dev.yaml restart pgrelay
+./panadan.sh relay-recreate
 ./panadan.sh diagnose-db
 ```
 
-Do not interpret stale relay warnings as evidence of a new code regression.
-Restarting the relay will not repair an unreachable server behind the VPN.
+Equivalent explicit Compose command:
+
+```bash
+docker compose --env-file .env.app -f compose.dev.yaml up -d --no-deps --force-recreate pgrelay
+```
+
+If an older container fails with an OCI mount error referencing
+`/run/desktop/mnt/host/wsl/docker-desktop-bind-mounts/...` and
+`/relay/pgrelay.py`, it still holds a stale **single-file** bind source.
+A forced recreation under the new directory mount is the preferred
+recovery. Do not run `docker compose down -v`, delete Docker volumes,
+or change VPN secrets to address this mount failure.
+
+This only fixes local container startup. It **does not** make unreachable
+PostgreSQL `192.168.3.9:5432` available or resolve VPN keepalive issues.
 
 ### When the tunnel is up but PostgreSQL gives no response
 
