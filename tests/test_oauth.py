@@ -99,8 +99,14 @@ def test_signed_access_token_validation(signer):
     assert verifier.verify(mint(iat=int(time.time())+100)) is None
     assert verifier.verify("not.a.jwt") is None
     assert verifier.verify("x" * 10000) is None
+    # Use >=32 bytes for this intentionally invalid HS256 token, so the test
+    # verifies RS256 algorithm rejection without a weak-key library warning.
+    # This is synthetic test data, never an OAuth signing credential.
+    test_hmac_key = "synthetic-hs256-rejection-fixture-key-2026"
+    assert len(test_hmac_key.encode("utf-8")) >= 32
     assert verifier.verify(jwt.encode(
-        {"sub": "provider-user-123"}, "not-real", algorithm="HS256", headers={"kid":"key-1"}
+        {"sub": "provider-user-123"}, test_hmac_key,
+        algorithm="HS256", headers={"kid": "key-1"}
     )) is None
 
 
