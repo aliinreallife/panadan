@@ -206,25 +206,33 @@ timestamps remain explicitly labeled UTC. No PostgreSQL fields, storage or
 raw API timestamp values are modified. Doran date/time input widgets remain
 third-party components and require device-level QA.
 
-## Report filtering semantics (2026-10-31)
+## Report filtering semantics (updated 2026-10-31)
 
-The dashboard permits a choice between **all selected conditions (AND)** and
-**at least one selected condition (OR)** for operator name, locally assigned
-team, locally assigned destination, call type, source AI state, and source
-direction `tellside`. The call-date start/end boundaries are mandatory
-constraints in either mode and are never part of the OR disjunction. Team and
-destination mappings are locally maintained **report filters, not access
-restrictions**. Restricted row-level RBAC remains blocked pending stable
-source operator identities and cross-surface tests.
+The previous AND/OR toggle was removed. The dashboard uses **searchable,
+multi-select filters** for operator, locally tagged team, destination, call
+type, source AI status, and direction. The report returns calls matching
+**at least one of the selected values** (OR across selected values and
+dimensions). The call-date start/end boundaries remain shared **AND**
+constraints. An operator profile's fixed operator identity also stays an
+AND constraint so it cannot be widened by an OR filter. The same selected
+filters apply to both the call list and KPI aggregates.
 
-The direction dropdown uses raw source `tellside` codes; no localized
-incoming/outgoing guesses are made. PostgreSQL comparisons use fixed
-parameterized SQL, casting `tellside` to text because the view may return
-numeric enums. API callers still receive the original raw source values.
-The dashboard KPI and call list use the same filter combination; existing
-REST/MCP filtering behavior is not broadened.
+The direction codes have now been clarified by the reporting source:
+`IntoOut` = **outgoing / خروجی** and `OutToIn` =
+**incoming / ورودی**. These are **presentation labels only**; the
+backend still filters using the original case-sensitive source codes and
+the raw API remains unchanged. Any future/unrecognized direction code
+is displayed as-is rather than guessed.
 
-The optional creation-time filter UI was removed to simplify the dashboard,
-but existing programmatic date-time parameters remain unchanged for backward
-compatibility. This is a presentation-only decision, not evidence about the
-storage meaning of `create_date`.
+The destination and team relationships live in Panadan's local directory
+and are **report filters only, never data-access permissions**. Full
+row-level RBAC across dashboard/REST/MCP/transcripts remains a separate
+uncompleted security task and requires stable operator IDs and fail-closed
+tests.
+
+The optional creation-time filter UI was removed previously for simplicity,
+but existing legacy programmatic date-time parameters remain supported.
+Mobile navigation now groups the available, permission-appropriate sections
+into up to four buttons: Reports, Operators, Connections, and Management.
+The filter layout is a compact, responsive grid with a mobile multi-choice
+bottom sheet, a persistent logout button, and readable call cards.
