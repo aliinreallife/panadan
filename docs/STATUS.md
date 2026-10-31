@@ -174,7 +174,7 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Include synthetic tests for fixed queries, input bounds, source view restrictions and non-leaking error output.
 - [x] Correct the MCP tool count in `docs/READ_ONLY.md`: four summary tools and a fifth separately permissioned redacted-transcript tool.
 - [x] Update operator-scope documentation to acknowledge numeric source operator IDs observed in 3,000 sampled rows without claiming that historical stability or user-level authorization is verified.
-- [ ] Run the new audit against the VPN-connected source and review only its aggregate JSON output. This step cannot be completed from GitHub CI or ChatGPT without your local VPN.
+- [x] The user successfully ran `audit-fields` via WSL/VPN against 3 disjoint 300-row samples; the 900-row aggregate and confirmed field types are documented in `docs/DATA_DICTIONARY.md`.
 - [ ] Confirm `call_time`, `tellnum`, `tellside`, `CALLDATE` and `create_date` semantics with source owner. Do not change time conversion or introduce raw phone numbers before verification.
 - [ ] Implement numeric-ID operator directory migration and **fail-closed, cross-surface row-level RBAC** only after source identity validation; name filters remain visual filters.
 - [ ] DBA-reviewed least-privilege PostgreSQL account; live encrypted MCP/OAuth end-to-end validation; device/browser UX and redaction review.
@@ -186,7 +186,7 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Improve relay logging to distinguish remote DB connect failures from forwarding failures by exception **type only**, not message/addresses/credentials.
 - [x] Add synthetic diagnostic unit tests and a README troubleshooting decision tree.
 - [ ] Live user run of `./panadan.sh audit-fields` failed with `ConnectionTimeout` using both 300x3 and 100x1 sample scopes, despite a healthy VPN container and running pgrelay. This suggests a transport/handshake issue; not yet proven which network stage.
-- [ ] Run `./panadan.sh diagnose-db` on the WSL host, review its sanitized outputs and relay logs, and retry `audit-fields` only when PostgreSQL read-only SELECT succeeds.
+- [x] WSL `diagnose-db` passed twice after relay recreation; `audit-fields` then returned complete aggregate JSON for all 900 selected records.
 
 
 ## Docker Desktop/WSL stale relay bind-mount fix (2026-10-31)
@@ -196,3 +196,13 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Replace brittle `docker compose restart pgrelay` recovery advice with `./panadan.sh relay-recreate`, which forces creation of a fresh **relay-only** container and bind reference, leaving the VPN running.
 - [x] Add offline regression tests for mount stability and safe operator commands.
 - [ ] Confirm the new Compose mount and relay-only recreation work in the user's Windows/WSL Docker Desktop environment. The underlying VPN-to-PostgreSQL no-response issue #26 is independent.
+
+## Source semantic follow-up (2026-10-31)
+
+- [x] The 900-row live audit found `call_time` 893/900, 28,457–67,116, all valid seconds-since-midnight values and 0 audio-duration matches. Time-of-day interpretation remains a **hypothesis**.
+- [x] `tellnum` 900/900 and `customertell` 900/900; the basic normalized match was 0/900. Neither this nor the double-precision type establishes `tellnum` as a phone; only `customertell` is used for authorized click-to-call.
+- [x] Source dates matched both tested naive and UTC→Tehran interpretations for 899/900, so timezone is **not** resolved by the original audit.
+- [x] All observed `deal_value` amounts zero; team/stage/source/target fields remain empty throughout these slices. Keep revenue and team RBAC blocked pending source verification.
+- [x] Implement `audit-semantics` with bounded, fixed-query aggregates comparing `call_time` to `create_date` under two timezone interpretations and checking `tellnum` shapes without exposing individual numbers.
+- [ ] Run `./panadan.sh audit-semantics --limit 300 --offsets 0,1000,5000` over VPN and review aggregate JSON.
+- [ ] Confirm upstream definitions of `call_time`, `tellnum`, `CALLDATE`, `create_date`, `tellside`, `tellstate`, `aicallinfostate` and financial fields before changing labels or security boundaries.
