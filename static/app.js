@@ -110,6 +110,7 @@ async function load(){
   if(!$('rows'))return;
   const requestId=++callListRequestId;
   const requestKey=filters().toString();
+  $('rows').setAttribute('aria-busy','true');
   if(shownCallsKey!==requestKey){
     const spinner=el('tr');const message=el('td','muted','در حال دریافت...');message.colSpan=6;spinner.append(message);$('rows').replaceChildren(spinner);
     $('count').textContent='—';
@@ -176,6 +177,8 @@ async function load(){
       td.colSpan=6;tr.append(td);$('rows').replaceChildren(tr);
     }
     reportState('calls',false,stale);
+  }finally{
+    if(requestId===callListRequestId)$('rows').removeAttribute('aria-busy');
   }
 }
 async function metrics(){
