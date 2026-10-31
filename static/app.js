@@ -150,6 +150,7 @@ async function metrics(){
   const key=params.toString();
   if(shownMetricsKey!==key){
     for(const id of ['metric-total','metric-sold','metric-score','metric-length'])$(id).textContent='—';
+    if($('metric-score-coverage'))$('metric-score-coverage').textContent='در انتظار دادهٔ این فیلتر';
   }
   try{
     const data=await fetchJSON('/dashboard/metrics?'+params);
@@ -509,7 +510,13 @@ async function detail(id){
     }
   }catch(error){
     if(requestId===detailRequestId && !$('veil').hidden){
-      $('detail').replaceChildren(el('p','error','دریافت جزئیات ممکن نشد. دوباره تلاش کنید.'));
+      const notice=el('div','detail-fetch-error');
+      notice.append(el('p','muted','دریافت جزئیات تماس موقتاً ممکن نشد.'));
+      const retry=el('button','secondary','تلاش دوباره');
+      retry.type='button';
+      retry.onclick=()=>detail(id);
+      notice.append(retry);
+      $('detail').replaceChildren(notice);
     }
   }finally{
     if(requestId===detailRequestId)$('detail')?.removeAttribute('aria-busy');
