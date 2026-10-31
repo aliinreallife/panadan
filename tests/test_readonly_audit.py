@@ -150,3 +150,16 @@ def test_database_audit_error_reports_only_exception_type_and_sqlstate(monkeypat
     output = capsys.readouterr().err
     assert "SyntheticDbError" in output and "SQLSTATE=22025" in output
     assert "sensitive connection details" not in output
+
+
+def test_score_metric_counts_non_null_values_without_editing_source(monkeypatch):
+    conn = Connection()
+    monkeypatch.setenv("PGUSER", "synthetic-report-role")
+    monkeypatch.setenv("PGPASSWORD", "not-a-real-secret")
+    monkeypatch.setattr(database.psycopg, "connect", lambda **kwargs: conn)
+    database.stats()
+    assert conn.commands[0] == "SET TRANSACTION READ ONLY"
+    sql = conn.commands[1]
+    assert 'COUNT("possibility_of_sale_ai") AS scored_calls' in sql
+    assert 'AVG("possibility_of_sale_ai")' in sql
+    assert "COALESCE" not in sql  # NULL remains missing, never a synthetic zero
