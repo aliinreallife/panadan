@@ -66,6 +66,6 @@
     if(menu&&!mobile.contains(event.target)&&!menu.contains(event.target))close();
   });
   document.addEventListener('keydown',event=>{
-    if(menu&&event.key==='Escape'){event.preventDefault();close();opener?.focus();}
+    if(menu&&event.key==='Escape'){event.preventDefault();const restore=opener;close();restore?.focus();}
   });
 })();
