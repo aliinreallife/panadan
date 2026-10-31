@@ -17,9 +17,9 @@ PUBLIC_COLUMNS = (
     'voice_length', 'possibility_of_sale_ai', 'deal_value',
     'vw_danix_base_info_users_name',
 )
-// Detail-only metadata; do not expand list/stats or sensitive source fields.
-// Observed clock correlation strongly suggests seconds after Tehran midnight;
-// event meaning (started/answered/ended) is not yet verified upstream.
+# Detail-only metadata; do not expand list/stats or sensitive source fields.
+# Observed clock correlation strongly suggests seconds after Tehran midnight;
+# Event meaning (started/answered/ended) is not yet verified upstream.
 DETAIL_COLUMNS = ('call_time',)
 SENSITIVE_COLUMNS = (
     'call_id','customername','customertell','outcome','ai_recommendation',
