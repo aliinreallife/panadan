@@ -119,6 +119,14 @@ SELECT 'active_sources=' || count(*) FROM panadan_ingest.sources WHERE enabled;"
       fail "Cannot verify database identity for rotation."
     [[ "$identity" == "panadan:panadan_owner" ]] ||
       fail "Refusing to rotate credentials for an unexpected database identity."
+    # ALTER ROLE embeds a SQL password literal; reject ordinary server-side
+    # statement logging so the new secret is not written to PostgreSQL logs.
+    # Additional audit extensions may have separate controls and must be
+    # reviewed independently before using this command.
+    logging="$(run_psql -A -t -c 'SHOW log_statement;' 2>/dev/null)" ||
+      fail "Cannot verify PostgreSQL SQL statement logging policy."
+    [[ "$logging" == "none" ]] ||
+      fail "Refusing password rotation while PostgreSQL statement logging is enabled."
 
     # The staged configuration must remain in the same directory so the
     # subsequent rename is atomic on ordinary local filesystems.
