@@ -1,7 +1,7 @@
 import {parseTranscript} from './transcript.js';
 import {enhanceSelects} from './selects.js';
 import {enhanceMultiSelects, multiValues} from './multiselect.js';
-import {appliedFilterGroups} from './filter-summary.js';
+import {appliedFilterGroups, preserveSelectedFacetOptions} from './filter-summary.js';
 import {registerPanadanWebMcp} from './webmcp.js';
 import {formatVoiceDuration, voiceDurationSegments, formatSourceCallClock, hasDisplayableDealValue} from './formatters.js';
 import {dialablePhone} from './phone.js';
@@ -246,19 +246,14 @@ async function loadFilterOptions(){
     const select=$(id);if(!select)return;
     // A distinct-value refresh can be incomplete. Never silently drop a
     // user's selected raw filters if a value is absent from the latest list.
-    const current=new Map([...select.selectedOptions]
-      .filter(option=>option.value)
-      .map(option=>[option.value, option.textContent]));
-    const available=new Set(values
-      .filter(v=>v!==null && v!==undefined && String(v).trim())
-      .map(String));
+    const entries=preserveSelectedFacetOptions(values,select.selectedOptions);
     select.replaceChildren();
-    for(const raw of new Set([...available,...current.keys()])){
+    for(const entry of entries){
       const option=document.createElement('option');
-      option.value=raw;
-      option.textContent=available.has(raw)?translate(raw):current.get(raw);
-      option.title=raw;
-      option.selected=current.has(raw);
+      option.value=entry.value;
+      option.textContent=entry.available?translate(entry.value):entry.previousLabel;
+      option.title=entry.value;
+      option.selected=entry.selected;
       select.append(option);
     }
     select.dispatchEvent(new Event('change',{bubbles:true}));
