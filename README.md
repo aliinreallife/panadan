@@ -191,7 +191,7 @@ After the initial audit, the targeted safe source-semantic check can compare
 `tellnum` lengths without printing phone numbers:
 
 ```bash
-./panadan.sh audit-semantics --limit 300 --offsets 0,1000,5000
+./panadan.sh audit-semantics --limit 100 --offsets 0,1000,5000
 ```
 
 Like `audit-fields`, it only reads the allowlisted reporting view in
@@ -295,3 +295,10 @@ strings, or `.env.*` secrets in GitHub issues or chats.
 Panadan now uses official `mcp==2.3.0` (locked) and `MCPServer`, with Python 3.13, Node 24 LTS, refreshed FastAPI/psycopg dependencies and pinned, reproducible npm dependencies. The `FastMCP` v1 class no longer exists in the v2 SDK. The MCP HTTP route remains `/mcp/`, preserving old clients while supporting the newer 2026 MCP protocol. The transcript permission and read-only constraints are unchanged. PR CI builds both Docker images before merge.
 
 The v2 MCP server validates request origins/hosts. For a trusted HTTPS proxy or tunnel, explicitly set `PANADAN_MCP_ALLOWED_HOSTS` and `PANADAN_MCP_ALLOWED_ORIGINS` as described in `docs/MCP_SETUP.md`. These allowlists **do not** implement OAuth login/consent or make the server safe to publish without proper TLS and additional security checks.
+
+The 2026-10-31 300-row semantic follow-up strongly correlated `call_time` with
+Tehran-local seconds since midnight and `create_date` with UTC-naive record
+creation (~2 minutes later). All sampled `tellnum` values were 1–4-digit
+codes, **not customer phone numbers**. Source-owner verification remains
+required before displaying call-clock timestamps or using internal codes.
+See `docs/DATA_DICTIONARY.md` for evidence and limitations.

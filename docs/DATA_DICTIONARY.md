@@ -10,10 +10,10 @@ could read just this view in the 2026-10-31 privilege inspection.
 | --- | --- | --- |
 | `id` | Reporting row/call lookup key | Used in API, confirm uniqueness across view/source migrations |
 | `CALLDATE` | Filtered/reported call date | Source semantics and timezone not verified |
-| `create_date` | Report record creation time; converted from assumed UTC in filters/UI | **Timezone is an assumption**; validate with source owner before claiming times are correct |
+| `create_date` | Report record creation time; UI/API convert UTC-naive to Tehran | **Strongly supported UTC-naive interpretation**: 297/297 clock comparisons align after UTC→Tehran conversion; source owner has not yet confirmed the storage contract |
 | `voice_length` | Duration of recorded audio, in **seconds** | **Confirmed by product owner**; shown as human-readable duration |
-| `call_time` | Integer; 893/900 non-null in the 2026-10-31 three-slice audit | **Likely seconds since midnight**, range 28,457–67,116 (07:54:17–18:38:36 if seconds-of-day); 0/893 match audio duration. Clock/timezone correlation still pending, so **do not display as a verified clock time yet** |
-| `tellnum` | Double precision; 900/900 populated in three samples | **Unknown**; zero of 900 directly matches normalized `customertell` in the current basic comparison. May lose leading zeros; do **not** use for dialing or customer identity |
+| `call_time` | Integer; 893/900 non-null in initial audit and 297/300 in follow-up | **Very strong evidence for seconds since Tehran midnight**: all 297 comparable records have UTC→Tehran-adjusted creation timestamps 0–60 minutes later (usually ~2 minutes). Still await upstream definition before changing presentation |
+| `tellnum` | Double precision; 900/900 initial sample and 300/300 follow-up populated | **Not a customer phone number in sampled records**: all 300 follow-up values are whole positive 1–4-digit numbers, none matches the customer's last 10 digits. Likely internal extension/line/code, exact semantics still unknown. **Never use as click-to-call** |
 | `customertell` | Customer telephone text | **Sensitive**; click-to-call in authorized details only, not `tellnum` |
 | `customername`, `call_id` | Customer name and source call identifier | **Sensitive**; never emit from data audits |
 | `tellside` | Call direction/side | Enumerations and mapping unverified; do not guess incoming/outgoing labels |
@@ -35,7 +35,7 @@ could read just this view in the 2026-10-31 privilege inspection.
 
 ## Verified aggregate sample results — 2026-10-31
 
-The source owner provided successful `audit-fields` output for three
+The VPN-connected operator provided successful `audit-fields` output for three
 **disjoint samples of 300 rows** at ID-order offsets `0`, `1000`,
 and `5000`, covering `CALLDATE` dates from 2026-10-15 through
 2026-10-31. This is a **900-row sample, not a full-history census**.
@@ -77,6 +77,52 @@ call IDs, individual phone values, names, transcripts or timestamps.
 Only if these comparisons are convincing **and** the source owner confirms
 the semantics should the UI render `call_time` as a time-of-day. The raw value
 must remain unchanged in the DB, and the timezone must be explicit.
+
+## Targeted semantic audit results — 2026-10-31
+
+The second audit successfully completed with **three additional 100-row
+samples** at offsets `0,1000,5000`, after two earlier runs with
+`--limit 300` failed with `ConnectionTimeout`. Connection timeouts do
+**not** prove that a SQL query exceeded the statement timeout; the observed
+smaller run succeeded, but the underlying intermittent transport issue
+should be tracked separately.
+
+| Check | Offset 0 | Offset 1000 | Offset 5000 | Combined |
+| --- | ---: | ---: | ---: | ---: |
+| Calls sampled | 100 | 100 | 100 | **300** |
+| Valid seconds-of-day clock candidates | 98 | 99 | 100 | **297** |
+| Tehran-adjusted creation within 5 minutes of call clock | 84 | 86 | 79 | **249/297 (83.8%)** |
+| Tehran-adjusted creation 0–60 minutes after call clock | 98 | 99 | 100 | **297/297** |
+| Without timezone adjustment, creation within 5 minutes | 0 | 0 | 0 | **0/297** |
+| Median Tehran-adjusted creation lag (seconds) | +133 | +110 | +134 | ~2 minutes in each slice |
+| Median unadjusted lag (seconds) | −12,467 | −12,490 | −12,466 | ~−3 h 28 min in each slice |
+| `tellnum` is a whole positive 1–4-digit number | 100 | 100 | 100 | **300/300** |
+| `tellnum` matches last 10 digits of `customertell` | 0 | 0 | 0 | **0/300** |
+
+**Interpretation:** The consistent 12,600-second (3 h 30 min) shift,
+near-zero-adjusted lag, and 100% within-hour alignment strongly support
+`call_time` as a **Tehran-local clock represented in seconds after
+midnight**, and `create_date` as a **UTC-naive recording/creation
+timestamp**. This *correlation* is not yet a formal schema contract:
+insertion/processing time can differ from call start/end, and the
+reporting-view owner should clarify what event `call_time` denotes.
+
+`tellnum` is not a customer mobile number in these sampled records.
+Its 1–4-digit shape is **consistent with an internal extension, channel or
+line code**, not proof of a specific source meaning. Keep using the
+permission-protected `customertell` for click-to-call and don't
+repurpose `tellnum` for identity or filtering.
+
+**Release gate:** Do not silently change timezone conversion or show
+`call_time` as a definitive call-start timestamp until the reporting
+view's owner confirms its event meaning and timezone. Numeric operator
+IDs still need historical verification before row-level RBAC.
+
+Recommended low-impact run if repeating the audit:
+
+```bash
+./panadan.sh audit-semantics --limit 100 --offsets 0,1000,5000
+```
 
 ## Privacy-safe data audit
 
