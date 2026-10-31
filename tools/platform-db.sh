@@ -38,6 +38,12 @@ require_up() {
 run_psql() {
   compose exec -T db psql -X -v ON_ERROR_STOP=1 -U panadan_owner -d panadan "$@"
 }
+assert_pg18() {
+  local major
+  major="$(run_psql -A -t -c 'SHOW server_version_num;')"
+  [[ "$major" =~ ^18[[:digit:]]{4}$ ]] ||
+    fail "Expected PostgreSQL 18, refusing to operate on an unexpected database version."
+}
 case "${1:-help}" in
   setup)
     [[ ! -e "$ENV_FILE" ]] || fail "$ENV_FILE already exists; refusing to overwrite credentials."
@@ -47,8 +53,8 @@ case "${1:-help}" in
     trap 'rm -f -- "$tmp"' EXIT
     printf 'PANADAN_PLATFORM_DB_PORT=15433\nPANADAN_PLATFORM_DB_PASSWORD=%s\n' "$secret" > "$tmp"
     chmod 600 "$tmp"
-    mv -n -- "$tmp" "$ENV_FILE"
-    [[ -f "$ENV_FILE" ]] || fail "Failed to create $ENV_FILE."
+    ln -- "$tmp" "$ENV_FILE" || fail "Could not create $ENV_FILE without overwriting an existing file."
+    rm -f -- "$tmp"
     echo "Created $ENV_FILE (permissions 600). Secret is not printed."
     echo "Nothing has started or imported data."
     ;;
@@ -58,13 +64,13 @@ case "${1:-help}" in
     echo "Panadan-owned PostgreSQL 18 is running (localhost only)."
     ;;
   init)
-    need_docker; check_env; require_up
+    need_docker; check_env; require_up; assert_pg18
     echo "Applying additive schema to Panadan-owned PostgreSQL only ..."
     run_psql --single-transaction < database/migrations/001_multisource_foundation.sql >/dev/null
     echo "Schema applied; no source ingestion was enabled."
     ;;
   check)
-    need_docker; check_env; require_up
+    need_docker; check_env; require_up; assert_pg18
     run_psql -A -t -c "SELECT 'pg_major=' || current_setting('server_version_num')::integer / 10000;
 SELECT 'schema_present=' || (to_regnamespace('panadan_ingest') IS NOT NULL);
 SELECT 'tables=' || count(*) FROM information_schema.tables
@@ -73,7 +79,7 @@ SELECT 'source_count=' || count(*) FROM panadan_ingest.sources;
 SELECT 'active_sources=' || count(*) FROM panadan_ingest.sources WHERE enabled;"
     ;;
   backup)
-    need_docker; check_env; require_up
+    need_docker; check_env; require_up; assert_pg18
     command -v openssl >/dev/null 2>&1 || fail "openssl is required for unique backup filenames."
     mkdir -p -- "$BACKUP_DIR"
     chmod 700 "$BACKUP_DIR"
