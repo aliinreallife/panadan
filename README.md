@@ -186,6 +186,19 @@ avoid the source database's 12-second statement timeout:
 ./panadan.sh audit-fields --limit 100 --offsets 0
 ```
 
+After the initial audit, the targeted safe source-semantic check can compare
+`call_time` with `create_date` under two timezone assumptions and classify
+`tellnum` lengths without printing phone numbers:
+
+```bash
+./panadan.sh audit-semantics --limit 300 --offsets 0,1000,5000
+```
+
+Like `audit-fields`, it only reads the allowlisted reporting view in
+explicit READ ONLY transactions. It produces aggregate metrics, not raw
+customer records, and does not change date/phone fields used by the app.
+The 900-row first-audit findings and confidence limits are documented below.
+
 See [Source data dictionary](docs/DATA_DICTIONARY.md) for the confirmed units,
 unverified call-time/phone/date/status semantics, and the prerequisites for
 stable numeric-ID operator authorization. **Do not turn metadata filters into
