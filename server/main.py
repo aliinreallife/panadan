@@ -276,6 +276,10 @@ def dashboard_multi_facets(operators: list[str] | None, states: list[str] | None
         'operators': operators or [], 'states': states or [],
         'call_types': call_types or [], 'directions': directions or [],
     }
+    for key, values in selections.items():
+        max_length = 180 if key == 'operators' else 60
+        if len(values) > 20 or any(not value or len(value) > max_length for value in values):
+            raise ValueError('Invalid report filter values')
     directory = []
     for values, field in ((destinations or [], 'destination'), (teams or [], 'team')):
         if len(values) > 20 or any(not v or len(v) > 80 for v in values):
