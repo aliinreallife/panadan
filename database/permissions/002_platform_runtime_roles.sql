@@ -44,6 +44,12 @@ REVOKE ALL ON ALL SEQUENCES IN SCHEMA panadan_ingest FROM panadan_ingest_writer,
 -- allowed to register new sources or turn them on. The separate owner
 -- must explicitly approve a source before any import.
 GRANT SELECT ON panadan_ingest.sources TO panadan_ingest_writer;
+-- Keep all source-registry mutations owner-only. Grant only the narrow
+-- SECURITY DEFINER row-lock helper needed for atomic source deactivation.
+REVOKE ALL ON FUNCTION panadan_ingest.lock_source_for_ingest(TEXT)
+    FROM PUBLIC, panadan_report_reader, panadan_ingest_writer;
+GRANT EXECUTE ON FUNCTION panadan_ingest.lock_source_for_ingest(TEXT)
+    TO panadan_ingest_writer;
 GRANT SELECT, INSERT, UPDATE ON panadan_ingest.source_records TO panadan_ingest_writer;
 GRANT SELECT, INSERT ON panadan_ingest.raw_revisions TO panadan_ingest_writer;
 GRANT SELECT, INSERT, UPDATE ON panadan_ingest.processing_jobs TO panadan_ingest_writer;
