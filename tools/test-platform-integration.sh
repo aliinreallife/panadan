@@ -20,7 +20,9 @@ container="panadan-ci-pg-$"
 archive=""
 cleanup() {
   [[ -z "$archive" ]] || rm -f -- "$archive"
-  docker rm -f "$container" >/dev/null 2>&1 || true
+  # Remove the synthetic container AND any anonymous volume it created.
+  # Never use this command on the separately named panadan-platform volume.
+  docker rm -fv "$container" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
