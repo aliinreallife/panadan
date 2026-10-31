@@ -31,3 +31,12 @@ export function knownTypeOptions() {
 export function knownStateOptions() {
   return ['SoldOut', 'Unchecked', 'Inprocess', 'Canceled', 'System Invalid', 'User Invalid'];
 }
+
+const DIRECTIONS = Object.freeze({
+  intoout: 'خروجی',
+  outtoin: 'ورودی'
+});
+export function directionLabel(value) {
+  if(value === null || value === undefined || !String(value).trim())return '—';
+  return DIRECTIONS[normalize(value)] ?? String(value);
+}
