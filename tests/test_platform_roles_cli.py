@@ -46,6 +46,15 @@ def test_permission_sql_prevents_raw_report_access_and_requires_disabled_sources
     assert "GRANT SELECT ON panadan_ingest.safe_call_facts_v1 TO panadan_report_reader" in migration
     assert "GRANT SELECT ON panadan_ingest.raw_revisions TO panadan_report_reader" not in migration
     assert "REVOKE ALL ON SCHEMA public FROM PUBLIC" in migration
+    foundation = (ROOT / "database/migrations/001_multisource_foundation.sql").read_text()
+    ingest = (ROOT / "server/platform_ingest.py").read_text()
+    assert "SECURITY DEFINER" in foundation
+    assert "SET search_path = pg_catalog" in foundation
+    assert "REVOKE ALL ON FUNCTION panadan_ingest.lock_source_for_ingest(TEXT) FROM PUBLIC" in foundation
+    assert "GRANT EXECUTE ON FUNCTION panadan_ingest.lock_source_for_ingest(TEXT)" in migration
+    assert "TO panadan_ingest_writer;" in migration
+    assert "lock_source_for_ingest(%s)" in ingest
+    assert "FROM panadan_ingest.sources WHERE source_key = %s FOR SHARE" not in ingest
     assert "s.is_deleted = false" in migration
     assert "d.processor_version = 'v1'" in migration
 
@@ -62,6 +71,8 @@ def test_role_provisioning_only_via_explicit_owner_db_stdin():
     assert "docker volume rm" not in sh
     assert "PASSWORD '%s'" in sh
     assert 'cat "$SQL_FILE"' in sh
+    assert 'cat "$FOUNDATION_SQL"' in sh
+    assert "has_function_privilege" in sh
 
 
 def test_roles_check_fails_closed_on_privilege_drift(tmp_path):
