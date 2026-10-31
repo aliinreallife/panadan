@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {multiValues,multiSummary} from '../static/multiselect.js';
+import {multiValues,multiSummary,toggleMultiOption} from '../static/multiselect.js';
 
 test('multi-select only submits actual selected values, never placeholder',()=>{
   const select={selectedOptions:[
@@ -26,7 +26,7 @@ test('mobile navigation groups secondary pages into exactly four destinations',(
   for(const id of ['report','operators','integrations','management']){
     assert.match(js,new RegExp("id:'"+id+"'"));
   }
-  assert.match(js,/groups=\[/);
+  assert.match(js,/groups\s*=\s*\[/);
   assert.match(js,/mobile-nav-tab/);
   assert.match(js,/aria-expanded/);
   assert.match(js,/links\.filter/);
@@ -35,14 +35,42 @@ test('mobile navigation groups secondary pages into exactly four destinations',(
   assert.match(css,/\.shell > \.sidebar\.mobile-nav-ready > nav\{display:none!important\}/);
 });
 
-test('single-select enhancer skips multi-selects and mobile controls include search and clear',()=>{
+test('multi-select has tappable rows with checkmarks and no footer/checkboxes',()=>{
   const selects=readFileSync('static/selects.js','utf8');
   const multi=readFileSync('static/multiselect.js','utf8');
   assert.match(selects,/:not\(\[multiple\]\)/);
-  assert.match(multi,/search\.type='search'/);
-  assert.match(multi,/check\.type='checkbox'/);
-  assert.match(multi,/reset\.addEventListener/);
+  assert.match(multi,/search\.type\s*=\s*'search'/);
+  assert.match(multi,/row\.type = 'button'/);
+  assert.match(multi,/row\.setAttribute\('role', 'option'\)/);
+  assert.match(multi,/row\.setAttribute\('aria-selected'/);
+  assert.match(multi,/tick\.textContent = '✓'/);
   assert.match(multi,/select\.dispatchEvent\(new Event\('change'/);
+  assert.doesNotMatch(multi,/type='checkbox'|type = 'checkbox'/);
+  assert.doesNotMatch(multi,/ui-multi-footer|ui-multi-done|ui-multi-reset/);
+  const option={selected:false,disabled:false};
+  assert.equal(toggleMultiOption(option,0),true);
+  assert.equal(option.selected,true);
+  assert.equal(toggleMultiOption(option,1),true);
+  assert.equal(option.selected,false);
+  assert.equal(toggleMultiOption(option,20),false);
+  assert.equal(option.selected,false);
+  option.disabled=true;
+  assert.equal(toggleMultiOption(option,0),false);
+});
+
+test('four mobile navigation tabs are actual buttons anchored at the bottom',()=>{
+  const mobile=readFileSync('static/mobile-nav.js','utf8');
+  const css=readFileSync('static/style.css','utf8');
+  assert.match(mobile,/const button = document\.createElement\('button'\)/);
+  assert.match(mobile,/button\.type = 'button'/);
+  assert.match(mobile,/mobile\.append\(button\)/);
+  assert.match(mobile,/openMenu\(button, group, available\)/);
+  assert.match(mobile,/window\.location\.assign\(available\[0\]\.href\)/);
+  assert.match(css,/\.shell > \.sidebar \.mobile-nav\{\s*display:grid;position:fixed;inset:auto 0 0 0;/);
+  assert.match(css,/grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(css,/\.shell > \.sidebar > nav:not\(\.mobile-nav\)\{[\s\S]*?overflow-x:hidden!important/);
+  assert.match(css,/\.ui-multi-option\[aria-selected="true"\] \.ui-multi-check\{/);
+  assert.doesNotMatch(css,/\.ui-multi-footer\{/);
 });
 
 test('compact responsive filters use four desktop and two mobile columns',()=>{
