@@ -297,6 +297,14 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [ ] Provision separate encrypted reporting PostgreSQL with least-privilege users, tested backups and a lawful retention/purge policy before ingesting real source payloads.
 - [ ] Build the read-only Odoo adapter, bounded backfill, supervised job scheduler, authorized serving path, deletion/reconciliation, data-quality metrics, and cross-surface RBAC checks. No live mirror/cutover has occurred.
 
+## PostgreSQL 18.6 platform baseline (2026-10-31)
+
+- [x] Upgrade the disposable synthetic PostgreSQL integration CI database from 17 to pinned official 18.6 Alpine image with a multi-platform manifest digest.
+- [x] Add a standalone, **opt-in** `compose.platform.yaml` for a new Panadan-owned PostgreSQL 18.6 DB on localhost port 15433, with a separate persistent named volume mounted at `/var/lib/postgresql` (the PostgreSQL 18+ Docker layout); no Odoo/VPN/auth database changes.
+- [x] Provide an ignored platform password configuration template and `docs/POSTGRESQL_18_PLATFORM.md` setup/retention/upgrade guidance.
+- [x] Add a disposable synthetic PostgreSQL 18.6 test runner and a PostgreSQL-major integration assertion. Running `./panadan.sh dev` or `./panadan.sh up` never starts the optional platform database.
+- [ ] Confirm CI runner availability and actual PG18 integration pass before merging. No real data copied, source updates or production migration performed.
+
 ## Odoo new-row and updated-row sync readiness (2026-10-31)
 
 - [x] Build a read-only Odoo adapter with a fixed, approved field allowlist and hardcoded SQL, supporting either `updated_at` or `sync_updated_at` (both strict, allowlisted identifiers) and an explicitly verified UTC-naive or timestamptz source contract.

@@ -166,6 +166,21 @@ To verify that your reporting login cannot **create or change source data**, run
 
 Technical details: `docs/PRD.md`, `docs/DECISIONS.md`, `docs/SECURITY.md`, `docs/STATUS.md`, `docs/TRANSCRIPTS.md`.
 
+## Multi-source platform foundation (opt-in)
+
+Panadan's long-term architecture is a separate PostgreSQL data platform with
+a source registry, versioned raw JSONB records, durable processing jobs,
+versioned facts, and atomic per-source sync checkpoints. An initial schema and
+synthetic-only ingestion/processing libraries are now available in
+[Platform Foundation](docs/PLATFORM_FOUNDATION.md). The existing auth SQLite,
+Odoo read-only reporting path, API and MCP are **unchanged**. No source
+connector, scheduler, raw customer import, database deployment or Redis cache
+is enabled by this change.
+
+GitHub CI tests the new path against a disposable PostgreSQL database with
+synthetic source payloads. **Do not** apply the migration to Odoo or ingest
+personal data before agreeing on the source update/delete feed and retention.
+
 ### Test a feature branch in an isolated Git worktree
 
 Git worktrees do **not** share untracked/ignored `.env.db`, `.env.app`,
@@ -202,6 +217,7 @@ The helper publishes a random loopback-only port, creates a clean
 tests, and deletes the container automatically. It may download the
 `postgres:18.6-alpine3.24` Docker image on first use. It never reads `.env.db`,
 `.env.app` or VPN secrets, and cannot connect to live Odoo.
+
 ## Odoo source updates + new calls (adapter prepared)
 
 The multi-source foundation now has a **read-only, opt-in** Odoo view
@@ -218,20 +234,28 @@ dashboard cutover are performed by these libraries. See
 requirements, limitations (especially deletions), synthetic CI tests
 and the steps required before enabling a pilot.
 
-## Multi-source platform foundation (opt-in)
+## Optional Panadan PostgreSQL 18.6 platform database
 
-Panadan's long-term architecture is a separate PostgreSQL data platform with
-a source registry, versioned raw JSONB records, durable processing jobs,
-versioned facts, and atomic per-source sync checkpoints. An initial schema and
-synthetic-only ingestion/processing libraries are now available in
-[Platform Foundation](docs/PLATFORM_FOUNDATION.md). The existing auth SQLite,
-Odoo read-only reporting path, API and MCP are **unchanged**. No source
-connector, scheduler, raw customer import, database deployment or Redis cache
-is enabled by this change.
+The future multi-source ingestion database uses the **official PostgreSQL
+18.6** Docker image, pinned to an immutable multi-platform image digest.
+The platform database is **separate from Odoo, its VPN relay, and the
+existing SQLite authentication database**. It is disabled unless explicitly
+started, and it doesn't ingest any customer data automatically.
 
-GitHub CI tests the new path against a disposable PostgreSQL database with
-synthetic source payloads. **Do not** apply the migration to Odoo or ingest
-personal data before agreeing on the source update/delete feed and retention.
+An opt-in `compose.platform.yaml` exposes only
+`127.0.0.1:15433` and persists data under PostgreSQL 18's
+`/var/lib/postgresql` parent directory. Set up the ignored
+`.env.platform` from `.env.platform.example` first. See
+[PostgreSQL 18 platform setup](docs/POSTGRESQL_18_PLATFORM.md).
+Never upgrade an existing PostgreSQL data volume by changing an image tag.
+
+Offline integration test (requires Docker, **synthetic data only**):
+
+```bash
+bash tools/test-platform-integration.sh
+```
+
+No VPN, Odoo credentials, or platform credentials are used by this test.
 
 ## Assess local reporting mirror readiness (read-only)
 

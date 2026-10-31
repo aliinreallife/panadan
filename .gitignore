@@ -2,6 +2,7 @@
 .env.*
 !.env.app.example
 !.env.db.example
+!.env.platform.example
 vpn/*
 !vpn/.gitkeep
 data/*

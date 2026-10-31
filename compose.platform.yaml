@@ -1,0 +1,33 @@
+# OPTIONAL Panadan-owned PostgreSQL 18 database for the multi-source platform.
+# This is NOT the Odoo source DB, VPN relay or existing auth SQLite database.
+# It is never included by default in compose.dev.yaml / compose.prod.yaml.
+# Bring up only after explicitly creating an ignored .env.platform and agreeing
+# on local storage, retention and backup policy. No source imports are enabled.
+name: panadan-platform
+services:
+  db:
+    image: postgres:18.6-alpine3.24@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+    pull_policy: missing
+    environment:
+      POSTGRES_DB: panadan
+      POSTGRES_USER: panadan_owner
+      POSTGRES_PASSWORD: ${PANADAN_PLATFORM_DB_PASSWORD:?Set a strong password in the ignored .env.platform file}
+      PGDATA: /var/lib/postgresql/18/docker
+    ports:
+      - '127.0.0.1:${PANADAN_PLATFORM_DB_PORT:-15433}:5432'
+    volumes:
+      # PostgreSQL 18+ official image uses /var/lib/postgresql/<major>/docker;
+      # mount parent path to preserve the entire DB cluster.
+      - panadan_platform_pg18_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U panadan_owner -d panadan']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: 60s
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  panadan_platform_pg18_data:
