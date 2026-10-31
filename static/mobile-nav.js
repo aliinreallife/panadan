@@ -70,7 +70,7 @@
     const available = links.filter(a => group.paths.includes(new URL(a.href).pathname));
     if (!available.length) continue;
     const active = group.paths.some(path => path === current) ||
-                   (group.id === 'report' && current === '/dashboard/operator');
+                   (group.id === 'operators' && current === '/dashboard/operator');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'mobile-nav-tab' + (active ? ' is-active' : '');
