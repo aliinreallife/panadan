@@ -234,6 +234,33 @@ dashboard cutover are performed by these libraries. See
 requirements, limitations (especially deletions), synthetic CI tests
 and the steps required before enabling a pilot.
 
+## Manage the independent PostgreSQL 18.6 database
+
+Panadan now has an explicit, opt-in helper for managing **its own**
+PostgreSQL 18.6 instance. It uses the official PostgreSQL Docker image
+(which already includes the `psql` command), so there is no need to
+install an independent PostgreSQL server or client on WSL.
+
+```bash
+./panadan.sh platform-db setup
+./panadan.sh platform-db up
+./panadan.sh platform-db init
+./panadan.sh platform-db check
+./panadan.sh platform-db backup
+./panadan.sh platform-db down
+```
+
+It safely generates a private local password, applies the additive
+schema, checks the version/tables and creates a private local backup.
+Stopping does not remove the volume; none of these commands connects
+to Odoo or enables live imports. The disposable test runner also
+checks a synthetic backup/restore and PostgreSQL restart. **Local
+backups are not encrypted/off-host**; don't ingest sensitive
+customer data before approving retention and recovery practices.
+
+See [PostgreSQL 18 platform guide](docs/POSTGRESQL_18_PLATFORM.md)
+for setup, security and restore validation.
+
 ## Optional Panadan PostgreSQL 18.6 platform database
 
 The future multi-source ingestion database uses the **official PostgreSQL
