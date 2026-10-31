@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {appliedFilterGroups, REPORT_FACETS} from '../static/filter-summary.js';
+import {appliedFilterGroups, REPORT_FACETS, preserveSelectedFacetOptions} from '../static/filter-summary.js';
 
 test('applied filter summary ignores pagination and locked operator identity', () => {
   const params = new URLSearchParams({
@@ -54,4 +54,23 @@ test('mobile operator profile activates the operators destination', () => {
   const nav = readFileSync('static/mobile-nav.js','utf8');
   assert.match(nav,/group\.id === 'operators' && current === '\/dashboard\/operator'/);
   assert.doesNotMatch(nav,/group\.id === 'report' && current === '\/dashboard\/operator'/);
+});
+
+test('refreshed facet list retains selected raw values and their old labels', () => {
+  const options=preserveSelectedFacetOptions(
+    ['IntoOut','OutToIn'],
+    [{value:'UnknownLegacy',textContent:'وضعیت ناشناخته'}, {value:'IntoOut',textContent:'خروجی'}]
+  );
+  assert.deepEqual(options,[
+    {value:'IntoOut',selected:true,available:true,previousLabel:'خروجی'},
+    {value:'OutToIn',selected:false,available:true,previousLabel:'OutToIn'},
+    {value:'UnknownLegacy',selected:true,available:false,previousLabel:'وضعیت ناشناخته'},
+  ]);
+  assert.deepEqual(
+    preserveSelectedFacetOptions([], [{value:'',textContent:'همه'}, {value:'x',textContent:'مورد x'}]),
+    [{value:'x',selected:true,available:false,previousLabel:'مورد x'}]
+  );
+  const app=readFileSync('static/app.js','utf8');
+  assert.match(app,/preserveSelectedFacetOptions\(values,select\.selectedOptions\)/);
+  assert.match(app,/option\.selected=entry\.selected/);
 });
