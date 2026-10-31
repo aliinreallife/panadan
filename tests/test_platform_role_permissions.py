@@ -80,6 +80,13 @@ def test_ingestion_writer_can_process_but_cannot_enable_sources(protected_db):
         with pytest.raises(InsufficientPrivilege):
             writer.execute("INSERT INTO panadan_ingest.sources(source_key,kind,label) VALUES ('forbidden','manual','Never')")
         assert not writer.execute("SELECT has_schema_privilege(current_user,'panadan_ingest','CREATE') AS ok").fetchone()["ok"]
+        # The writer can lock a registered source only through the owner
+        # function; PostgreSQL's direct FOR SHARE requires UPDATE privilege.
+        with pytest.raises(InsufficientPrivilege):
+            writer.execute("SELECT enabled FROM panadan_ingest.sources WHERE source_key = 'roles_synthetic' FOR SHARE")
+        assert writer.execute(
+            "SELECT panadan_ingest.lock_source_for_ingest('roles_synthetic') AS ok"
+        ).fetchone()["ok"] is True
         result = ingest_batch(
             writer, source_key="roles_synthetic", stream="history",
             events=[SourceEvent("synthetic-7", "upsert", {
@@ -107,6 +114,8 @@ def test_reporting_reader_only_sees_projected_current_safe_facts(protected_db):
         assert all("PRIVATE_SHOULD_NEVER_APPEAR" not in str(row) for row in facts)
         assert "external_id" not in facts[0]
         assert all(isinstance(row["revision_id"], int) for row in facts)
+        with pytest.raises(InsufficientPrivilege):
+            reader.execute("SELECT panadan_ingest.lock_source_for_ingest('roles_synthetic')")
         for sql in (
             "SELECT * FROM panadan_ingest.raw_revisions LIMIT 1",
             "SELECT * FROM panadan_ingest.source_records LIMIT 1",
@@ -141,3 +150,32 @@ def test_roles_are_non_superusers_and_grants_are_narrow(protected_db):
       SELECT has_table_privilege('panadan_ingest_writer',
         'panadan_ingest.sources','UPDATE') AS allowed
     """).fetchone()["allowed"]
+
+
+def test_source_deactivation_waits_for_ingest_lock(protected_db):
+    """The locked enablement row prevents an admin disable racing an ingest."""
+    cfg, owner = protected_db
+    with _as_role(cfg, "panadan_ingest_writer", WRITER_PASSWORD) as writer:
+        with writer.transaction():
+            assert writer.execute(
+                "SELECT panadan_ingest.lock_source_for_ingest('roles_synthetic') AS enabled"
+            ).fetchone()["enabled"] is True
+            with pytest.raises(psycopg.errors.LockNotAvailable):
+                with owner.transaction():
+                    owner.execute("SET LOCAL lock_timeout = '150ms'")
+                    owner.execute(
+                        "UPDATE panadan_ingest.sources SET enabled = FALSE WHERE source_key = 'roles_synthetic'"
+                    )
+        # Once the writer's transaction ends, owner can disable the source.
+        owner.execute(
+            "UPDATE panadan_ingest.sources SET enabled = FALSE WHERE source_key = 'roles_synthetic'"
+        )
+        try:
+            with pytest.raises(ValueError, match="not enabled"):
+                ingest_batch(writer, source_key="roles_synthetic", stream="history",
+                             events=[SourceEvent("synthetic-disabled","upsert",{"tellside":"IntoOut"})],
+                             expected_cursor={"last_id":7}, next_cursor={"last_id":8})
+        finally:
+            owner.execute(
+                "UPDATE panadan_ingest.sources SET enabled = TRUE WHERE source_key = 'roles_synthetic'"
+            )
