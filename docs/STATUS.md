@@ -204,5 +204,14 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Source dates matched both tested naive and UTC→Tehran interpretations for 899/900, so timezone is **not** resolved by the original audit.
 - [x] All observed `deal_value` amounts zero; team/stage/source/target fields remain empty throughout these slices. Keep revenue and team RBAC blocked pending source verification.
 - [x] Implement `audit-semantics` with bounded, fixed-query aggregates comparing `call_time` to `create_date` under two timezone interpretations and checking `tellnum` shapes without exposing individual numbers.
-- [ ] Run `./panadan.sh audit-semantics --limit 300 --offsets 0,1000,5000` over VPN and review aggregate JSON.
+- [x] `audit-semantics --limit 100 --offsets 0,1000,5000` returned three 100-row aggregate samples after earlier `ConnectionTimeout` attempts at limit 300. 297/297 comparable clock values align within one hour under UTC→Tehran, 249/297 within five minutes; none within five minutes unadjusted. Median Tehran-adjusted creation lags were 110–134 seconds. All 300 `tellnum` values had 1–4 digits, none matched a customer phone suffix.
 - [ ] Confirm upstream definitions of `call_time`, `tellnum`, `CALLDATE`, `create_date`, `tellside`, `tellstate`, `aicallinfostate` and financial fields before changing labels or security boundaries.
+
+## Follow-up interpretation safeguards (2026-10-31)
+
+- [x] Document the 300-row semantic follow-up in `docs/DATA_DICTIONARY.md`. Strong evidence supports `call_time` as seconds after Tehran midnight and `create_date` as UTC-naive; neither is yet source-owner-confirmed.
+- [x] Clarify the timezone assumption in the source filtering code, rather than silently changing actual date handling.
+- [x] Use 100-row slices as the semantic audit's default to reduce query load; preserve upper bounds.
+- [ ] Verify with source administrator whether `tellnum` is an operator extension/line number or another short internal code. Continue to exclude it from customer click-to-call.
+- [ ] Confirm the event/timezone of `call_time` (call began, answered, ended, etc.) and `create_date` before exposing the clock field in the UI.
+- [ ] Intermittent `ConnectionTimeout` recurred on two 300-row semantic runs before 100-row success; investigate the remote connectivity path if it continues (not proof of SQL statement-timeout).
