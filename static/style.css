@@ -1290,3 +1290,9 @@ doran-datepicker::part(dialog){
  .applied-filter-chip{font-size:11px;padding:6px 8px}
  .applied-filter-value{max-width:24ch}
 }
+
+/* Empty states explain what to do without implying reporting data was deleted. */
+.calls-panel .report-empty-state{padding:23px 15px;text-align:center;line-height:1.9}
+.calls-panel .report-empty-state button{
+  display:block;margin:11px auto 0;min-height:40px;padding:8px 14px;
+}
