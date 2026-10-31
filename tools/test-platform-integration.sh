@@ -20,14 +20,14 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "Starting disposable PostgreSQL 17 with synthetic test credentials only ..."
+echo "Starting disposable PostgreSQL 18.6 with synthetic test credentials only ..."
 docker run --rm -d \
   --name "$container" \
   -e POSTGRES_DB=panadan_ci \
   -e POSTGRES_USER=panadan_ci \
   -e POSTGRES_PASSWORD=synthetic_ci_password_only \
   -p 127.0.0.1::5432 \
-  postgres:17-alpine >/dev/null
+  postgres:18.6-alpine3.24@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5 >/dev/null
 
 # docker port is displayed as 127.0.0.1:HOST_PORT on Docker Desktop/WSL.
 endpoint="$(docker port "$container" 5432/tcp | grep '^127.0.0.1:' | head -1 || true)"
@@ -47,6 +47,12 @@ for _ in {1..35}; do
 done
 [[ "$ready" == true ]] || {
   echo "Disposable PostgreSQL did not become ready." >&2
+  exit 2
+}
+
+# Check the binary too: failures should never silently fall back to PG17.
+docker exec "$container" postgres -V | grep -qE '^postgres \(PostgreSQL\) 18\.6($| )' || {
+  echo "Unexpected PostgreSQL version in disposable test container." >&2
   exit 2
 }
 
