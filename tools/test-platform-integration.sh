@@ -51,7 +51,7 @@ done
 }
 
 # Check the binary too: failures should never silently fall back to PG17.
-docker exec "$container" postgres -V | grep -qE '^postgres \(PostgreSQL\) 18\\.6($| )' || {
+docker exec "$container" postgres -V | grep -qE '^postgres \(PostgreSQL\) 18\.6($| )' || {
   echo "Unexpected PostgreSQL version in disposable test container." >&2
   exit 2
 }
