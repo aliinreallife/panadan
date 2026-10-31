@@ -90,14 +90,17 @@ owned PostgreSQL 18 instance:
 cd ~/panadan
 ./panadan.sh platform-db roles-setup  # one-time random credentials, never printed
 ./panadan.sh platform-db roles-apply  # explicit and transactional grants
-./panadan.sh platform-db roles-check  # inspect permission booleans only
+./panadan.sh platform-db roles-check  # fail if restricted privilege invariants drift
 ```
 
 `roles-setup` generates a new ignored `.env.platform.roles` with two
 different 64-character random secrets (mode 600); it refuses overwriting.
 `roles-apply` requires the active DB to be exactly `panadan` running
 PostgreSQL 18. It applies only to the separate platform database,
-not the existing Odoo source or its VPN.
+not the existing Odoo source or its VPN. `roles-check` exits nonzero if
+an expected restriction is missing or a sensitive table privilege appears;
+treat a failed check as a release blocker. It is a baseline permission audit,
+not a substitute for a full DBA review.
 
 - `panadan_ingest_writer` can read source enablement and write only
   the current records, revisions, jobs, facts and checkpoints needed by
