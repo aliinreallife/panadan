@@ -76,8 +76,11 @@ def filters(after: date | None, before: date | None, state: str | None,
             parts.append('("' + OPERATOR_COLUMN + '" IS NULL OR BTRIM("' + OPERATOR_COLUMN + '") = \'\')')
         else:
             parts.append('FALSE')
-    # Odoo's create_date is a naive UTC timestamp; display times are Asia/Tehran.
-    # Convert aware ISO inputs to a UTC-naive timestamp for comparisons.
+    # Working interpretation: Odoo create_date is UTC-naive, with display in
+    # Asia/Tehran. A 297-record read-only clock comparison strongly supports
+    # this, but the view owner has not confirmed the source's formal contract.
+    # Convert aware ISO inputs to UTC-naive for comparisons; revisit only
+    # after verifying source timezone semantics.
     from datetime import timezone
     for op, value in [('>=', created_after), ('<=', created_before)]:
         if value:
