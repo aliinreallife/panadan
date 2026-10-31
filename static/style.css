@@ -948,7 +948,7 @@ doran-datepicker::part(dialog){
 .ui-multi-reset{background:#f1f6f2;color:#46705b;border:1px solid #d5e6da}
 .ui-multi-empty,.ui-multi-limit{color:#718b7e;font-size:12px;margin:12px 7px}
 @media(max-width:800px){
- .shell > .sidebar.mobile-nav-ready{row-gap:8px}
+ .shell > .sidebar.mobile-nav-ready{row-gap:8px;overflow:visible!important}
  .shell > .sidebar.mobile-nav-ready > nav{display:none!important}
  .shell > .sidebar .mobile-nav{
    grid-area:links;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
