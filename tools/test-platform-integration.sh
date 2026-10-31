@@ -16,7 +16,7 @@ command -v uv >/dev/null 2>&1 || {
 # Distinct name, loopback-only ephemeral port, no persistent volume.
 # Do NOT use docker run --rm here: an intentional database restart is part
 # of this test, and --rm may delete the stopped container.
-container="panadan-ci-pg-$"
+container="panadan-ci-pg-${BASHPID}"
 archive=""
 cleanup() {
   [[ -z "$archive" ]] || rm -f -- "$archive"
