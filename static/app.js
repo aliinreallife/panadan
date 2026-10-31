@@ -1,7 +1,7 @@
 import {parseTranscript} from './transcript.js';
 import {enhanceSelects} from './selects.js';
 import {registerPanadanWebMcp} from './webmcp.js';
-import {formatVoiceDuration, formatSourceCallClock, hasDisplayableDealValue} from './formatters.js';
+import {formatVoiceDuration, voiceDurationSegments, formatSourceCallClock, hasDisplayableDealValue} from './formatters.js';
 import {dialablePhone} from './phone.js';
 import {callTypeLabel, callStateLabel, knownTypeOptions, knownStateOptions} from './labels.js';
 'use strict';
@@ -32,7 +32,9 @@ const showError=error=>{const target=$('error');if(target){target.textContent=er
 const clearError=()=>{if($('error'))$('error').hidden=true;};
 const filters=()=>{
   const values=new URLSearchParams({limit,offset});
-  for(const key of ['after','before','state','call_type','operator','destination','team','created_after','created_before'])if($(key)?.value)values.set(key,$(key).value);
+  for(const key of ['after','before','state','call_type','operator','destination','team','direction'])if($(key)?.value)values.set(key,$(key).value);
+  const mode=document.querySelector('input[name="filter_mode"]:checked')?.value||'all';
+  values.set('filter_mode',profileOperator?'all':mode);
   if(profileOperator)values.set('operator',profileOperator);
   return values;
 };
@@ -87,9 +89,9 @@ async function load(){
 async function metrics(){
   if(!$('metric-total'))return;
   try{
-    const params=new URLSearchParams();
-    for(const key of ['after','before','created_after','created_before','operator','destination','team'])if($(key)?.value)params.set(key,$(key).value);
-    if(profileOperator)params.set('operator',profileOperator);
+    const params=filters();
+    params.delete('limit');
+    params.delete('offset');
     const data=await fetchJSON('/dashboard/metrics?'+params);
     $('metric-total').textContent=numberFormat(data.total);
     $('metric-sold').textContent=numberFormat(data.sold_out);
@@ -102,7 +104,17 @@ async function metrics(){
         ? numberFormat(data.scored_calls)+' از '+numberFormat(data.total)+' تماس دارای امتیاز'
         : 'میانگین صرفاً از تماس‌های دارای امتیاز';
     }
-    $('metric-length').textContent=formatVoiceDuration(data.avg_voice_length);
+    const duration=$('metric-length');
+    const units=voiceDurationSegments(data.avg_voice_length);
+    duration.replaceChildren();
+    if(!units.length)duration.textContent='—';
+    for(const [i,unit] of units.entries()){
+      if(i)duration.append(el('span','duration-join','و'));
+      const part=el('bdi','duration-part',unit);
+      part.dir='rtl';
+      duration.append(part);
+    }
+    duration.setAttribute('aria-label',formatVoiceDuration(data.avg_voice_length));
   }catch(error){showError(error)}
 }
 async function loadFilterOptions(){
@@ -120,7 +132,7 @@ async function loadFilterOptions(){
   };
   // Static fallback works even if distinct-value lookup is unavailable.
   let types=knownTypeOptions(),states=knownStateOptions();
-  let foundOperators=[],foundDestinations=['نامشخص'],foundTeams=['نامشخص'];
+  let foundOperators=[],foundDestinations=['نامشخص'],foundTeams=['نامشخص'],foundDirections=[];
   try{
     const found=await fetchJSON('/dashboard/filter-options');
     if(Array.isArray(found.call_types))types=[...new Set([...types,...found.call_types])];
@@ -128,11 +140,14 @@ async function loadFilterOptions(){
     if(Array.isArray(found.operators))foundOperators=found.operators;
     if(Array.isArray(found.destinations))foundDestinations=found.destinations;
     if(Array.isArray(found.teams))foundTeams=found.teams;
+    if(Array.isArray(found.directions))foundDirections=found.directions;
   }catch{
     // Filters remain functional with common known values.
   }
   makeOptions('call_type',types,callTypeLabel);
   makeOptions('state',states,callStateLabel);
+  // Raw source direction labels until upstream confirms incoming/outgoing codes.
+  makeOptions('direction',foundDirections,v=>String(v));
   const directory=Array.isArray(foundOperators)?foundOperators:[];
   makeOptions('operator',directory.map(v=>v.value),v=>operatorName(v));
   makeOptions('destination',foundDestinations,v=>v);
@@ -416,7 +431,9 @@ async function detail(id){
   }
 }
 function clearDates(){
-  for(const key of ['after','before','state','call_type','operator','destination','team','created_after','created_before']){
+  const all=document.querySelector('input[name="filter_mode"][value="all"]');
+  if(all)all.checked=true;
+  for(const key of ['after','before','state','call_type','operator','destination','team','direction']){
     if($(key))$(key).value='';
     const component=$(key+'-doran');if(component){component.removeAttribute('value');component.value=null;}
   }
@@ -424,7 +441,8 @@ function clearDates(){
 function initialize(){
   enhanceSelects();
   for(const key of ['after','before'])PanadanDate.attach(key);
-  for(const key of ['created_after','created_before'])PanadanDate.attachDateTime(key);
+  // The optional creation-time controls are removed from the dashboard.
+  // Legacy created_after/created_before API support stays server-side.
   const form=$('filters');if(form)form.onsubmit=event=>{event.preventDefault();offset=0;load();metrics()};
   if($('reset'))$('reset').onclick=()=>{clearDates();offset=0;load();metrics()};
   if($('refresh'))$('refresh').onclick=()=>{load();metrics()};
