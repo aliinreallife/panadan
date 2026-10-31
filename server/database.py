@@ -114,7 +114,14 @@ def filters(after: date | None, before: date | None, state: str | None,
                               else f'"{column}" = %s')
             select_args.append(value)
 
-    if operator == UNSPECIFIED:
+    if selected_facets is not None and operator:
+        # Fixed context (operator profile), never widened by OR report choices.
+        if operator == UNSPECIFIED:
+            date_parts.append(_operator_match([UNSPECIFIED], date_args))
+        else:
+            date_parts.append('"' + OPERATOR_COLUMN + '" = %s')
+            date_args.append(operator)
+    elif operator == UNSPECIFIED:
         selections.append(_operator_match([UNSPECIFIED], select_args))
     elif operator:
         selections.append('"' + OPERATOR_COLUMN + '" = %s')
@@ -151,22 +158,6 @@ def filters(after: date | None, before: date | None, state: str | None,
                 predicate = f'"{column}"::text = ANY(%s)' if key == 'directions' else f'"{column}" = ANY(%s)'
                 selections.append(predicate)
                 select_args.append(list(dict.fromkeys(values)))
-        if operator:
-            # Legacy single-operator scoping is not an OR term.
-            # Remove its existing predicate from the disjunction, then AND it
-            # outside so the profile cannot accidentally expand via other facets.
-            fixed = '"' + OPERATOR_COLUMN + '" = %s'
-            if operator == UNSPECIFIED:
-                fixed = _operator_match([UNSPECIFIED], [])
-            if operator != UNSPECIFIED and fixed in selections:
-                idx = selections.index(fixed)
-                selections.pop(idx)
-                select_args.remove(operator)
-            else:
-                selections = [p for p in selections if p != fixed]
-            date_parts.append(fixed)
-            if operator != UNSPECIFIED:
-                date_args.append(operator)
         filter_mode = 'any'
 
     if selections:
