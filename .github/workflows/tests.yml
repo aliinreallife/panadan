@@ -32,7 +32,7 @@ jobs:
       - name: Test transcript formatter
         run: node --test tests/*.test.mjs
       - name: Check browser JavaScript syntax
-        run: node --check static/app.js && node --check static/labels.js && node --check static/jalali.js && node --check static/webmcp.js && node --check static/selects.js && node --check static/activity.js
+        run: node --check static/app.js && node --check static/phone.js && node --check static/labels.js && node --check static/jalali.js && node --check static/webmcp.js && node --check static/selects.js && node --check static/activity.js
       - name: Compile dashboard assets
         run: npm ci --no-audit --no-fund && npm run build
       - name: Validate shell scripts
