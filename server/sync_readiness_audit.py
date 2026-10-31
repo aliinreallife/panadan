@@ -96,6 +96,11 @@ def inspect(*, sample: int = 100, explain: bool = True) -> dict:
         'identity_column_type': metadata['id']['data_type'] if 'id' in present else None,
         'creation_marker': 'create_date' if 'create_date' in present else None,
         'update_marker_candidates': [name for name in UPDATE_CANDIDATES if name in present],
+        'update_marker_details': [
+            {'name': name, 'data_type': metadata[name]['data_type'],
+             'nullable': metadata[name]['is_nullable'] == 'YES'}
+            for name in UPDATE_CANDIDATES if name in present
+        ],
         'deletion_marker_candidates': [name for name in DELETE_CANDIDATES if name in present],
         'sample': sampled,
         'plan_estimate': estimate,
