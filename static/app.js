@@ -162,7 +162,24 @@ async function load(){
       button.type='button';button.setAttribute('aria-label','مشاهده جزئیات تماس '+safe(item.id));
       button.onclick=()=>detail(item.id);td.append(button);tr.append(td);$('rows').append(tr);
     }
-    if(!data.items.length){const tr=el('tr'),td=el('td','muted','موردی پیدا نشد');td.colSpan=6;tr.append(td);$('rows').append(tr)}
+    if(!data.items.length){
+      const tr=el('tr');
+      const filtered=appliedFilterGroups(new URLSearchParams(requestKey)).length>0;
+      const message=offset>0
+        ? 'در این صفحه تماسی نیست. به صفحهٔ قبل برگردید.'
+        : filtered
+          ? 'با این فیلترها تماسی پیدا نشد. فیلترها یا بازهٔ زمانی را تغییر دهید.'
+          : 'هنوز تماسی برای نمایش ثبت نشده است.';
+      const td=el('td','muted report-empty-state',message);
+      td.colSpan=6;
+      if(filtered && offset===0){
+        const clear=el('button','secondary','پاک کردن فیلترها');
+        clear.type='button';
+        clear.onclick=()=>$('reset')?.click();
+        td.append(clear);
+      }
+      tr.append(td);$('rows').append(tr);
+    }
     shownCallsKey=requestKey;
     appliedCallsParams=new URLSearchParams(requestKey);
     renderAppliedFilterSummary();
