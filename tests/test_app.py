@@ -500,3 +500,41 @@ def test_reporting_sqlstate_logging_rejects_untrusted_code(client, caplog):
                 if record.name == 'panadan.reporting']
     assert messages == ['Reporting backend failed type=SecretError SQLSTATE=unknown']
     assert 'PRIVATE' not in str(messages)
+
+
+def test_dashboard_read_only_retry_recovers_from_one_transient_connection_error(client, monkeypatch):
+    """A single broken reporting connection does not make the report 503."""
+    import psycopg
+    c, main = client
+    admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    cookie, _ = main.store.create_session(admin)
+    c.cookies.set('panadan_session', cookie)
+    calls = []
+    def flaky_report(*args, **kwargs):
+        calls.append((args, kwargs))
+        if len(calls) == 1:
+            raise psycopg.OperationalError('private connection failure')
+        return [{'id': 42, 'CALLDATE': '2026-10-31'}]
+    monkeypatch.setattr(main.database, 'list_calls', flaky_report)
+    response = c.get('/dashboard/data?after=2026-10-01&state=Unchecked')
+    assert response.status_code == 200
+    assert response.json()['items'][0]['id'] == 42
+    assert len(calls) == 2
+    assert calls[0] == calls[1]
+
+
+def test_dashboard_does_not_retry_invalid_sql_or_validation_errors(client, monkeypatch):
+    import psycopg
+    c, main = client
+    admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    cookie, _ = main.store.create_session(admin)
+    c.cookies.set('panadan_session', cookie)
+    calls = []
+    def broken_report(*args, **kwargs):
+        calls.append(True)
+        raise psycopg.errors.UndefinedColumn('column unavailable')
+    monkeypatch.setattr(main.database, 'stats', broken_report)
+    response = c.get('/dashboard/metrics')
+    assert response.status_code == 503
+    assert len(calls) == 1
+    assert c.get('/dashboard/data?after=not-a-date').status_code == 422
