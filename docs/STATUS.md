@@ -187,3 +187,12 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Add synthetic diagnostic unit tests and a README troubleshooting decision tree.
 - [ ] Live user run of `./panadan.sh audit-fields` failed with `ConnectionTimeout` using both 300x3 and 100x1 sample scopes, despite a healthy VPN container and running pgrelay. This suggests a transport/handshake issue; not yet proven which network stage.
 - [ ] Run `./panadan.sh diagnose-db` on the WSL host, review its sanitized outputs and relay logs, and retry `audit-fields` only when PostgreSQL read-only SELECT succeeds.
+
+
+## Docker Desktop/WSL stale relay bind-mount fix (2026-10-31)
+
+- [x] Diagnose an OCI runtime mount failure for the old single-file `./tools/pgrelay.py:/relay/pgrelay.py:ro` after `git pull`; Docker Desktop's preexisting source reference was no longer resolvable.
+- [x] Change to a read-only directory mount `./tools:/relay:ro`, preserving the relay's isolated `network_mode: service:vpn` and localhost-only proxy port.
+- [x] Replace brittle `docker compose restart pgrelay` recovery advice with `./panadan.sh relay-recreate`, which forces creation of a fresh **relay-only** container and bind reference, leaving the VPN running.
+- [x] Add offline regression tests for mount stability and safe operator commands.
+- [ ] Confirm the new Compose mount and relay-only recreation work in the user's Windows/WSL Docker Desktop environment. The underlying VPN-to-PostgreSQL no-response issue #26 is independent.
