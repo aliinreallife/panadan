@@ -278,5 +278,5 @@ function enhanceSelect(select) {
 
 export function enhanceSelects(root=globalThis.document) {
   if(!root || typeof root.querySelectorAll!=='function')return;
-  for(const select of root.querySelectorAll('select:not([data-no-enhance])'))enhanceSelect(select);
+  for(const select of root.querySelectorAll('select:not([data-no-enhance]):not([multiple])'))enhanceSelect(select);
 }
