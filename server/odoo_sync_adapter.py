@@ -207,13 +207,16 @@ def read_change_page(source_conn, *, lower: datetime, upper: datetime,
     return values
 
 
-def initial_change_cursor(source_clock: datetime) -> dict:
+def initial_change_cursor(source_clock: datetime, *, marker: str = UPDATE_COLUMN) -> dict:
     """Seed *before* an ID backfill so concurrent source edits are not lost.
 
     Lower bound is deliberately earlier than backfill; later replay is safe.
     This does NOT establish that updates/deletes are reliably recorded.
     """
-    return {'completed_through': _iso(_utc(source_clock) - SAFETY_DELAY)}
+    if marker not in UPDATE_COLUMNS:
+        raise ValueError('Unsupported source marker')
+    return {'completed_through': _iso(_utc(source_clock) - SAFETY_DELAY),
+            'marker': marker}
 
 
 def id_next_cursor(rows: list[tuple[int, datetime, SourceEvent]],
@@ -236,8 +239,9 @@ def plan_change_window(cursor: dict, source_now: datetime, *,
     An overlap replays recent changes on the NEXT completed window, and
     digest-based ingestion avoids creating duplicate revisions.
     """
-    if not isinstance(cursor, dict) or 'completed_through' not in cursor:
-        raise ValueError('Seed change cursor before initial ID backfill')
+    if (not isinstance(cursor, dict) or 'completed_through' not in cursor
+        or cursor.get('marker') not in UPDATE_COLUMNS):
+        raise ValueError('Seed change cursor and source marker before initial ID backfill')
     completed = _parse(cursor['completed_through'])
     if overlap < timedelta(0) or settle < timedelta(0):
         raise ValueError('Invalid window timing')
@@ -262,10 +266,11 @@ def change_next_cursor(cursor: dict, window: tuple[datetime, datetime, tuple[dat
     _limit(limit)
     lower, upper, _ = window
     if len(rows) < limit:
-        return {'completed_through': _iso(upper)}
+        return {'completed_through': _iso(upper), 'marker': cursor['marker']}
     last_id, last_ts, _ = rows[-1]
     return {
         'completed_through': cursor['completed_through'],
+        'marker': cursor['marker'],
         'window': {
             'lower': _iso(lower), 'upper': _iso(upper),
             'last_ts': _iso(last_ts), 'last_id': last_id,
