@@ -44,12 +44,12 @@ def seed_update_stream(source_conn, owned_conn, *, mode: Mode,
     Requires an approved, explicitly enabled source. Cannot be used to reset
     an existing stream or to backfill an already-started ID import.
     """
-    src.validate_schema(source_conn, mode=mode)
+    marker = src.validate_schema(source_conn, mode=mode)
     if checkpoint(owned_conn, source_key=source_key, stream=BACKFILL_STREAM) is not None:
         raise ValueError('Cannot seed updates after ID import already started')
     if checkpoint(owned_conn, source_key=source_key, stream=UPDATES_STREAM) is not None:
         raise ValueError('Updates stream already seeded')
-    seed = src.initial_change_cursor(src.source_upper_bound(source_conn))
+    seed = src.initial_change_cursor(src.source_upper_bound(source_conn), marker=marker)
     ingest_batch(
         owned_conn, source_key=source_key, stream=UPDATES_STREAM,
         events=[], expected_cursor=None, next_cursor=seed,
@@ -65,17 +65,20 @@ def poll_id_page(source_conn, owned_conn, *, mode: Mode, limit: int = 100,
     larger than the saved cursor are fetched; existing row edits are fetched
     by the separate timestamp stream. Requires immutable monotonic source IDs.
     """
-    src.validate_schema(source_conn, mode=mode)
+    marker = src.validate_schema(source_conn, mode=mode)
     initial = checkpoint(owned_conn, source_key=source_key, stream=UPDATES_STREAM)
     if initial is None:
         raise ValueError('Seed update stream BEFORE initial ID import')
+    if marker != initial.get('marker'):
+        raise RuntimeError('Odoo update marker changed since source was seeded')
     before = checkpoint(owned_conn, source_key=source_key, stream=BACKFILL_STREAM)
     if before is not None and (set(before) != {'last_id'}
                                or type(before['last_id']) is not int
                                or before['last_id'] < 0):
         raise ValueError('Invalid existing ID checkpoint')
     last_id = 0 if before is None else before['last_id']
-    rows = src.read_id_page(source_conn, after_id=last_id, limit=limit, mode=mode)
+    rows = src.read_id_page(source_conn, after_id=last_id, limit=limit,
+                            mode=mode, marker=marker)
     after = src.id_next_cursor(rows, before)
     result = ingest_batch(
         owned_conn, source_key=source_key, stream=BACKFILL_STREAM,
@@ -92,10 +95,12 @@ def poll_update_page(source_conn, owned_conn, *, mode: Mode, limit: int = 100,
     No new-row data is missed purely due to a same-timestamp page boundary.
     Source times, upper bound and cursor are not derived from client clocks.
     """
-    src.validate_schema(source_conn, mode=mode)
+    marker = src.validate_schema(source_conn, mode=mode)
     before = checkpoint(owned_conn, source_key=source_key, stream=UPDATES_STREAM)
     if before is None:
         raise ValueError('Update cursor must be seeded before import')
+    if marker != before.get('marker'):
+        raise RuntimeError('Odoo update marker changed since source was seeded')
     now = src.source_upper_bound(source_conn)
     window = src.plan_change_window(before, now)
     if window is None:
@@ -103,7 +108,7 @@ def poll_update_page(source_conn, owned_conn, *, mode: Mode, limit: int = 100,
     lower, upper, position = window
     rows = src.read_change_page(
         source_conn, lower=lower, upper=upper,
-        position=position, mode=mode, limit=limit,
+        position=position, mode=mode, limit=limit, marker=marker,
     )
     after = src.change_next_cursor(before, window, rows, limit)
     result = ingest_batch(
