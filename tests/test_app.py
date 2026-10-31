@@ -18,6 +18,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(main.database, 'stats',lambda *a,**k:{'total':1,'sold_out':0,'scored_calls':1,'avg_ai_score':10,'avg_voice_length':20})
     monkeypatch.setattr(main.database, 'statuses',lambda *a,**k:['Unchecked','System Invalid'])
     monkeypatch.setattr(main.database, 'call_types',lambda *a,**k:['FollowUp','FirstToch'])
+    monkeypatch.setattr(main.database, 'directions',lambda *a,**k:['Incoming','Outgoing'])
     monkeypatch.setattr(main.database, 'operators',lambda *a,**k:['__unspecified__','Test Op','Other Op'])
     # Exercise dashboard/API permissions without restarting the singleton MCP
     # session manager, which the MCP SDK permits to run only once per process.
@@ -370,3 +371,76 @@ def test_token_datetime_rtl_order_and_utc_semantics(client):
     assert main.templates.env.filters['date_time_day'](epoch) == '2026-10-29'
     assert main.templates.env.filters['date_time_iso'](epoch).endswith('+00:00')
     assert main.templates.env.filters['date_time_clock'](None) == '—'
+
+
+def test_report_mode_is_report_only_and_reused_by_metrics(client, monkeypatch):
+    c, main = client
+    admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    cookie, csrf = main.store.create_session(admin)
+    c.cookies.set('panadan_session', cookie)
+    main.store.set_operator_assignment('Test Op', 'مشهد', 'غرب آسیا')
+    calls, metrics = [], []
+    def fake_list(*args, **kwargs):
+        calls.append((args, kwargs))
+        return []
+    def fake_stats(*args, **kwargs):
+        metrics.append((args, kwargs))
+        return {'total': 0, 'sold_out': 0, 'scored_calls': 0,
+                'avg_ai_score': None, 'avg_voice_length': None}
+    monkeypatch.setattr(main.database, 'list_calls', fake_list)
+    monkeypatch.setattr(main.database, 'stats', fake_stats)
+    qs = '?after=2026-10-01&operator=Other%20Op&direction=Incoming&destination=مشهد&team=غرب%20آسیا&state=Unchecked&filter_mode=any'
+    r = c.get('/dashboard/data' + qs)
+    assert r.status_code == 200
+    args, kw = calls[-1]
+    assert args[8] == 'Other Op'
+    assert args[9] is None
+    assert kw['filter_mode'] == 'any'
+    assert kw['direction'] == 'Incoming'
+    assert len(kw['any_operator_groups']) == 2
+    assert kw['any_operator_groups'][0] == ['Test Op']
+    assert kw['any_operator_groups'][1] == ['Test Op']
+    r = c.get('/dashboard/metrics' + qs)
+    assert r.status_code == 200
+    _, metric_kwargs = metrics[-1]
+    assert metric_kwargs['filter_mode'] == kw['filter_mode']
+    assert metric_kwargs['direction'] == kw['direction']
+    assert metric_kwargs['state'] == 'Unchecked'
+    assert metric_kwargs['any_operator_groups'] == kw['any_operator_groups']
+    assert c.get('/dashboard/data?filter_mode=unsafe').status_code == 422
+    assert c.get('/dashboard/metrics?filter_mode=unsafe').status_code == 422
+    assert c.get('/dashboard/filter-options').json()['directions'] == ['Incoming','Outgoing']
+
+
+def test_filters_template_removes_optional_creation_time_and_has_logic(client):
+    c, main = client
+    admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    cookie, _ = main.store.create_session(admin)
+    c.cookies.set('panadan_session', cookie)
+    page = c.get('/dashboard')
+    assert page.status_code == 200
+    assert 'فیلتر زمان ثبت (اختیاری)' not in page.text
+    assert 'id="created_after-doran"' not in page.text
+    assert 'id="direction"' in page.text
+    assert 'name="filter_mode" value="any"' in page.text
+    assert 'name="filter_mode" value="all"' in page.text
+    profile = c.get('/dashboard/operator?name=Test%20Op')
+    assert profile.status_code == 200
+    assert 'name="filter_mode" value="any"' not in profile.text
+
+
+def test_sticky_navigation_logout_available_on_all_admin_pages(client):
+    c, main = client
+    admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    cookie, _ = main.store.create_session(admin)
+    c.cookies.set('panadan_session', cookie)
+    for page in ['/dashboard','/dashboard/activity','/dashboard/connect',
+                 '/dashboard/tokens','/dashboard/users','/dashboard/operators',
+                 '/dashboard/api','/dashboard/oauth']:
+        response = c.get(page)
+        assert response.status_code == 200, page
+        assert 'action="/logout"' in response.text, page
+    css = __import__('pathlib').Path('static/style.css').read_text()
+    assert '.shell > .sidebar{' in css
+    assert 'position:sticky;top:0' in css
+    assert '.calls-panel tbody tr{' in css

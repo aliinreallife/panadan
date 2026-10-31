@@ -2,11 +2,10 @@
 // The upstream owner has confirmed voice_length is recorded in seconds.
 const faNumber = value => new Intl.NumberFormat('fa-IR').format(value);
 
-export function formatVoiceDuration(value) {
-  if (value === null || value === undefined || value === '') return '—';
+export function voiceDurationSegments(value) {
+  if (value === null || value === undefined || value === '') return [];
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) return '—';
-  // Averages can be fractional seconds; round once, for display only.
+  if (!Number.isFinite(n) || n < 0) return [];
   const total = Math.round(n);
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
@@ -15,10 +14,15 @@ export function formatVoiceDuration(value) {
   if (hours) parts.push(faNumber(hours) + ' ساعت');
   if (minutes) parts.push(faNumber(minutes) + ' دقیقه');
   if (seconds || !parts.length) parts.push(faNumber(seconds) + ' ثانیه');
-  return parts.join(' و ');
+  return parts;
 }
 
- 
+export function formatVoiceDuration(value) {
+  const parts = voiceDurationSegments(value);
+  return parts.length ? parts.join(' و ') : '—';
+}
+
+
 // Source semantics are still provisional: in 297 samples, call_time behaved
 // like seconds since Tehran midnight. This is a clock, never audio duration.
 // Keep API values unchanged; reject missing/out-of-range/non-integer values.

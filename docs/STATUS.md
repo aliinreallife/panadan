@@ -235,3 +235,14 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Keep original timezone semantics: call/record/activity displays use Tehran when applicable, token expiry and use retain labeled UTC values, no database/API transformation.
 - [x] Add Node locale/format/layout contract tests and a Python authenticated-token template smoke test for visual component order.
 - [ ] Perform actual Chrome/Android browser visual checks, including narrow layouts and the third-party Doran input internal layout.
+
+## Filter logic and responsive navigation/metrics polish (2026-10-31)
+
+- [x] Replace optional creation-time datepicker section in dashboard with a more deliberate AND/OR report filter. Existing `created_after`/`created_before` REST/dashboard parameters remain backward-compatible, but controls are no longer shown.
+- [x] Allow report filtering on source `tellside` direction codes as raw values without invented incoming/outgoing translations; operator, team, destination, type and status conditions can be combined via AND or OR, with date bounds always AND.
+- [x] Apply identical categorical conditions to dashboard KPI aggregates and call-list results. The operator-profile page remains in all-conditions mode; all filters are reports only and **are not** user authorization.
+- [x] Isolate Persian duration segments in RTL order instead of letting LTR metric typography reverse units (e.g., `۲ دقیقه و ۵۸ ثانیه`).
+- [x] Make desktop sidebar sticky with a visible logout footer; mobile navigation becomes a compact sticky two-row header with horizontally scrollable labeled tabs and a persistent logout button on all authenticated pages.
+- [x] Improve mobile report filters, activity error-only checkbox, touch targets, metric cards, and call-list presentation as small readable cards.
+- [x] Add synthetic tests for parameterized AND/OR SQL, date constraints, source direction type, matching KPI filters, unsupported mode validation and no-sensitive bypass.
+- [ ] Validate visually at 320/375/430px and desktop in actual Chrome/Android, including open searchable dropdowns and Doran datepickers; automated tests are not a replacement for device QA.

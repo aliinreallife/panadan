@@ -2,6 +2,7 @@
 from __future__ import annotations
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
+from typing import Literal
 import hmac
 import os
 import secrets
@@ -254,6 +255,19 @@ def directory_operator_names(destination: str | None = None,
             and (not team or entries.get(name,{}).get('team','نامشخص') == team)]
 
 
+def dashboard_filter_groups(destination: str | None, team: str | None,
+                            mode: str):
+    """Directory tags are query facets, NOT permission or access scopes."""
+    if mode == 'any':
+        groups = []
+        if destination:
+            groups.append(directory_operator_names(destination=destination))
+        if team:
+            groups.append(directory_operator_names(team=team))
+        return None, groups or None
+    return directory_operator_names(destination, team), None
+
+
 def operator_display(name: str) -> str:
     return 'نامشخص' if name == database.UNSPECIFIED else name
 
@@ -359,14 +373,17 @@ def dashboard_data(request: Request, limit: int = Query(20, ge=1, le=100),
                    destination: str | None = Query(None,max_length=80),
                    team: str | None = Query(None,max_length=80),
                    created_after: datetime | None = None, created_before: datetime | None = None,
+                   direction: str | None = Query(None,max_length=60),
+                   filter_mode: Literal['all', 'any'] = 'all',
                    session: dict = Depends(current_session)):
     required(session, 'calls:read')
     try:
-        names=directory_operator_names(destination,team)
+        names, groups = dashboard_filter_groups(destination, team, filter_mode)
         return {'items':database.list_calls(limit,offset,after,before,state,created_after,created_before,
-                                            call_type,operator,names)}
+                                            call_type,operator,names,
+                                            direction=direction,filter_mode=filter_mode,
+                                            any_operator_groups=groups)}
     except Exception as e: json_failure(e)
-
 
 @app.get('/dashboard/filter-options', include_in_schema=False)
 def dashboard_filter_options(session: dict = Depends(current_session)):
@@ -376,6 +393,7 @@ def dashboard_filter_options(session: dict = Depends(current_session)):
         assignments=store.operator_assignments()
         return {
             'states': database.statuses(), 'call_types': database.call_types(),
+            'directions': database.directions(),
             'operators':[{'value':name,'label':operator_display(name),
                           'destination':assignments.get(name,{}).get('destination','نامشخص'),
                           'team':assignments.get(name,{}).get('team','نامشخص')}
@@ -433,13 +451,18 @@ def dashboard_metrics(after: date | None = None, before: date | None = None,
                       operator: str | None = Query(None,max_length=180),
                       destination: str | None = Query(None,max_length=80),
                       team: str | None = Query(None,max_length=80),
+                      state: str | None = Query(None,max_length=60),
+                      call_type: str | None = Query(None,max_length=60),
+                      direction: str | None = Query(None,max_length=60),
+                      filter_mode: Literal['all', 'any'] = 'all',
                       session: dict = Depends(current_session)):
     required(session,'metrics:read')
     try:
-        names=directory_operator_names(destination,team)
-        return database.stats(after,before,created_after,created_before,operator,names)
+        names, groups = dashboard_filter_groups(destination, team, filter_mode)
+        return database.stats(after,before,created_after,created_before,operator,names,
+                              state=state,call_type=call_type,direction=direction,
+                              filter_mode=filter_mode,any_operator_groups=groups)
     except Exception as e: json_failure(e)
-
 
 @app.get('/api/v1/calls', dependencies=[Depends(require_api)], tags=['Calls'])
 def api_calls(limit: int = Query(20,ge=1,le=100), offset: int = Query(0,ge=0,le=10000),

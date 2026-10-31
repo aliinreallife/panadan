@@ -54,60 +54,100 @@ def connect():
             yield conn
 
 
+def _operator_match(names: list[str], args: list):
+    """Return fixed, parameterized predicate for locally assigned operators."""
+    names = list(dict.fromkeys(names))
+    included = [n for n in names if n != UNSPECIFIED]
+    missing = UNSPECIFIED in names
+    column = '"' + OPERATOR_COLUMN + '"'
+    empty = f'({column} IS NULL OR BTRIM({column}) = \'\')'
+    if included and missing:
+        args.append(included)
+        return f'({column} = ANY(%s) OR {empty})'
+    if included:
+        args.append(included)
+        return f'{column} = ANY(%s)'
+    if missing:
+        return empty
+    return 'FALSE'
+
+
 def filters(after: date | None, before: date | None, state: str | None,
             created_after: datetime | None = None, created_before: datetime | None = None,
             call_type: str | None = None, operator: str | None = None,
-            operator_names: list[str] | None = None):
-    parts, args = [], []
-    if after: parts.append('"CALLDATE" >= %s'); args.append(after)
-    if before: parts.append('"CALLDATE" <= %s'); args.append(before)
-    if state: parts.append('"aicallinfostate" = %s'); args.append(state)
-    if call_type: parts.append('"tellstate" = %s'); args.append(call_type)
-    if operator == UNSPECIFIED:
-        parts.append('(' + '"' + OPERATOR_COLUMN + '" IS NULL OR BTRIM("' + OPERATOR_COLUMN + '") = \'\')')
-    elif operator:
-        parts.append('"' + OPERATOR_COLUMN + '" = %s'); args.append(operator)
-    if operator_names is not None:
-        names = [n for n in operator_names if n != UNSPECIFIED]
-        missing = UNSPECIFIED in operator_names
-        if names and missing:
-            parts.append('("' + OPERATOR_COLUMN + '" = ANY(%s) OR "' +
-                         OPERATOR_COLUMN + '" IS NULL OR BTRIM("' + OPERATOR_COLUMN + '") = \'\')')
-            args.append(names)
-        elif names:
-            parts.append('"' + OPERATOR_COLUMN + '" = ANY(%s)'); args.append(names)
-        elif missing:
-            parts.append('("' + OPERATOR_COLUMN + '" IS NULL OR BTRIM("' + OPERATOR_COLUMN + '") = \'\')')
-        else:
-            parts.append('FALSE')
-    # Working interpretation: Odoo create_date is UTC-naive, with display in
-    # Asia/Tehran. A 297-record read-only clock comparison strongly supports
-    # this, but the view owner has not confirmed the source's formal contract.
-    # Convert aware ISO inputs to UTC-naive for comparisons; revisit only
-    # after verifying source timezone semantics.
+            operator_names: list[str] | None = None, *,
+            direction: str | None = None, filter_mode: str = 'all',
+            any_operator_groups: list[list[str]] | None = None):
+    """Date range always AND; selected categorical filters can use AND or OR.
+
+    Directory assignments are report facets, not row-level authorization.
+    This function must never be reused to implement security policy.
+    """
+    if filter_mode not in ('all', 'any'):
+        raise ValueError('Invalid filter mode')
+    date_parts, date_args, selections, select_args = [], [], [], []
+    if after:
+        date_parts.append('"CALLDATE" >= %s')
+        date_args.append(after)
+    if before:
+        date_parts.append('"CALLDATE" <= %s')
+        date_args.append(before)
+
+    # Odoo create_date is strongly inferred to be UTC-naive.
+    # This optional legacy API filter stays supported, but is removed from UI.
     from datetime import timezone
     for op, value in [('>=', created_after), ('<=', created_before)]:
         if value:
-            if value.tzinfo is None: value = value.replace(tzinfo=ZoneInfo('Asia/Tehran'))
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=ZoneInfo('Asia/Tehran'))
             value = value.astimezone(timezone.utc).replace(tzinfo=None)
-            parts.append(f'"create_date" {op} %s')
-            args.append(value)
-    return (' WHERE ' + ' AND '.join(parts)) if parts else '', args
+            date_parts.append(f'"create_date" {op} %s')
+            date_args.append(value)
+
+    for column, value in [('aicallinfostate', state),
+                          ('tellstate', call_type), ('tellside', direction)]:
+        if value:
+            # tellside may be a numeric enum; the UI sends string option values.
+            # Compare its textual representation without guessing enum mappings.
+            selections.append(f'"{column}"::text = %s' if column == 'tellside'
+                              else f'"{column}" = %s')
+            select_args.append(value)
+
+    if operator == UNSPECIFIED:
+        selections.append(_operator_match([UNSPECIFIED], select_args))
+    elif operator:
+        selections.append('"' + OPERATOR_COLUMN + '" = %s')
+        select_args.append(operator)
+
+    if operator_names is not None:
+        selections.append(_operator_match(operator_names, select_args))
+    if any_operator_groups is not None:
+        for group in any_operator_groups:
+            selections.append(_operator_match(group, select_args))
+
+    if selections:
+        separator = ' OR ' if filter_mode == 'any' else ' AND '
+        date_parts.append('(' + separator.join(selections) + ')')
+    return (' WHERE ' + ' AND '.join(date_parts)) if date_parts else '', date_args + select_args
 
 
 def list_calls(limit: int = 20, offset: int = 0, after: date | None = None,
                before: date | None = None, state: str | None = None,
                created_after: datetime | None = None, created_before: datetime | None = None,
                call_type: str | None = None, operator: str | None = None,
-               operator_names: list[str] | None = None):
+               operator_names: list[str] | None = None, *,
+               direction: str | None = None, filter_mode: str = 'all',
+               any_operator_groups: list[list[str]] | None = None):
     limit = max(1, min(int(limit), 100))
     offset = max(0, min(int(offset), 10000))
     if after and before and after > before: raise ValueError('Invalid date range')
     if state and len(state) > 60: raise ValueError('Invalid state')
     if call_type and len(call_type) > 60: raise ValueError('Invalid call type')
+    if direction and len(direction) > 60: raise ValueError('Invalid direction')
     if operator and len(operator) > 180: raise ValueError('Invalid operator')
     if created_after and created_before and created_after > created_before: raise ValueError('Invalid time range')
-    where, params = filters(after, before, state, created_after, created_before, call_type, operator, operator_names)
+    where, params = filters(after, before, state, created_after, created_before, call_type, operator, operator_names,
+                            direction=direction, filter_mode=filter_mode, any_operator_groups=any_operator_groups)
     q = ('SELECT ' + ','.join('"' + c + '"' for c in PUBLIC_COLUMNS) +
          ' FROM ' + VIEW + where + ' ORDER BY "CALLDATE" DESC NULLS LAST, id DESC LIMIT %s OFFSET %s')
     with connect() as c:
@@ -159,8 +199,14 @@ def transcript_excerpt(call_id: int, char_limit: int = 6000,
 
 def stats(after: date | None = None, before: date | None = None,
           created_after: datetime | None = None, created_before: datetime | None = None,
-          operator: str | None = None, operator_names: list[str] | None = None):
-    where, params = filters(after, before, None, created_after, created_before, operator=operator, operator_names=operator_names)
+          operator: str | None = None, operator_names: list[str] | None = None,
+          *, state: str | None = None, call_type: str | None = None,
+          direction: str | None = None, filter_mode: str = 'all',
+          any_operator_groups: list[list[str]] | None = None):
+    where, params = filters(after, before, state, created_after, created_before,
+                            call_type=call_type, operator=operator, operator_names=operator_names,
+                            direction=direction, filter_mode=filter_mode,
+                            any_operator_groups=any_operator_groups)
     q = ('SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE "aicallinfostate" = %s) AS sold_out, '
          'COUNT("possibility_of_sale_ai") AS scored_calls, '
          'ROUND(AVG("possibility_of_sale_ai")::numeric, 1) AS avg_ai_score, '
@@ -175,6 +221,14 @@ def statuses():
     with connect() as c:
         rows = c.execute('SELECT DISTINCT "aicallinfostate" AS value FROM ' + VIEW +
                          ' WHERE "aicallinfostate" IS NOT NULL ORDER BY value LIMIT 100').fetchall()
+    return [r['value'] for r in rows]
+
+
+def directions():
+    """Distinct source direction codes. Meaning not yet upstream-verified."""
+    with connect() as c:
+        rows = c.execute('SELECT DISTINCT "tellside" AS value FROM ' + VIEW +
+                         ' WHERE "tellside" IS NOT NULL ORDER BY value LIMIT 100').fetchall()
     return [r['value'] for r in rows]
 
 
