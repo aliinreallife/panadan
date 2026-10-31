@@ -164,3 +164,29 @@ secrets out of issues, PRs, CI, and chats.
 3. **Authorization:** before team/operator RBAC, default-deny unmapped records and enforce the same scope on dashboard list/detail-by-ID, REST, MCP, WebMCP, transcript excerpts and aggregates. Require cross-team bypass tests.
 4. **DB account:** a source privilege audit detected effective `CREATE` on `public` inherited from `PUBLIC`. The application is read-only, but a DBA must remediate least privilege after dependency review. Do **not** automatically REVOKE production grants.
 5. **Deployment:** verify live MCP identity/permission propagation, OAuth consent/TLS configuration, Doran input behavior, and the device dialer with non-production test calls.
+
+
+## Call-detail presentation policy (2026-10-31)
+
+The dashboard now requests `call_time` from the reporting view only in
+**individual call details** (including the existing authorized detail APIs).
+List queries, aggregates, transcript tools and operator filters stay unchanged.
+The detail UI renders a provisional `HH:MM` Persian-digit clock when the
+source is an integer from 0 through 86,399. It labels the value
+**«ساعت تماس (طبق مبدأ)»**, notes that Tehran locality is inferred, and
+**does not claim that it marks the beginning, answer or end of a call**.
+Missing or invalid values are displayed as an em dash. The raw API number is
+preserved for consumers.
+
+To avoid implying revenue from unverified source values, the detail UI
+suppresses `deal_value=0`; nonzero amounts remain marked unverified and
+are shown without guessing their currency. The API preserves its raw
+`deal_value` field unchanged. The UI must never use the short internal
+`tellnum` code as a phone-number fallback; sensitive `customertell`
+remains the only authorized `tel:` source.
+
+Mobile detail drawer polish includes compact RTL metadata cards, accessible
+close button, keyboard Escape / Tab containment, returning focus to the
+invoking control, scroll-lock while open and stale-request cancellation.
+This is a code-level accessibility enhancement; physical mobile and
+screen-reader verification is still required.
