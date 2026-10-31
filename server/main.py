@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from starlette import status
 
 from . import database
+from .reporting_retries import read_with_retry
 from .transcript_ai import transcript_for_ai, MAX_TRANSCRIPT_CHARS
 from .mcp_tools import mcp
 from mcp.server.transport_security import TransportSecuritySettings
@@ -329,7 +330,7 @@ def operator_profile(request: Request, name: str = Query(...,min_length=1,max_le
 @app.get('/dashboard/operators', response_class=HTMLResponse, include_in_schema=False)
 def operators_page(request: Request, session: dict = Depends(current_session)):
     required(session,'calls:read')
-    try: names=database.operators()
+    try: names=read_with_retry(database.operators)
     except Exception as e: json_failure(e)
     assignments=store.operator_assignments()
     entries=[{
@@ -413,10 +414,10 @@ def dashboard_data(request: Request, limit: int = Query(20, ge=1, le=100),
     try:
         selected, groups = dashboard_multi_facets(
             operators, state, call_type, direction, destination, team)
-        return {'items': database.list_calls(
+        return {'items': read_with_retry(lambda: database.list_calls(
             limit, offset, after, before, None, created_after, created_before,
             operator=operator, filter_mode='any', selected_facets=selected,
-            any_operator_groups=groups)}
+            any_operator_groups=groups))}
     except Exception as e: json_failure(e)
 
 @app.get('/dashboard/filter-options', include_in_schema=False)
@@ -426,8 +427,8 @@ def dashboard_filter_options(session: dict = Depends(current_session)):
         names=database.operators()
         assignments=store.operator_assignments()
         return {
-            'states': database.statuses(), 'call_types': database.call_types(),
-            'directions': database.directions(),
+            'states': read_with_retry(database.statuses), 'call_types': read_with_retry(database.call_types),
+            'directions': read_with_retry(database.directions),
             'operators':[{'value':name,'label':operator_display(name),
                           'destination':assignments.get(name,{}).get('destination','نامشخص'),
                           'team':assignments.get(name,{}).get('team','نامشخص')}
@@ -464,7 +465,7 @@ def browser_ai_transcript(call_id: int, offset: int = Query(0,ge=0,le=2147483646
 def dashboard_public_call_overview(call_id: int, session: dict = Depends(current_session)):
     """Metadata-only lookup for browser agents; never fetch sensitive columns."""
     required(session, 'calls:read')
-    try: result = database.get_call(call_id, sensitive=False)
+    try: result = read_with_retry(lambda: database.get_call(call_id, sensitive=False))
     except Exception as e: json_failure(e)
     if not result: raise HTTPException(404, 'Call not found')
     return JSONResponse(result, headers={'Cache-Control': 'no-store'})
@@ -473,7 +474,7 @@ def dashboard_public_call_overview(call_id: int, session: dict = Depends(current
 @app.get('/dashboard/data/{call_id}', include_in_schema=False)
 def dashboard_detail(call_id: int, session: dict = Depends(current_session)):
     required(session,'calls:read')
-    try: result = database.get_call(call_id, sensitive=has_capability(session,'calls:sensitive'))
+    try: result = read_with_retry(lambda: database.get_call(call_id, sensitive=has_capability(session,'calls:sensitive')))
     except Exception as e: json_failure(e)
     if not result: raise HTTPException(404, 'Call not found')
     return JSONResponse(result, headers={'Cache-Control':'no-store'})
@@ -494,10 +495,10 @@ def dashboard_metrics(after: date | None = None, before: date | None = None,
     try:
         selected, groups = dashboard_multi_facets(
             operators, state, call_type, direction, destination, team)
-        return database.stats(
+        return read_with_retry(lambda: database.stats(
             after, before, created_after, created_before, operator,
             state=None, filter_mode='any', selected_facets=selected,
-            any_operator_groups=groups)
+            any_operator_groups=groups))
     except Exception as e: json_failure(e)
 
 @app.get('/api/v1/calls', dependencies=[Depends(require_api)], tags=['Calls'])
