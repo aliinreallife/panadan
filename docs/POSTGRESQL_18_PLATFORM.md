@@ -102,7 +102,7 @@ an expected restriction is missing or a sensitive table privilege appears;
 treat a failed check as a release blocker. It is a baseline permission audit,
 not a substitute for a full DBA review.
 
-- `panadan_ingest_writer` can read source enablement and write only
+- The source-enablement check uses `panadan_ingest.lock_source_for_ingest(text)`, an explicitly granted, owner-executed, fixed-query row lock. PostgreSQL requires UPDATE privilege for direct `SELECT ... FOR SHARE`, so granting direct source-registry UPDATE to the runtime writer would violate the security boundary. `roles-apply` reapplies the additive foundation migration to install this helper on databases initialized before it existed.\n- `panadan_ingest_writer` can read source enablement and write only
   the current records, revisions, jobs, facts and checkpoints needed by
   the ingestion/processing libraries. It **cannot** create tables,
   register sources or enable a disabled source, and cannot delete raw history.
