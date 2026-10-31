@@ -274,3 +274,21 @@ def test_admin_templates_keep_login_ltr_and_user_editing_collapsed(client):
     dashboard = c.get('/dashboard')
     assert dashboard.status_code == 200
     assert 'class="filters report-filters"' in dashboard.text
+
+
+def test_favicon_and_voice_unit_are_available(client):
+    c, _ = client
+    icon = c.get('/static/favicon.svg')
+    assert icon.status_code == 200
+    assert 'image/svg+xml' in icon.headers['content-type']
+    assert 'Panadan' in icon.text
+    html = c.get('/login').text
+    assert '/static/favicon.svg' in html
+    templates = Path('templates')
+    for name in (
+        'login.html', 'dashboard.html', 'operators.html', 'tokens.html',
+        'api.html', 'oauth.html', 'connect.html', 'users.html', 'activity.html'
+    ):
+        assert 'rel="icon" type="image/svg+xml"' in (templates / name).read_text()
+    assert 'میانگین مدت صوت' in (templates / 'dashboard.html').read_text()
+    assert 'ارزش معامله (تأییدنشده)' in Path('static/app.js').read_text()
