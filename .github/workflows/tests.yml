@@ -67,7 +67,7 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --dev --python 3.13
       - name: PostgreSQL transactional ingestion tests (synthetic only)
-        run: uv run --locked python -m pytest -q tests/test_platform_ingest.py
+        run: uv run --locked python -m pytest -q tests/test_platform_ingest.py tests/test_platform_role_permissions.py
 
   docker-build:
     # Validate the same production images before merging a major SDK upgrade.
