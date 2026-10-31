@@ -1146,3 +1146,92 @@ doran-datepicker::part(dialog){
  .shell > .sidebar .mobile-nav{gap:5px;padding-inline:7px}
  .shell > .sidebar .mobile-nav-text{font-size:10px}
 }
+
+
+/* 2026-10-31 detail polish: separate background layers, consistent 2x2 cards. */
+.detail-grid{gap:20px}
+.detail-overview{
+  padding:24px;background:#f7faf8;border:1px solid #deebe3;
+  box-shadow:0 5px 22px #183b2909;
+}
+.detail-overview .detail-section-title{margin-bottom:17px;color:#285846}
+.detail-overview .detail-chips{gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.detail-overview .detail-chip{
+  padding:15px 17px;min-height:82px;
+  background:#fff;border:1px solid #dae7df;
+  border-radius:13px;gap:6px;
+  box-shadow:0 1px 4px #15392907;
+}
+.detail-overview .detail-chip-label{font-size:11px;color:#718c7d;line-height:1.7}
+.detail-overview .detail-chip strong{font-size:15px;line-height:1.65}
+.detail-overview .detail-chip-score .detail-score-value{color:#177659;font-variant-numeric:tabular-nums}
+/* In an RTL grid the second column is on the physical LEFT.
+   Keep the exact date/time copy, clock to the right of the date. */
+.detail-overview .detail-chip-datetime{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;
+  grid-template-areas:"title timestamp" "note note";
+  align-items:center;gap:9px 18px;grid-column:1/-1;min-height:112px;
+  background:#fff;border-color:#d9e7dd;
+}
+.detail-chip-datetime > .detail-chip-label{grid-area:title;align-self:center;font-size:12px}
+.detail-chip-datetime .call-datetime{
+  grid-area:timestamp;justify-self:end;align-self:center;
+  display:inline-flex;gap:20px;max-width:100%;min-width:0;
+}
+.detail-chip-datetime .datetime-clock{color:#18694f}
+.detail-chip-datetime .datetime-date{color:#556e60}
+.detail-chip-datetime .detail-clock-hint{
+  grid-area:note;margin:0;color:#809489;font-size:11px;
+  border-top:1px solid #eef2ef;padding-top:7px;line-height:1.7;
+}
+@media(max-width:600px){
+ .detail-overview{padding:17px}
+ .detail-overview .detail-chips{gap:10px}
+ .detail-overview .detail-chip{min-height:75px;padding:12px}
+ .detail-overview .detail-chip-datetime{gap:8px 10px}
+ .detail-chip-datetime .call-datetime{gap:13px}
+ .detail-chip-datetime .datetime-clock{font-size:20px}
+ .detail-chip-datetime .datetime-date{font-size:15px}
+}
+@media(max-width:390px){
+ .detail-overview .detail-chips{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .detail-overview .detail-chip-datetime{
+   grid-template-columns:1fr;grid-template-areas:"title" "timestamp" "note";
+ }
+ .detail-chip-datetime .call-datetime{justify-self:end;flex-wrap:wrap}
+ .detail-overview .detail-chip{padding:10px;min-width:0}
+ .detail-overview .detail-chip strong{font-size:13px}
+}
+
+/* Dropdown polish: avoid dual focus outlines and unwanted background bleed. */
+.ui-multi-popup[hidden]{display:none!important}
+.ui-multi-popup{padding:12px;gap:10px;border-color:#d7e6dd}
+.ui-multi-search{
+  border:1px solid #d7e7dd;border-radius:10px;background:#f8fbf9;
+  padding:9px 12px;outline:0;box-shadow:none;min-height:44px;
+}
+.ui-multi-search:focus,.ui-multi-search:focus-visible{
+  outline:0;border-color:#238868;box-shadow:0 0 0 2px #23886825;background:#fff;
+}
+.ui-multi-options{display:grid;align-content:start;gap:4px;padding:2px;min-height:0}
+.ui-multi-option{min-height:44px;border-radius:10px;padding:10px 12px}
+.ui-multi-option[aria-selected="true"]{
+  background:#e5f5ec;color:#146b4e;
+}
+.ui-multi-check{width:18px;text-align:center}
+.ui-multi-trigger{gap:10px;min-height:45px}
+.ui-multi-trigger > span:last-child{
+  font-size:0;display:inline-flex;align-items:center;
+  width:20px;height:20px;flex:none;justify-content:center;
+}
+.ui-multi-trigger > span:last-child::before{
+  content:"";width:8px;height:8px;border-inline-end:2px solid #557f6a;
+  border-bottom:2px solid #557f6a;transform:rotate(45deg) translateY(-2px);
+  transition:transform .15s ease;
+}
+.ui-multi-trigger[aria-expanded="true"] > span:last-child::before{
+  transform:rotate(225deg) translateY(-2px);
+}
+@media(max-width:600px){
+ .ui-multi-popup{border-radius:18px 18px 0 0;padding:15px 14px calc(14px + env(safe-area-inset-bottom,0px))}
+}
