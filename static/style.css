@@ -985,3 +985,93 @@ doran-datepicker::part(dialog){
  .mobile-nav-glyph{font-size:16px}
  .ui-multi-popup{padding:8px}
 }
+
+
+/* Compact reporting layout: controls occupy two rows on desktop.
+   Two-column phone layout avoids one oversized empty row per filter. */
+.filter-panel{padding:17px 19px 14px}
+.filter-panel .panel-head{margin:0 0 12px;gap:12px;align-items:flex-start}
+.filter-panel .panel-head h2{font-size:16px;line-height:1.5}
+.filter-panel .panel-head p{font-size:11px;line-height:1.65;margin:3px 0 0;max-width:57ch}
+.filter-panel .panel-head .tag{font-size:10px;padding:4px 9px}
+.filter-panel .filters{margin:0}
+.report-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px 12px;align-items:end}
+.report-filters > label{min-width:0!important;min-height:0;gap:5px;
+  font-size:11px;line-height:1.5;font-weight:700}
+.report-filters .doran-datepicker,.report-filters doran-datepicker{
+  display:block;min-width:0!important;width:100%!important;max-width:100%;
+}
+.report-filters .ui-multi-trigger{min-height:42px;padding:8px 10px;font-size:12px}
+.filter-actions{display:flex;grid-column:1 / -1;align-items:center;
+  justify-content:flex-start;gap:8px;margin-top:2px;flex-wrap:wrap}
+.filter-actions button{min-height:40px;padding:8px 17px;font-size:12px;
+  flex:0 0 auto}
+.filter-actions .primary{min-width:132px}
+.filter-actions .secondary{min-width:85px}
+.report-filters .ui-multi-value{font-size:12px}
+.ui-multi-trigger:focus-visible,.mobile-nav-tab:focus-visible{
+  outline:3px solid #9fddb6;outline-offset:2px
+}
+@media(max-width:1200px){
+ .report-filters{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:950px){
+ .report-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:800px){
+ .shell > .sidebar.mobile-nav-ready{
+   padding:6px 10px 7px;row-gap:5px;box-shadow:0 3px 14px #0b2f2730;
+   grid-template-columns:minmax(0,1fr) auto;
+ }
+ .shell > .sidebar.mobile-nav-ready .logo{
+   font-size:14px;max-height:34px;min-width:0;overflow:hidden
+ }
+ .shell > .sidebar.mobile-nav-ready .brand-mark.small{width:27px;height:27px}
+ .shell > .sidebar.mobile-nav-ready .logo b{display:none}
+ .shell > .sidebar.mobile-nav-ready .side-footer{min-height:32px}
+ .shell > .sidebar.mobile-nav-ready .side-footer .link-button{
+   min-height:32px;min-width:54px;padding:4px 9px;font-size:11px
+ }
+ .shell > .sidebar .mobile-nav{gap:5px}
+ .shell > .sidebar .mobile-nav-tab{
+   min-height:38px;flex-direction:row;gap:0;font-size:11px;
+   border-radius:9px;padding:6px 3px;line-height:1.3;letter-spacing:-.1px
+ }
+ .shell > .sidebar .mobile-nav-glyph{display:none}
+ .shell > .sidebar .mobile-nav-text{font-size:inherit}
+ .content{padding-top:14px}
+ .page-head{margin-bottom:15px;gap:10px}
+ .page-head h1{font-size:clamp(21px,5vw,25px);margin:2px 0}
+ .metrics{margin-bottom:12px}
+ .metric{min-height:104px}
+ .panel{margin-bottom:12px}
+ .filter-panel{padding:14px}
+ .filter-panel .panel-head{margin-bottom:11px}
+ .report-filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:11px 9px}
+ .report-filters > label{min-width:0!important}
+ .filter-actions{gap:8px}
+ .filter-actions button{flex:1 1 0;min-width:0}
+ .filter-panel .panel-head .tag{display:none}
+}
+@media(max-width:600px){
+ .report-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .report-filters > label{width:100%;min-width:0!important;flex:none}
+ .filter-actions{flex-direction:row}
+ .filter-actions button{width:auto;min-height:41px}
+ .ui-multi-popup{
+   left:0!important;right:0!important;top:auto!important;
+   bottom:0!important;width:100%!important;max-height:min(70dvh,560px)!important;
+   border-radius:18px 18px 0 0;padding:15px 15px calc(12px + env(safe-area-inset-bottom,0px));
+   box-shadow:0 -12px 60px #0b352b45
+ }
+ .ui-multi-option{min-height:46px;font-size:13px}
+ .ui-multi-footer button{min-height:44px}
+ .ui-multi-search{min-height:45px}
+}
+@media(max-width:350px){
+ .filter-panel{padding:12px}
+ .report-filters{gap:10px 7px}
+ .report-filters > label{font-size:10px}
+ .report-filters .ui-multi-trigger{font-size:11px;padding-inline:8px}
+ .shell > .sidebar .mobile-nav-tab{font-size:10px}
+}
