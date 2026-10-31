@@ -3,6 +3,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 cmd="${1:-help}"; shift || true
 umask 077
+# Dispatch the platform DB CLI before even reading source/app configuration.
+if [[ "$cmd" == "platform-db" ]]; then
+  exec bash tools/platform-db.sh "$@"
+fi
 if [[ -f .env.app ]]; then
   port="$(sed -n 's/^PANADAN_HTTP_PORT=//p' .env.app | tail -1 | tr -d '\r')"
   proxy_port="$(sed -n 's/^PANADAN_PG_PROXY_PORT=//p' .env.app | tail -1 | tr -d '\r')"
@@ -57,10 +61,6 @@ case "$cmd" in
     export PANADAN_COOKIE_SECURE=false
     uv run --locked --env-file .env.db --env-file .env.app \
       uvicorn server.main:app --host 127.0.0.1 --port "$port" --no-proxy-headers "$@"
-    ;;
-  platform-db)
-    # Independent, opt-in local PG18 management. Never check Odoo credentials.
-    bash tools/platform-db.sh "$@"
     ;;
   vpn-up) check_config; compose_dev up -d --no-build; compose_dev ps ;;
   relay-recreate)
