@@ -109,6 +109,15 @@ case "$cmd" in
     uv run --locked --env-file .env.db --env-file .env.app \
       python -m server.source_semantics_audit "$@"
     ;;
+  audit-sync)
+    # Read-only catalog metadata, <=300 ID samples and optional EXPLAIN (never ANALYZE).
+    check_config; require_uv; lock_if_needed
+    compose_dev up -d --no-build
+    export PGHOST=127.0.0.1
+    export PGPORT="$proxy_port"
+    uv run --locked --env-file .env.db --env-file .env.app \
+      python -m server.sync_readiness_audit "$@"
+    ;;
   diagnose-db)
     # Distinguish a healthy tunnel from an actually reachable PostgreSQL server.
     # Never emit DB credentials or customer reporting rows.
@@ -138,7 +147,7 @@ case "$cmd" in
     done
     ;;
   *)
-    echo 'Usage: ./panadan.sh {setup|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|audit-db|audit-fields|audit-semantics|diagnose-db|relay-recreate|diagnose}'
+    echo 'Usage: ./panadan.sh {setup|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|check|audit-db|audit-fields|audit-semantics|audit-sync|diagnose-db|relay-recreate|diagnose}'
     echo 'dev = native WSL uv FastAPI + Docker-isolated VPN; up = GHCR production images'
     ;;
 esac
