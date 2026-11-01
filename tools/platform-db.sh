@@ -115,6 +115,8 @@ SELECT 'active_sources=' || count(*) FROM panadan_ingest.sources WHERE enabled;"
     set +x
     need_docker; check_env; require_up; assert_pg18
     command -v openssl >/dev/null 2>&1 || fail "openssl is required for password rotation."
+    command -v python3 >/dev/null 2>&1 || fail "python3 is required to derive SCRAM credentials locally."
+    [[ -s tools/scram_secret.py ]] || fail "SCRAM derivation helper is missing."
     identity="$(run_psql -A -t -c "SELECT current_database() || ':' || current_user;" 2>/dev/null)" ||
       fail "Cannot verify database identity for rotation."
     [[ "$identity" == "panadan:panadan_owner" ]] ||
@@ -138,6 +140,12 @@ SELECT 'active_sources=' || count(*) FROM panadan_ingest.sources WHERE enabled;"
       fail "Could not generate a new random password."
     [[ "$new_secret" =~ ^[[:xdigit:]]{64}$ ]] ||
       fail "Generated password format was invalid."
+    # Compute a salted verifier locally. The SQL command contains the SCRAM
+    # verifier, NEVER the raw password; only the private env file holds it.
+    new_verifier="$(printf '%s' "$new_secret" | python3 tools/scram_secret.py)" ||
+      fail "Could not derive a PostgreSQL SCRAM verifier."
+    [[ "$new_verifier" == SCRAM-SHA-256\$* ]] ||
+      fail "Derived SCRAM verifier format was invalid."
     while IFS= read -r line || [[ -n "$line" ]]; do
       case "$line" in
         PANADAN_PLATFORM_DB_PASSWORD=*)
@@ -146,10 +154,9 @@ SELECT 'active_sources=' || count(*) FROM panadan_ingest.sources WHERE enabled;"
       esac
     done < "$ENV_FILE"
 
-    # Apply the server change over local stdin, not through Docker argv.
-    # Suppress server SQL diagnostics because some errors could reproduce
-    # the submitted ALTER statement containing the secret.
-    if ! printf "ALTER ROLE panadan_owner PASSWORD '%s';\n" "$new_secret" |
+    # Apply the pre-hashed SCRAM verifier over local stdin, not argv.
+    # PostgreSQL stores correctly formatted SCRAM verifiers as-is.
+    if ! printf "ALTER ROLE panadan_owner PASSWORD '%s';\n" "$new_verifier" |
          run_psql --single-transaction >/dev/null 2>&1; then
       fail "PostgreSQL rejected password rotation; existing config was retained."
     fi
@@ -158,14 +165,16 @@ SELECT 'active_sources=' || count(*) FROM panadan_ingest.sources WHERE enabled;"
       # An OS rename error leaves the original credentials in the env file.
       # Best-effort restore the server password to avoid a split-brain state.
       previous_secret="$(sed -n 's/^PANADAN_PLATFORM_DB_PASSWORD=//p' "$ENV_FILE")"
-      if ! printf "ALTER ROLE panadan_owner PASSWORD '%s';\n" "$previous_secret" |
+      previous_verifier="$(printf '%s' "$previous_secret" | python3 tools/scram_secret.py)" ||
+        fail "Configuration update failed; could not prepare safe password rollback."
+      if ! printf "ALTER ROLE panadan_owner PASSWORD '%s';\n" "$previous_verifier" |
            run_psql --single-transaction >/dev/null 2>&1; then
         fail "Configuration update failed and password rollback failed; recover via local owner socket."
       fi
       fail "Configuration update failed; database password restored to the previous value."
     fi
     staged=""
-    unset new_secret
+    unset new_secret new_verifier
     check_env
 
     # POSTGRES_PASSWORD in a running container does not automatically change
