@@ -64,3 +64,33 @@ def test_offline_auth_schema_requires_existing_file(tmp_path):
         capture_output=True, text=True, timeout=8,
     )
     assert result.returncode == 2
+
+
+def test_auth_role_rehearsal_checks_individual_grants_and_denies_ingestion():
+    script = (ROOT / "tools/verify-offsite-platform-restore.sh").read_text()
+    assert 'GRANTS_SQL="$6"' in script
+    assert '"--auth-grants"' in script
+    assert "CREATE ROLE panadan_auth_runtime NOLOGIN" in script
+    assert "has_table_privilege('panadan_auth_runtime','panadan_auth.users','SELECT')" in script
+    assert "has_table_privilege('panadan_auth_runtime','panadan_auth.users','INSERT')" in script
+    assert "has_table_privilege('panadan_auth_runtime','panadan_auth.users','UPDATE')" in script
+    assert "has_table_privilege('panadan_auth_runtime','panadan_auth.users','DELETE')" in script
+    assert "has_table_privilege('panadan_auth_runtime','panadan_auth.users','TRUNCATE')" in script
+    assert "has_table_privilege('panadan_auth_runtime','panadan_ingest.sources','SELECT')" in script
+    assert "SET ROLE panadan_auth_runtime" in script
+    assert '--network none' in script
+
+
+def test_invalid_auth_grants_path_refused_without_docker(tmp_path):
+    script = ROOT / "tools/verify-offsite-platform-restore.sh"
+    archive, identity, schema = (
+        tmp_path / "backup.age", tmp_path / "identity", tmp_path / "schema.sql"
+    )
+    for p in (archive, identity, schema):
+        p.write_bytes(b"synthetic placeholder")
+    result = subprocess.run(
+        ["bash", str(script), str(archive), str(identity),
+         "--auth-schema", str(schema), "--auth-grants", str(tmp_path / "missing.sql")],
+        capture_output=True, text=True, timeout=8,
+    )
+    assert result.returncode == 2
