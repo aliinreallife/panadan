@@ -83,6 +83,11 @@ The operator ran **read-only checks** on the existing VPS and verified:
 
 Neither the local dump nor the previously backed-up SQLite auth snapshot may be used as proof of a complete off-site disaster-recovery procedure. No production `pg_dump` timer is enabled.
 
+
+### Off-VPS recovery drill completed (2026-11-01)
+
+The operator ran the `tools/verify-offsite-platform-restore.sh` helper on a local WSL computer using the age-encrypted PostgreSQL dump. The isolated PostgreSQL 18 restore completed successfully: seven `panadan_ingest` tables, zero sources, and no `panadan_auth` schema. The ephemeral container was deleted. A prior decryption stream SHA-256 comparison with the original VPS dump matched. This confirms that the *pre-auth* platform database backup is recoverable. The live SQLite account store has not been migrated or restored to PostgreSQL. Automation, separate key escrow, post-migration auth backup and end-to-end application recovery are still pending.
+
 ## Production cutover: deliberately NOT implemented yet
 
 1. **Confirm the owned PG18 instance exists on the VPS**, its image
