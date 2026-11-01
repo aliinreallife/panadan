@@ -351,11 +351,18 @@ def apply() -> None:
 
 def initialize_platform() -> None:
     # Fresh deployments only. No application or Plane container is touched.
-    if run("docker", "ps", "--filter", "name=^/panadan-platform-db-1$",
+    # Unlike a simple process check, ps -a also catches stopped containers.
+    # Never mistake a stopped/failed production DB for a new installation.
+    if run("docker", "ps", "-a", "--filter", "name=^/panadan-platform-db-1$",
            "--format", "{{.Names}}"):
-        raise Refusal("Platform PostgreSQL already exists; cannot initialize fresh")
-    if not (ROOT / ".env.platform").exists():
-        run("bash", "tools/platform-db.sh", "setup")
+        raise Refusal("Existing (including stopped) owned PostgreSQL container: treat as recovery")
+    if run("docker", "volume", "ls", "--filter",
+           "name=^panadan-platform_panadan_platform_pg18_data$",
+           "--format", "{{.Name}}"):
+        raise Refusal("Existing owned PostgreSQL data volume: treat as recovery")
+    if (ROOT / ".env.platform").exists() or (ROOT / ".env.platform.roles").exists():
+        raise Refusal("Existing platform credentials: confirm recovery, not fresh initialization")
+    run("bash", "tools/platform-db.sh", "setup")
     run("bash", "tools/platform-db.sh", "up", timeout=150)
     run("bash", "tools/platform-db.sh", "init")
     if not (ROOT / ".env.platform.roles").exists():
@@ -373,11 +380,13 @@ def main() -> int:
                         help="Explicitly acknowledge independent off-VPS PG restore")
     parser.add_argument("--approve-live-network", action="store_true",
                         help="Explicitly approve non-restart Docker network attachment")
+    parser.add_argument("--approve-new-db", action="store_true",
+                        help="Explicitly approve fresh owned database creation")
     args = parser.parse_args()
     try:
         if args.command == "init-platform":
-            if not args.approve_live_network:
-                raise Refusal("First-time DB startup requires --approve-live-network")
+            if not args.approve_new_db:
+                raise Refusal("First-time DB startup requires --approve-new-db")
             initialize_platform()
             return 0
         preflight()
