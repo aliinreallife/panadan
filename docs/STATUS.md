@@ -1,4 +1,52 @@
-# Panadan v0.6 status
+# Panadan status — deployment update 2026-11-01
+
+> This page retains historical v0.6–v0.8 milestones below. The current VPS
+> operations snapshot is in [PRODUCTION_OPERATIONS.md](PRODUCTION_OPERATIONS.md).
+> Remote ChatGPT/Claude OAuth is still **not enabled or proven**, despite the
+> working public HTTPS dashboard.
+
+## Verified production (operator-reported, 2026-11-01)
+
+- [x] `https://dan.panafor.com/healthz` HTTP 200 with valid TLS.
+- [x] `/login` HTTP 200; operator verified real sign-in and call data.
+- [x] Secure Cookie and explicit `PANADAN_PUBLIC_ORIGIN=https://dan.panafor.com`.
+- [x] Shared Plane Caddy proxy recreated using an external Compose override,
+  private `panadan-edge` gateway network and read-only bound Caddyfile; original
+  Plane `/data` and `/config` volumes preserved.
+- [x] Plane `/` and original `/intake.html` remained HTTP 200 after cutover.
+- [x] Source PostgreSQL VPN route verified via `tun0` and web container pinned
+  to local image `panadan-web:cac4b36`.
+- [x] Consistent local SQLite auth backup with integrity check, age encryption
+  and manual off-VPS copy to WSL.
+- [ ] Compare decrypted off-site backup SHA-256 to *same* VPS plaintext snapshot;
+  an isolated full restoration and verified recovery key escrow remain pending.
+- [ ] Daily automated off-site backup and failure monitoring (#55).
+- [ ] Align reviewed repository production entrypoints with hardened Compose
+  files; the existing VPS-local `prodctl.sh` works, but bare `panadan.sh up`
+  would omit secure overlays without new guardrails (#56).
+- [ ] Configure a compatible external OAuth authorization server (#57) and verify
+  protected-resource metadata / 401 challenges (#58); no production OAuth mode yet.
+- [ ] Validate ChatGPT, Claude and Codex interoperability and per-user
+  authorization, including transcript rights (#23, #59, #64).
+- [ ] Secure source view update marker `updated_at` / `sync_updated_at`,
+  including joined-table edits, timezone and stable IDs (#60), then supervised
+  backfill + changed-old-record polling (#61). **No live sync enabled**.
+- [ ] Preserve custom Plane `intake.html` across future Web container rebuilds (#62).
+- [ ] Full disaster recovery, source DBA least privilege, CI and UI verification
+  (#63, #22, #44, #24).
+
+## Reviewable changes (not deployed)
+
+- [Draft docs PR #66](https://github.com/aliinreallife/panadan/pull/66):
+  production runbook and [MCP client plan](MCP_CLIENTS.md).
+- [Draft ops PR #67](https://github.com/aliinreallife/panadan/pull/67):
+  production guardrails, encrypted backup tooling, versioned optional timer.
+- [Draft MCP PR #68](https://github.com/aliinreallife/panadan/pull/68):
+  discovery preflight and offline route/401 contract tests.
+
+---
+
+# Historical Panadan v0.6 status
 
 ## Delivered and merged to main
 
