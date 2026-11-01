@@ -15,7 +15,8 @@
 
 The proposed target uses a dedicated `panadan_auth` schema in **Panadan's
 owned PostgreSQL only**, separate from `panadan_ingest`. No runtime user
-has been given grants to this schema yet. Do not use the PostgreSQL
+has been given grants to this schema yet. A reviewed grant template is present,
+but role provisioning and production use are intentionally manual and pending. Do not use the PostgreSQL
 `panadan_owner` privileged credentials as the web/worker runtime role.
 
 ## Phase 1 code
@@ -25,6 +26,7 @@ has been given grants to this schema yet. Do not use the PostgreSQL
   PUBLIC privilege revocations. The SQL refuses databases other than
   `panadan` or `panadan_ci` and requires PostgreSQL major version 18.
   It is additive/idempotent and creates no external connectors.
+- `database/permissions/003_auth_runtime_role.sql`: opt-in, idempotent DML-only grants to a separately provisioned `panadan_auth_runtime` role. It does **not** create login credentials or activate runtime access, and may not be applied to Odoo.
 - `server/auth_pg_migration.py`: checks an offline, consistent SQLite
   backup using `PRAGMA integrity_check`, validates table columns and
   user ownership, then prints only table counts. **No connection to
@@ -58,7 +60,7 @@ uv run --locked python -m server.auth_pg_migration \
 bash tools/test-platform-integration.sh
 ```
 
-The standalone test runner starts a disposable PostgreSQL 18 `panadan_ci`
+The synthetic test also verifies that a dedicated auth runtime role can use auth DML but cannot create/truncate schema objects or read ingestion tables.\n\nThe standalone test runner starts a disposable PostgreSQL 18 `panadan_ci`
 container and never reaches the production account store. It uses
 `PANADAN_PLATFORM_TEST_DSN` and explicit reset guard. Live
 `--apply-to-disposable` also requires a **separate**
