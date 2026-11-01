@@ -1,0 +1,14 @@
+[Unit]
+Description=Panadan encrypted off-site auth SQLite backup
+Wants=docker.service network-online.target
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/panadan/backup.env
+WorkingDirectory=/home/panafor/panadan
+ExecStartPre=/usr/bin/bash /home/panafor/panadan/tools/backup-auth-offsite.sh --check
+ExecStart=/usr/bin/bash /home/panafor/panadan/tools/backup-auth-offsite.sh
+TimeoutStartSec=30min
+NoNewPrivileges=true
