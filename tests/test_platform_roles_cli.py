@@ -73,6 +73,12 @@ def test_role_provisioning_only_via_explicit_owner_db_stdin():
     assert 'cat "$SQL_FILE"' in sh
     assert 'cat "$FOUNDATION_SQL"' in sh
     assert "has_function_privilege" in sh
+    assert 'writer_verifier="$(printf' in sh and 'reader_verifier="$(printf' in sh
+    assert 'python3 tools/scram_secret.py' in sh
+    assert 'SHOW log_statement;' in sh
+    assert '"$writer_verifier"' in sh and '"$reader_verifier"' in sh
+    assert "No Odoo" in sh
+
 
 
 def test_roles_check_fails_closed_on_privilege_drift(tmp_path):

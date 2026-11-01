@@ -270,6 +270,8 @@ install an independent PostgreSQL server or client on WSL.
 ./panadan.sh platform-db init
 ./panadan.sh platform-db check
 ./panadan.sh platform-db backup
+# After review, if owner credentials were exposed:
+./panadan.sh platform-db rotate-password
 ./panadan.sh platform-db down
 ```
 
