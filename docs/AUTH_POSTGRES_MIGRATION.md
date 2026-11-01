@@ -88,6 +88,24 @@ Neither the local dump nor the previously backed-up SQLite auth snapshot may be 
 
 The operator ran the `tools/verify-offsite-platform-restore.sh` helper on a local WSL computer using the age-encrypted PostgreSQL dump. The isolated PostgreSQL 18 restore completed successfully: seven `panadan_ingest` tables, zero sources, and no `panadan_auth` schema. The ephemeral container was deleted. A prior decryption stream SHA-256 comparison with the original VPS dump matched. This confirms that the *pre-auth* platform database backup is recoverable. The live SQLite account store has not been migrated or restored to PostgreSQL. Automation, separate key escrow, post-migration auth backup and end-to-end application recovery are still pending.
 
+## Optional offline rehearsal after successful restore
+
+To rehearse migration 003 against the same verified backup **without touching the VPS**, run from WSL with local Docker. Fetch the current PR branch, then use the encrypted backup and the existing local age private identity. Both the restored database and the proposed schema are confined to a disposable `--network none` PostgreSQL 18 container. This is still a schema-only rehearsal: accounts remain in SQLite.
+
+```bash
+cd ~/panadan
+git fetch origin feat/pg18-auth-foundation-and-migration
+git show FETCH_HEAD:tools/verify-offsite-platform-restore.sh > /tmp/panadan-restore-check.sh
+git show FETCH_HEAD:database/migrations/003_auth_foundation.sql > /tmp/panadan-auth-schema-test.sql
+bash -n /tmp/panadan-restore-check.sh
+bash /tmp/panadan-restore-check.sh \
+  "$HOME/backups/panadan/panadan-20261101T130707Z-673d8eb3.dump.age" \
+  "$HOME/.config/age/panadan-identity.txt" \
+  --auth-schema /tmp/panadan-auth-schema-test.sql
+```
+
+Expected: original 7 ingestion tables and zero sources pass restoration checks; the proposed DDL creates exactly eight auth tables; the original seven ingestion tables remain. This does **not** exercise auth data import, restricted runtime grants, connection routing, or an application cutover. Do not run the SQL against production as part of this rehearsal.
+
 ## Production cutover: deliberately NOT implemented yet
 
 1. **Confirm the owned PG18 instance exists on the VPS**, its image
