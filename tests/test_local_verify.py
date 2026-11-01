@@ -27,9 +27,10 @@ def _project(tmp_path):
         stub.write_text(
             '#!/usr/bin/env bash\n'
             'set -euo pipefail\n'
-            'if [[ "$1" == "run" ]]; then\n'
-            '  [[ -z "${PGHOST:-}" && -z "${PANADAN_PLATFORM_TEST_DSN:-}" ]] || exit 67\n'
-            'fi\n'
+            '# Every tool must run without inherited DB connection data.\n'
+            '[[ -z "${PGHOST:-}" && -z "${PGPORT:-}" && -z "${PGUSER:-}" ]] || exit 67\n'
+            '[[ -z "${PGPASSWORD:-}" && -z "${PGDATABASE:-}" ]] || exit 67\n'
+            '[[ -z "${PANADAN_PLATFORM_TEST_DSN:-}" && -z "${PANADAN_PLATFORM_TEST_ALLOW_RESET:-}" ]] || exit 67\n'
             'printf "%s %s\\n" "' + name + '" "$*" >> "$MOCK_VERIFY_LOG"\n'
         )
         stub.chmod(0o700)
@@ -37,7 +38,12 @@ def _project(tmp_path):
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
     env["MOCK_VERIFY_LOG"] = str(tmp_path / "verify.log")
     env["PGHOST"] = "not-a-real-source"
+    env["PGPORT"] = "9999"
+    env["PGUSER"] = "synthetic-do-not-connect"
+    env["PGPASSWORD"] = "mock-do-not-connect"
+    env["PGDATABASE"] = "mock-do-not-connect"
     env["PANADAN_PLATFORM_TEST_DSN"] = "not-a-real-platform"
+    env["PANADAN_PLATFORM_TEST_ALLOW_RESET"] = "YES"
     return env
 
 
