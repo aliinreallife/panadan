@@ -72,10 +72,35 @@ git pull --ff-only
 
 If a checkout has lost the executable file mode, `bash ./panadan.sh setup` can run the Bash script without executing it directly. The repository and CI now track/check its executable permission.
 
+## Owned PostgreSQL authentication infrastructure
+
+For the private production stack, use the guarded **single-command
+setup** instead of manually connecting Docker networks and provisioning
+PostgreSQL roles. It does not migrate existing SQLite accounts or restart
+Plane, Panadan or the VPN:
+
+```bash
+# Requires a reviewed, independent off-VPS PG backup and restored copy.
+sudo bash ./panadan.sh owned-pg plan
+sudo bash ./panadan.sh owned-pg apply --ack-restored-backup --approve-live-network
+sudo bash ./panadan.sh owned-pg verify
+```
+
+For a completely new owned PG database only (no stopped container/volume),
+`sudo bash ./panadan.sh owned-pg init-platform --approve-new-db`
+creates the standalone PG18 service and its restricted ingest/report roles.
+See `docs/ONE_COMMAND_OWNED_PG_SETUP.md` for safeguards and the remaining
+manual steps to deploy private ingress and OAuth.
+
+**Important:** On the hardened production server, bare `panadan.sh up/down`
+now refuses to run because it omits the private HTTPS overlays. Use the
+reviewed production deployment controller instead.
+
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
+| `./panadan.sh owned-pg plan/apply/verify` | Guarded owned PostgreSQL auth and network infrastructure setup (no auth cutover) |
 | `./panadan.sh setup` | `uv sync --locked --dev`, npm dependencies and frontend assets |
 | `./panadan.sh dev` | Local WSL FastAPI with isolated Docker VPN relay |
 | `./panadan.sh test` | Python unit/integration tests (synthetic test data) |
