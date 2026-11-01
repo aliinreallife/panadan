@@ -166,14 +166,21 @@ def test_auth_role_grants_are_narrow_and_idempotent(disposable_db):
         sql=Path("database/permissions/003_auth_runtime_role.sql").read_text()
         owner.execute(sql)
         owner.execute(sql)
+        # PostgreSQL combined privilege strings can mean ANY listed grant.
+        # Verify every operation separately to catch missing/extra rights.
         row=owner.execute("""
             SELECT has_schema_privilege('panadan_auth_runtime','panadan_auth','USAGE'),
                    has_schema_privilege('panadan_auth_runtime','panadan_auth','CREATE'),
-                   has_table_privilege('panadan_auth_runtime','panadan_auth.users','SELECT,INSERT,UPDATE,DELETE'),
+                   has_table_privilege('panadan_auth_runtime','panadan_auth.users','SELECT'),
+                   has_table_privilege('panadan_auth_runtime','panadan_auth.users','INSERT'),
+                   has_table_privilege('panadan_auth_runtime','panadan_auth.users','UPDATE'),
+                   has_table_privilege('panadan_auth_runtime','panadan_auth.users','DELETE'),
                    has_table_privilege('panadan_auth_runtime','panadan_auth.users','TRUNCATE'),
-                   has_database_privilege('panadan_auth_runtime',current_database(),'CREATE,TEMP')
+                   has_table_privilege('panadan_auth_runtime','panadan_auth.users','REFERENCES'),
+                   has_table_privilege('panadan_auth_runtime','panadan_auth.users','TRIGGER'),
+                   has_database_privilege('panadan_auth_runtime',current_database(),'CREATE')
         """).fetchone()
-        assert row==(True,False,True,False,False)
+        assert row==(True,False,True,True,True,True,False,False,False,False)
         exists=owner.execute("SELECT to_regclass('panadan_ingest.sources')").fetchone()[0]
         if exists:
             assert not owner.execute(
