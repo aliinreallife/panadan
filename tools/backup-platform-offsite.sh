@@ -69,7 +69,9 @@ if [[ $# -eq 1 ]]; then
 fi
 
 # Prevent parallel timer/manual snapshots. Never alter database deployment state.
-exec 9>"$ROOT/data/.panadan-platform-offsite.lock"
+LOCK_FILE="${PANADAN_PLATFORM_BACKUP_LOCK_FILE:-/run/lock/panadan-platform-offsite.lock}"
+[[ ! -L "$LOCK_FILE" ]] || die "Backup lock file must not be a symlink"
+exec 9>"$LOCK_FILE"
 flock -n 9 || die "Another owned PostgreSQL backup is running"
 
 WORK="$(mktemp -d -t panadan-platform-backup-XXXXXXXX)" || die "Cannot create protected temporary directory"
