@@ -189,3 +189,94 @@ def test_auth_role_grants_are_narrow_and_idempotent(disposable_db):
             limited.execute("CREATE TABLE panadan_auth.forbidden(id INT)")
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             limited.execute("TRUNCATE panadan_auth.users")
+
+
+def test_pg_store_sessions_tokens_permissions_and_revocation(disposable_db):
+    from server.security_pg import PgStore
+    store=PgStore(disposable_db)
+    store.bootstrap("admin","synthetic-test-admin-password")
+    admin=store.verify_login("admin","synthetic-test-admin-password")
+    assert admin
+    assert store.verify_login("admin","wrong") is None
+    user=store.create_user("analyst_1","synthetic-test-analyst-password","analyst")
+    raw,csrf=store.create_session(user)
+    assert store.session(raw)["csrf"]==csrf
+    assert store.session(raw)["user_id"]==user
+    store.logout(raw)
+    assert store.session(raw) is None
+    tid,token=store.create_token("mcp","mcp:read",owner_id=user)
+    assert store.verify_token(token,"mcp:read") is True
+    assert store.verify_token(token,"api:read") is False
+    assert store.actor_for_token(token,"mcp:read")==user
+    assert store.verify_token("fake-token","mcp:read") is False
+    assert store.mcp_profile(legacy_token=token)["id"].startswith("prf_")
+    store.update_user(user,"reader",["calls:read"],True,admin)
+    assert store.verify_token(token,"mcp:read") is False
+    assert store.mcp_profile(legacy_token=token) is None
+    assert store.list_users()[0]["role"]=="admin"
+    with pytest.raises(ValueError,match="own admin"):
+        store.update_user(admin,"reader",None,True,admin)
+    store.revoke(tid)
+
+
+def test_pg_store_oauth_transcript_audit_and_profile(disposable_db):
+    from server.security_pg import PgStore
+    store=PgStore(disposable_db)
+    store.bootstrap("admin","synthetic-test-admin-password")
+    admin=store.verify_login("admin","synthetic-test-admin-password")
+    reader=store.create_user("mcp_reader","synthetic-test-reader-password","analyst")
+    issuer="https://identity.example.test/realms/panadan"
+    subject="sub-immutable-123"
+    binding=store.bind_oauth_identity(issuer,subject,reader)
+    assert store.oauth_identity_has_mcp_access(issuer,subject)
+    assert store.actor_for_oauth(issuer,subject)==reader
+    profile=store.mcp_profile(oauth_issuer=issuer,oauth_subject=subject)
+    assert profile["id"].startswith("prf_")
+    assert store.authorized_transcript_actor(oauth_issuer=issuer,
+                                             oauth_subject=subject) is None
+    assert not store.audit_transcript_request(
+        user_id=reader,surface="mcp",call_id=1,char_limit=100,
+    )
+    store.update_user(
+        reader,"analyst",["mcp:use","calls:read","metrics:read",
+                          "calls:transcript:read"],True,admin
+    )
+    assert store.actor_for_oauth(issuer,subject) is None
+    new_binding=store.bind_oauth_identity(issuer,subject,reader)
+    assert new_binding != binding
+    assert store.mcp_profile(oauth_issuer=issuer,oauth_subject=subject)==profile
+    assert store.authorized_transcript_actor(oauth_issuer=issuer,
+                                             oauth_subject=subject)==reader
+    assert store.audit_transcript_request(
+        user_id=reader,surface="mcp",call_id=42,char_limit=500,
+    )
+    assert store.list_transcript_audit()[0]["call_id"]==42
+    store.revoke_oauth_identity(issuer,new_binding)
+    assert store.actor_for_oauth(issuer,subject) is None
+
+
+def test_pg_store_throttle_reporting_and_operator_metadata(disposable_db):
+    from server.security_pg import PgStore
+    store=PgStore(disposable_db)
+    store.bootstrap("admin","synthetic-test-admin-password")
+    uid=store.verify_login("admin","synthetic-test-admin-password")
+    for n in range(6):
+        store.record_login_failure("admin",now=1700000000+n)
+    assert store.login_is_throttled("admin",now=1700000006)
+    store.clear_login_failures("admin")
+    assert not store.login_is_throttled("admin",now=1700000006)
+    store.set_operator_assignment("synthetic operator","west","team")
+    assert store.operator_assignments()["synthetic operator"]["destination"]=="west"
+    store.set_operator_assignment("synthetic operator","","")
+    assert "synthetic operator" not in store.operator_assignments()
+    store.record_activity(user_id=uid,surface="auth",action="LOGIN test",
+                          http_status=200,duration_ms=12)
+    store.record_activity(user_id=uid,surface="api",action="GET synthetic",
+                          http_status=403,duration_ms=14)
+    report=store.activity_report(days=7)
+    assert report["total"]==2
+    assert report["errors"]==1
+    assert report["active_users"]==1
+    assert len(report["recent"])==2
+    assert store.activity_report(days=7,errors_only=True)["total"]==1
+    assert store.activity_report(days=7,surface="auth")["total"]==1
