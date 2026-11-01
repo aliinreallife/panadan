@@ -136,6 +136,38 @@ print("External DB network:", c["networks"]["auth_db"]["name"])
 Expected VPN networks: `auth_db`, `default`, and the existing ingress
 network; Web mode: `service:vpn`. Never print environment variables.
 
+## Read-only network audit helper
+
+`tools/check_auth_db_network.py` audits current Docker state without
+connecting or restarting containers. It checks that PostgreSQL and VPN are
+healthy, original networks persist, PostgreSQL ports bind loopback only,
+the proposed network is an internal bridge with **no Plane/gateway access**,
+and the existing Odoo source route still uses `tun0`. It does not display
+environment variables or customer data.
+
+On the VPS, retrieve the checked-in script from this PR **without switching
+your active production branch or overwriting local Compose files**:
+
+```bash
+cd ~/panadan
+git fetch origin ops/private-auth-postgres-network
+git show FETCH_HEAD:tools/check_auth_db_network.py > /tmp/panadan-check-auth-network.py
+
+# Before attaching anything (read-only):
+sudo python3 /tmp/panadan-check-auth-network.py --stage before
+```
+
+`--stage before` passes when the new network is absent or exists as an empty
+internal bridge. If either container is already attached, the script refuses
+the `before` stage; inspect state rather than trying to connect again.
+After an explicitly approved network change, run the same script with
+`--stage after`. Only the expected DB/VPN members and hostname alias pass.
+
+**Neither command creates a network or connects a container.** They cannot
+verify PostgreSQL TCP reachability; the separate ephemeral Python
+`socket.create_connection` smoke test below checks that, after controlled
+attachment. Keep the existing production services online throughout.
+
 ## Future staged connection procedure — NOT automatic
 
 1. Confirm a verified, off-VPS PostgreSQL backup and a separate recovery
