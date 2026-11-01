@@ -8,12 +8,19 @@ umask 077
 ARCHIVE="${1:-}"
 IDENTITY="${2:-}"
 IMAGE="postgres:18.6-alpine3.24@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5"
-NAME="panadan-restore-test-$-$(openssl rand -hex 5)"
+NAME="panadan-restore-test-$(openssl rand -hex 12)"
 DB_USER="panadan_owner"
 DB_NAME="panadan"
 
-if [[ "$#" != 2 || ! -f "$ARCHIVE" || ! -f "$IDENTITY" ]]; then
-  printf 'Usage: bash %s /path/to/panadan.dump.age /path/to/age-identity.txt\n' "$0" >&2
+SCHEMA_SQL=""
+if [[ "$#" == 4 && "${3:-}" == "--auth-schema" && -f "${4:-}" ]]; then
+  SCHEMA_SQL="$4"
+elif [[ "$#" != 2 ]]; then
+  echo "Usage: bash $0 /path/to/panadan.dump.age /path/to/age-identity.txt [--auth-schema /path/to/003_auth_foundation.sql]" >&2
+  exit 2
+fi
+if [[ ! -f "$ARCHIVE" || ! -f "$IDENTITY" ]]; then
+  echo "Backup archive or age identity file not found" >&2
   exit 2
 fi
 
@@ -89,4 +96,34 @@ SELECT (SELECT count(*) FROM panadan_ingest.sources),
   exit 1
 }
 echo "PASS: off-VPS PostgreSQL 18 restore succeeded: 7 ingest tables, 0 sources, no auth schema"
+
+if [[ -n "$SCHEMA_SQL" ]]; then
+  # Apply only inside the disposable no-network cluster, with SQL errors fatal.
+  docker exec -i "$NAME" psql -X -v ON_ERROR_STOP=1 -1 \
+    -U "$DB_USER" -d "$DB_NAME" < "$SCHEMA_SQL" >/dev/null
+
+  auth_tables="$(docker exec "$NAME" psql -X -A -t -v ON_ERROR_STOP=1 \
+    -U "$DB_USER" -d "$DB_NAME" -c "
+SELECT count(*)
+FROM information_schema.tables
+WHERE table_schema='panadan_auth' AND table_type='BASE TABLE';
+")"
+  [[ "$auth_tables" == "8" ]] || {
+    echo "FAIL: expected exactly eight auth tables after local migration" >&2
+    exit 1
+  }
+
+  ingest_tables="$(docker exec "$NAME" psql -X -A -t -v ON_ERROR_STOP=1 \
+    -U "$DB_USER" -d "$DB_NAME" -c "
+SELECT count(*)
+FROM information_schema.tables
+WHERE table_schema='panadan_ingest' AND table_type='BASE TABLE';
+")"
+  [[ "$ingest_tables" == "7" ]] || {
+    echo "FAIL: existing ingestion tables changed during local migration" >&2
+    exit 1
+  }
+  echo "PASS: additive auth schema applied ONLY in disposable restore (8 auth + 7 ingest tables)"
+fi
+
 echo "PASS: local disposable database is destroyed automatically after check"
