@@ -168,7 +168,23 @@ verify PostgreSQL TCP reachability; the separate ephemeral Python
 `socket.create_connection` smoke test below checks that, after controlled
 attachment. Keep the existing production services online throughout.
 
-## Future staged connection procedure — NOT automatic
+## Preferred automated setup (supersedes manual connection commands)
+
+After merging the consolidated PR, use the guarded single entry point:
+
+```bash
+sudo bash ./panadan.sh owned-pg plan
+sudo bash ./panadan.sh owned-pg apply --ack-restored-backup --approve-live-network
+sudo bash ./panadan.sh owned-pg verify
+```
+
+Read `docs/ONE_COMMAND_OWNED_PG_SETUP.md`. The separate manual
+`docker network create/connect` sequence below is an **emergency-only
+reference**, not the recommended production path. This command also
+installs the reviewed additive auth schema and restricted role after
+its new private network passes source routing and HTTPS checks.
+
+## Manual fallback and rollback (not the default setup)
 
 1. Confirm a verified, off-VPS PostgreSQL backup and a separate recovery
    key. Run current role and health checks. Never recreate, change or delete
