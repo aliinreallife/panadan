@@ -66,7 +66,7 @@ export PANADAN_PLATFORM_TEST_DSN="postgresql://panadan_ci:synthetic_ci_password_
 export PANADAN_PLATFORM_TEST_ALLOW_RESET=YES
 echo "Running synthetic-only ingestion and checkpoint tests ..."
 uv sync --locked --dev
-tests=(tests/test_platform_ingest.py tests/test_sync_readiness_audit.py)
+tests=(tests/test_platform_ingest.py tests/test_sync_readiness_audit.py tests/test_platform_role_permissions.py)
 # The Odoo adapter is in a separate feature PR; include it when present.
 if [[ -f tests/test_odoo_sync_adapter.py ]]; then
   tests+=(tests/test_odoo_sync_adapter.py)

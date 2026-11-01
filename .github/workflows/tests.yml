@@ -42,7 +42,10 @@ jobs:
       - name: Compile dashboard assets
         run: npm ci --no-audit --no-fund && npm run build
       - name: Validate shell scripts
-        run: bash -n panadan.sh migrate-from-danf.sh tools/test-platform-integration.sh tools/platform-db.sh
+        run: |
+          for script in panadan.sh migrate-from-danf.sh start-vpn.sh tools/*.sh; do
+            bash -n "$script"
+          done
 
 
   platform-integration:
@@ -73,7 +76,7 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --dev --python 3.13
       - name: PostgreSQL transactional ingestion tests (synthetic only)
-        run: uv run --locked python -m pytest -q tests/test_platform_ingest.py
+        run: uv run --locked python -m pytest -q tests/test_platform_ingest.py tests/test_platform_role_permissions.py
 
   docker-build:
     # Validate the same production images before merging a major SDK upgrade.

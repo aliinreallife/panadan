@@ -317,6 +317,15 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [ ] Build cautious periodic ID reconciliation for disappeared rows (do **not** infer deletion from an incomplete page or transient VPN failure) and implement purge/retention policies before sensitive payloads.
 - [ ] Set up scheduling/health alerts and parity/authorization tests before dashboard/REST/MCP cutover. Redis remains deferred.
 
+## PostgreSQL runtime role isolation (2026-10-31)
+
+- [x] Create opt-in `roles-setup`, `roles-apply` and `roles-check` commands for the owned PostgreSQL 18 database, using independent ignored private credentials, no Odoo/VPN configuration and no shell-argument password exposure.
+- [x] Add transactional, explicit grants: limited ingestion writer, owner-only source enablement, reporting reader restricted to a sanitized current `normalize:v1` facts view.
+- [x] Add guarded, synthetic-only PostgreSQL integration tests for non-superuser roles, writer insert+process, forbidden source activation, hidden raw tables, and report view data filtering.
+- [x] Verify locally on WSL against disposable PostgreSQL 18.6 (39 synthetic integration tests passed, plus 192 offline Python tests; commit `c1877a6`).
+- [ ] Provision and audit restricted roles on the **persistent Panadan-owned** PostgreSQL instance only after merging/review; no Odoo changes or dashboard cutover.
+- [ ] Define per-user authorization for REST/dashboard/MCP, encryption and off-host restore, deletion and retention rules, and source `updated_at` contract before ingesting any customer data.
+
 ## PostgreSQL platform initialization and recovery verification (2026-10-31)
 
 - [x] Add explicit `./panadan.sh platform-db {setup|up|init|check|backup|down}` commands for the separate PostgreSQL 18.6 instance; no Odoo/VPN credentials or live data read path.

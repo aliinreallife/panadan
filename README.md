@@ -234,6 +234,25 @@ dashboard cutover are performed by these libraries. See
 requirements, limitations (especially deletions), synthetic CI tests
 and the steps required before enabling a pilot.
 
+## Separate PostgreSQL writer and reporting accounts
+
+The new Panadan-owned PostgreSQL 18 database supports explicit,
+**least-privilege** login roles: `panadan_ingest_writer` and
+`panadan_report_reader`. Both use distinct locally generated secrets,
+and the reporting account can only read a sanitized view (not raw source
+revisions or arbitrary phone/transcript data). Neither role can enable
+a source or administer the database.
+
+```bash
+./panadan.sh platform-db roles-setup
+./panadan.sh platform-db roles-apply
+./panadan.sh platform-db roles-check
+```
+
+No role is created until `roles-apply` is explicitly run. These
+commands do not connect to Odoo or switch the existing dashboard.
+See [PostgreSQL platform role guide](docs/POSTGRESQL_18_PLATFORM.md).
+
 ## Manage the independent PostgreSQL 18.6 database
 
 Panadan now has an explicit, opt-in helper for managing **its own**

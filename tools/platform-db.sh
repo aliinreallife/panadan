@@ -113,8 +113,12 @@ SELECT 'active_sources=' || count(*) FROM panadan_ingest.sources WHERE enabled;"
     compose down
     echo "Platform DB stopped. Persistent volume retained (no -v)."
     ;;
+  roles-setup|roles-apply|roles-check)
+    # Explicit separate credentials; no change to app/Odoo configuration.
+    exec bash tools/platform-roles.sh "${1#roles-}"
+    ;;
   help|-h|--help)
-    echo "Usage: ./panadan.sh platform-db {setup|up|init|check|backup|down}"
+    echo "Usage: ./panadan.sh platform-db {setup|up|init|check|backup|down|roles-setup|roles-apply|roles-check}"
     echo "Only the isolated Panadan PostgreSQL 18 database is affected."
     ;;
   *)

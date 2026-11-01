@@ -25,12 +25,28 @@ PostgreSQL database. Never apply it to Odoo or to the reporting view.
 | `sync_checkpoints` | Per-source/per-stream JSON cursor, guarded against stale workers |
 | `sync_runs` | Aggregate counts and timestamps (never source payloads or credentials) |
 
-The migration is an additive version-1 schema. There is no automated
-migration runner, backup/retention/purge procedure, or production DB user
-provisioning yet. Design user/role grants for the owned database before any
+The migration is an additive version-1 schema. Basic local bootstrap,
+private local dumps and **explicit** restricted-role provisioning are available.
+There is still no unattended production migration runner, encrypted/off-host
+backup and recovery, retention/purge policy, or automatic production rollout. Design user/role grants for the owned database before any
 deployment. Original raw revisions are retained by default: that is **not**
 a finalized legal retention or deletion policy. Build retention-aware
 purges and privileged maintenance procedures before ingesting personal data.
+
+## Database roles and authorized access
+
+The standalone PostgreSQL 18 platform now has an **optional**
+role-provisioning flow. A privileged owner approves and enables
+sources; a restricted `panadan_ingest_writer` has INSERT/UPDATE
+rights for the required ingestion and processing tables but cannot
+activate sources. A separate `panadan_report_reader` has SELECT
+rights on a sanitized view only, never the raw revisions or full
+derived-facts table. No dashboard, API or MCP route uses these roles yet.
+
+See [the PG18 deployment and role guide](POSTGRESQL_18_PLATFORM.md).
+Credentials and role grants must be initialized explicitly; real
+customer-data retention, off-host backups and complete RBAC are still
+blocked.
 
 ## Code contracts
 
