@@ -28,7 +28,15 @@ def test_modern_mcp_protocol_tool_discovery():
                 "list_recent_calls", "get_call_summary",
                 "get_call_metrics", "get_available_states",
                 "get_redacted_call_transcript",
+                "get_authenticated_profile",
             }
+            for item in tools:
+                assert item.annotations.readOnlyHint is True
+                assert item.annotations.destructiveHint is False
+                assert item.annotations.openWorldHint is False
+            profile=next(item for item in tools if item.name=="get_authenticated_profile")
+            metadata=profile.model_dump(by_alias=True).get("_meta", {})
+            assert metadata.get("openai/profile") is True
     asyncio.run(check())
 
 
