@@ -37,7 +37,10 @@ def inspect_snapshot(path: Path) -> tuple[sqlite3.Connection, dict[str, int]]:
     if path.with_name(path.name + "-wal").exists() or path.with_name(path.name+"-shm").exists():
         raise ValueError("Refusing a WAL-associated SQLite source; use the Online Backup API first")
     # Only read the operator-provided snapshot. Never mutate it.
-    conn=sqlite3.connect(f"file:{path.resolve()}?mode=ro",uri=True)
+    # This is a verified, closed snapshot (not a changing database). The
+    # immutable reader does not create "-wal"/"-shm" sidecars on inspection,
+    # and avoids a second read falsely rejecting the same backup.
+    conn=sqlite3.connect(f"file:{path.resolve()}?mode=ro&immutable=1",uri=True)
     conn.row_factory=sqlite3.Row
     if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
         conn.close()
