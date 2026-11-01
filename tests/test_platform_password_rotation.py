@@ -39,7 +39,7 @@ if [[ "$args" == *"current_database()"* ]]; then echo panadan:panadan_owner; exi
 if [[ "$args" == *"SHOW log_statement"* ]]; then echo "${MOCK_LOG_STATEMENT:-none}"; exit 0; fi
 if [[ "$args" == *"--single-transaction"* ]]; then
     IFS= read -r statement
-    [[ "$statement" =~ ^ALTER[[:space:]]ROLE[[:space:]]panadan_owner[[:space:]]PASSWORD[[:space:]]\'SCRAM-SHA-256\$[0-9]+:[A-Za-z0-9+/=]+\\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+\'\;$ ]] || exit 2
+    [[ "$statement" =~ ^ALTER[[:space:]]ROLE[[:space:]]panadan_owner[[:space:]]PASSWORD[[:space:]]\'SCRAM-SHA-256\$[0-9]+:[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+\'\;$ ]] || exit 2
     [[ "${MOCK_ALTER_FAIL:-}" != YES ]] || exit 4
     printf 'alter\n' >> "$MOCK_LOG"
     exit 0
