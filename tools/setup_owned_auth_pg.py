@@ -228,13 +228,13 @@ def auth_password() -> str:
         data = AUTH_FILE.read_text()
     else:
         secret = secrets.token_hex(32)
-        data = f"{AUTH_PASSWORD_KEY}={secret}\\n"
+        data = f"{AUTH_PASSWORD_KEY}={secret}\n"
         fd = os.open(AUTH_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as f:
             f.write(data)
         print("PASS: new ignored 0600 auth role credentials generated")
     match = re.fullmatch(
-        rf"{AUTH_PASSWORD_KEY}=([0-9a-f]{{64}})\\n?", data
+        rf"{AUTH_PASSWORD_KEY}=([0-9a-f]{{64}})\n?", data
     )
     if not match:
         raise Refusal("Malformed auth role credentials (expected one 64-hex value)")
@@ -257,10 +257,10 @@ $bootstrap$;
 """
     role_sql += (
         "ALTER ROLE panadan_auth_runtime LOGIN NOSUPERUSER NOCREATEDB "
-        "NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '" + secret + "';\\n"
+        "NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '" + secret + "';\n"
     )
     # These two files were reviewed/tested against an offsite PG18 restore.
-    sql = SCHEMA_SQL.read_text() + "\\n" + role_sql + "\\n" + GRANTS_SQL.read_text()
+    sql = SCHEMA_SQL.read_text() + "\n" + role_sql + "\n" + GRANTS_SQL.read_text()
     run(
         "docker", "exec", "-i", PG, "psql", "-X", "-q", "-v", "ON_ERROR_STOP=1",
         "--single-transaction", "-U", "panadan_owner", "-d", "panadan",
