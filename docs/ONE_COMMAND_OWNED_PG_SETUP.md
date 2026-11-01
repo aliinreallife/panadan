@@ -110,7 +110,7 @@ If there is **no Panadan-owned PostgreSQL container or volume**,
 the same entry point can initialize its independent PostgreSQL service:
 
 ```bash
-sudo bash tools/setup-owned-auth-pg.sh init-platform --approve-live-network
+sudo bash tools/setup-owned-auth-pg.sh init-platform --approve-new-db
 ```
 
 This reuses existing idempotent `platform-db setup/up/init` and
