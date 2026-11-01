@@ -52,14 +52,14 @@ dump does not substitute for recurring offsite backups or key escrow.
 cd ~/panadan
 
 # 1. No writes. Inspect readiness, Compose overlays and Odoo tun0 route.
-sudo bash tools/setup-owned-auth-pg.sh plan
+sudo bash ./panadan.sh owned-pg plan
 
 # 2. One explicit, guarded operation (real infrastructure changes).
-sudo bash tools/setup-owned-auth-pg.sh apply \
+sudo bash ./panadan.sh owned-pg apply \
   --ack-restored-backup --approve-live-network
 
 # 3. Repeatable network, role, source-VPN and HTTPS verification.
-sudo bash tools/setup-owned-auth-pg.sh verify
+sudo bash ./panadan.sh owned-pg verify
 ```
 
 The apply command stops on incomplete prerequisite files, unexpected PG
@@ -110,7 +110,7 @@ If there is **no Panadan-owned PostgreSQL container or volume**,
 the same entry point can initialize its independent PostgreSQL service:
 
 ```bash
-sudo bash tools/setup-owned-auth-pg.sh init-platform --approve-new-db
+sudo bash ./panadan.sh owned-pg init-platform --approve-new-db
 ```
 
 This reuses existing idempotent `platform-db setup/up/init` and
@@ -137,3 +137,7 @@ resolve a setup failure.
   discovery and actual ChatGPT/Claude MCP linking.
 - Keep issues #55, #56, #57, #58 and #70 open until those items are
   independently validated. Passing this setup does not mean they are done.
+
+## Safe top-level CLI
+
+The root `panadan.sh` dispatches `owned-pg` without loading source Odoo credentials. To avoid accidental production outages, bare `panadan.sh up` and `down` are **blocked** if the private production HTTPS overlays are present; continue using a reviewed deployment controller with all overlays. The guard does not interfere with un-hardened development or isolated new installations.
