@@ -7,6 +7,24 @@ umask 077
 if [[ "$cmd" == "platform-db" ]]; then
   exec bash tools/platform-db.sh "$@"
 fi
+# Source-controlled, guarded owned-PostgreSQL auth and network bootstrap.
+# Dispatch before loading Odoo credentials or legacy production compose.
+if [[ "$cmd" == "owned-pg" ]]; then
+  exec bash tools/setup-owned-auth-pg.sh "$@"
+fi
+# This VPS has private HTTPS overlays and a fragile shared Plane Caddy proxy.
+# Refuse the unmodified production compose, which would silently drop them.
+if [[ "$cmd" == "up" || "$cmd" == "down" ]]; then
+  for marker in data/ingress/compose.panadan.yaml \
+                data/ingress/compose.web.release.yaml \
+                data/ingress/compose.web.https.yaml; do
+    if [[ -e "$marker" ]]; then
+      echo "REFUSED: hardened production overlays detected; bare up/down is unsafe." >&2
+      echo "Use the reviewed production deployment controller with all private overlays." >&2
+      exit 64
+    fi
+  done
+fi
 # Local quality verification never even reads existing source credentials.
 if [[ "$cmd" == "verify" ]]; then
   exec bash tools/verify-local.sh "$@"
@@ -156,7 +174,7 @@ case "$cmd" in
     done
     ;;
   *)
-    echo 'Usage: ./panadan.sh {setup|platform-db|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|verify|check|audit-db|audit-fields|audit-semantics|audit-sync|diagnose-db|relay-recreate|diagnose}'
+    echo 'Usage: ./panadan.sh {setup|platform-db|owned-pg|dev|vpn-up|vpn-down|up|down|status|logs|prod-logs|test|verify|check|audit-db|audit-fields|audit-semantics|audit-sync|diagnose-db|relay-recreate|diagnose}'
     echo 'dev = native WSL uv FastAPI + Docker-isolated VPN; up = GHCR production images'
     ;;
 esac
