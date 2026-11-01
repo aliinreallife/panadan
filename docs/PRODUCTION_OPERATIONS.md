@@ -108,6 +108,40 @@ network attachment has been performed by this repository merge. Read
 [the one-command operator guide](ONE_COMMAND_OWNED_PG_SETUP.md) before any
 future authorized apply.
 
+## Plane custom intake preservation gate (#62)
+
+The publicly accessible `https://plane.panafor.com/intake.html` is currently
+**not persistent** across a Plane Web container recreation: its original HTML
+lives inside that container, outside the checked-in Panadan repository.
+The presence of a Caddy `/data` or `/config` volume does not protect it.
+
+A read-only inspection command is available:
+
+```bash
+# Inspect only the live public HTTPS response (prints SHA-256, not HTML).
+bash tools/check-plane-intake.sh fingerprint
+
+# Compare the exact public HTML against a trusted, independently saved
+# copy of the ORIGINAL intake.html, before and after a future controlled upgrade.
+bash tools/check-plane-intake.sh verify /secure/path/original-intake.html
+```
+
+The verify mode **fails** on redirects, unavailable HTTPS, empty responses, or
+any byte change. It does not read, modify, or restart Plane, proxy, or Docker.
+A passing hash checks only the HTML bytes: it does not verify CSS/JS dependencies,
+proxy configuration or form submission behavior. A **fingerprint is not a
+backup**. First preserve the authoritative original file and its dependencies
+through an approved operator backup procedure, and record its hash outside
+the running container. Do not save private tokens, user data or secrets in Git.
+
+Before ANY future Plane Web rebuild, review the backed-up file and select a
+persistent delivery path (a read-only bind mount or a dedicated Caddy static
+path), verify the existing Plane routing contract and rehearse rollback on
+a disposable environment. Do not infer an in-container original path or mount
+configuration without inspecting the live deployment. No rebuild, persistence
+change or production deployment has been performed by this check; #62 remains
+open until a verified post-rebuild test passes.
+
 ## MCP and OAuth: current limitations
 
 The public HTTPS dashboard is live, **not** equivalent to completed ChatGPT/Claude OAuth. The server currently defaults to `PANADAN_MCP_AUTH_MODE=legacy`; legacy credentials are admin-issued revocable `mcp:read` bearer tokens. In that mode, OAuth protected-resource metadata is intentionally absent. The MCP mount is `/mcp/`.
