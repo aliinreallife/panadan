@@ -18,7 +18,7 @@ need_docker() {
   docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required."
 }
 check_env() {
-  [[ -s "$ENV_FILE" ]] || fail "Missing $ENV_FILE. Run ./panadan.sh platform-db setup."
+  [[ -s "$ENV_FILE" && ! -L "$ENV_FILE" ]] || fail "Missing or symlinked $ENV_FILE. Run ./panadan.sh platform-db setup."
   local mode
   mode="$(stat -c '%a' "$ENV_FILE")" || fail "Cannot inspect $ENV_FILE permissions."
   (( (8#$mode & 8#077) == 0 )) || fail "$ENV_FILE must not be group/world accessible (chmod 600)."
@@ -108,6 +108,88 @@ SELECT 'active_sources=' || count(*) FROM panadan_ingest.sources WHERE enabled;"
     echo "Backup created: $final (mode 600, ignored by Git)."
     echo "Backup contains data and remains on this machine; arrange encrypted off-host backups."
     ;;
+  rotate-password)
+    # Explicit owner-only password rotation for the isolated platform DB.
+    # No source credentials are loaded, no volume is removed, and no secret
+    # is passed as a command-line argument or written to stdout/stderr.
+    set +x
+    need_docker; check_env; require_up; assert_pg18
+    command -v openssl >/dev/null 2>&1 || fail "openssl is required for password rotation."
+    command -v python3 >/dev/null 2>&1 || fail "python3 is required to derive SCRAM credentials locally."
+    [[ -s tools/scram_secret.py ]] || fail "SCRAM derivation helper is missing."
+    identity="$(run_psql -A -t -c "SELECT current_database() || ':' || current_user;" 2>/dev/null)" ||
+      fail "Cannot verify database identity for rotation."
+    [[ "$identity" == "panadan:panadan_owner" ]] ||
+      fail "Refusing to rotate credentials for an unexpected database identity."
+    # ALTER ROLE embeds a SQL password literal; reject ordinary server-side
+    # statement logging so the new secret is not written to PostgreSQL logs.
+    # Additional audit extensions may have separate controls and must be
+    # reviewed independently before using this command.
+    logging="$(run_psql -A -t -c 'SHOW log_statement;' 2>/dev/null)" ||
+      fail "Cannot verify PostgreSQL SQL statement logging policy."
+    [[ "$logging" == "none" ]] ||
+      fail "Refusing password rotation while PostgreSQL statement logging is enabled."
+
+    # The staged configuration must remain in the same directory so the
+    # subsequent rename is atomic on ordinary local filesystems.
+    staged="$(mktemp ".env.platform.rotate.XXXXXXXX")" ||
+      fail "Could not stage new private credentials."
+    trap '[[ -z "${staged:-}" ]] || rm -f -- "$staged"' EXIT
+    chmod 600 "$staged"
+    new_secret="$(openssl rand -hex 32)" ||
+      fail "Could not generate a new random password."
+    [[ "$new_secret" =~ ^[[:xdigit:]]{64}$ ]] ||
+      fail "Generated password format was invalid."
+    # Compute a salted verifier locally. The SQL command contains the SCRAM
+    # verifier, NEVER the raw password; only the private env file holds it.
+    new_verifier="$(printf '%s' "$new_secret" | python3 tools/scram_secret.py)" ||
+      fail "Could not derive a PostgreSQL SCRAM verifier."
+    [[ "$new_verifier" == SCRAM-SHA-256\$* ]] ||
+      fail "Derived SCRAM verifier format was invalid."
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      case "$line" in
+        PANADAN_PLATFORM_DB_PASSWORD=*)
+          printf 'PANADAN_PLATFORM_DB_PASSWORD=%s\n' "$new_secret" >> "$staged" ;;
+        *) printf '%s\n' "$line" >> "$staged" ;;
+      esac
+    done < "$ENV_FILE"
+
+    # Apply the pre-hashed SCRAM verifier over local stdin, not argv.
+    # PostgreSQL stores correctly formatted SCRAM verifiers as-is.
+    if ! printf "ALTER ROLE panadan_owner PASSWORD '%s';\n" "$new_verifier" |
+         run_psql --single-transaction >/dev/null 2>&1; then
+      fail "PostgreSQL rejected password rotation; existing config was retained."
+    fi
+
+    if ! mv -- "$staged" "$ENV_FILE"; then
+      # An OS rename error leaves the original credentials in the env file.
+      # Best-effort restore the server password to avoid a split-brain state.
+      previous_secret="$(sed -n 's/^PANADAN_PLATFORM_DB_PASSWORD=//p' "$ENV_FILE")"
+      previous_verifier="$(printf '%s' "$previous_secret" | python3 tools/scram_secret.py)" ||
+        fail "Configuration update failed; could not prepare safe password rollback."
+      if ! printf "ALTER ROLE panadan_owner PASSWORD '%s';\n" "$previous_verifier" |
+           run_psql --single-transaction >/dev/null 2>&1; then
+        fail "Configuration update failed and password rollback failed; recover via local owner socket."
+      fi
+      fail "Configuration update failed; database password restored to the previous value."
+    fi
+    staged=""
+    unset new_secret new_verifier
+    check_env
+
+    # POSTGRES_PASSWORD in a running container does not automatically change
+    # when the role is altered; recreate only the isolated DB service.
+    if ! compose up -d --wait --force-recreate db >/dev/null; then
+      fail "Password changed, but the database container did not restart cleanly. Retry platform-db up; volume retained."
+    fi
+    authentication="$(compose exec -T db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -At -v ON_ERROR_STOP=1 -h 127.0.0.1 -U panadan_owner -d panadan -c "SELECT 1"' 2>/dev/null)" ||
+      fail "Password changed, but TCP authentication verification failed."
+    [[ "$authentication" == "1" ]] ||
+      fail "Password changed, but TCP authentication verification returned an unexpected result."
+    echo "Platform DB owner password rotated and TCP authentication verified."
+    echo "Private .env.platform updated (mode 600); database volume preserved."
+    echo "Update any authorized clients using the previous owner password."
+    ;;
   down)
     need_docker; check_env
     compose down
@@ -118,7 +200,7 @@ SELECT 'active_sources=' || count(*) FROM panadan_ingest.sources WHERE enabled;"
     exec bash tools/platform-roles.sh "${1#roles-}"
     ;;
   help|-h|--help)
-    echo "Usage: ./panadan.sh platform-db {setup|up|init|check|backup|down|roles-setup|roles-apply|roles-check}"
+    echo "Usage: ./panadan.sh platform-db {setup|up|init|check|backup|rotate-password|down|roles-setup|roles-apply|roles-check}"
     echo "Only the isolated Panadan PostgreSQL 18 database is affected."
     ;;
   *)
