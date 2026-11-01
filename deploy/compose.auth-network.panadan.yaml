@@ -1,0 +1,13 @@
+# Optional VPN namespace attachment for access to OWNED Panadan PostgreSQL.
+# The web service uses network_mode: service:vpn, so attach ONLY vpn.
+# The existing default and private ingress networks MUST also be retained
+# in the effective merged production configuration (verify with config).
+services:
+  vpn:
+    networks:
+      default: {}
+      auth_db: {}
+networks:
+  auth_db:
+    external: true
+    name: panadan-auth-db
