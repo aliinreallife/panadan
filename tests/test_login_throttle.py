@@ -62,6 +62,18 @@ def test_http_login_throttle_scoped_per_account(tmp_path, monkeypatch):
         main.store.bootstrap("admin", "synthetic-safe-admin-password")
         yield
     main.app.router.lifespan_context = isolated
+    # Freeze the store's *logical* clock for this HTTP integration test.
+    # The first cooldown is only one second; real-time HTTP request latency
+    # can otherwise expire it between the sixth failure and the assertion.
+    # Do not patch global time.time (which affects other libraries/threads).
+    import time
+    now = int(time.time())
+    record_failure = main.store.record_login_failure
+    is_throttled = main.store.login_is_throttled
+    monkeypatch.setattr(main.store, "record_login_failure",
+                        lambda name: record_failure(name, now=now))
+    monkeypatch.setattr(main.store, "login_is_throttled",
+                        lambda name: is_throttled(name, now=now))
     # All clients share one apparent proxy IP. Account throttling must not
     # block a separate legitimate user on that IP.
     with TestClient(main.app, base_url="https://dan.panafor.com") as client:
