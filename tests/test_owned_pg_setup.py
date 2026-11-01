@@ -150,3 +150,38 @@ def test_no_automatic_compose_recreate_or_live_auth_cutover():
     assert "docker\", \"network\", \"connect\"" in source
     assert "ack-restored-backup" in source
     assert "approve-live-network" in source
+
+
+def test_fresh_database_setup_refuses_stopped_container_or_persistent_volume(monkeypatch):
+    responses = {
+        ("docker", "ps", "-a", "--filter",
+         "name=^/panadan-platform-db-1$", "--format", "{{.Names}}"): "",
+        ("docker", "volume", "ls", "--filter",
+         "name=^panadan-platform_panadan_platform_pg18_data$",
+         "--format", "{{.Name}}"): "panadan-platform_panadan_platform_pg18_data",
+    }
+    calls = []
+    def fake_run(*args, **kwargs):
+        calls.append(args)
+        return responses.get(args, "")
+    monkeypatch.setattr(setup, "run", fake_run)
+    with pytest.raises(setup.Refusal, match="volume"):
+        setup.initialize_platform()
+    assert not any(x[0] == "bash" for x in calls)
+
+    responses[("docker", "ps", "-a", "--filter",
+               "name=^/panadan-platform-db-1$",
+               "--format", "{{.Names}}")] = "panadan-platform-db-1"
+    calls.clear()
+    with pytest.raises(setup.Refusal, match="stopped"):
+        setup.initialize_platform()
+    assert len(calls) == 1
+
+
+def test_fresh_database_init_requires_distinct_explicit_approval(monkeypatch,capsys):
+    monkeypatch.setattr(setup, "initialize_platform", lambda:
+                        pytest.fail("No implicit first-time initialization"))
+    monkeypatch.setattr(sys,"argv",["setup","init-platform",
+                                   "--approve-live-network"])
+    assert setup.main() == 1
+    assert "--approve-new-db" in capsys.readouterr().err
