@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Panadan owned PostgreSQL encrypted off-site backup
+
+[Timer]
+OnCalendar=*-*-* 03:55:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+Unit=panadan-platform-backup.service
+
+[Install]
+WantedBy=timers.target

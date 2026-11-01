@@ -1,4 +1,4 @@
-# Production backups: auth SQLite (work in progress, 2026-11-01)
+# Production backups: SQLite auth and owned PostgreSQL (opt-in, 2026-11-01)
 
 The deployment has already produced an online SQLite snapshot, verified it using
 `PRAGMA integrity_check`, and copied an `age`-encrypted copy to an independent
@@ -56,6 +56,7 @@ Example file content (replace placeholders; never commit this file):
 ```ini
 PANADAN_BACKUP_AGE_RECIPIENT=age1REPLACE_WITH_REAL_PUBLIC_KEY
 PANADAN_BACKUP_RCLONE_DEST=offsite:panadan/auth
+PANADAN_PLATFORM_BACKUP_RCLONE_DEST=offsite:panadan/owned-postgres
 RCLONE_CONFIG=/etc/panadan/rclone.conf
 ```
 
@@ -157,6 +158,77 @@ metadata-only. Define remote retention (e.g. daily 14 / weekly 8 / monthly 6)
 **after** confirming the provider supports immutable versioning / retention,
 the off-site store is isolated, and a full restore test works. Never delete the
 last good copy; deletion/retention automation is a separate reviewed change.
+
+## Owned PostgreSQL 18 encrypted off-site backups (new opt-in code)
+
+**Use a different off-site prefix from SQLite.** PostgreSQL and SQLite contain
+different datasets; backing up only one of them does not protect Panadan
+accounts before/after the future #70 cutover.
+
+`tools/backup-platform-offsite.sh` is a separate safe entry point for the
+**Panadan-owned** `panadan-platform` Compose project. It never starts/stops
+containers, changes networks, connects to the external Odoo source, or reads
+the live SQLite database. Its steps are:
+
+1. Refuse malformed, symlinked, or overly permissive `.env.platform`;
+   validate Compose's existing DB container is running PostgreSQL major 18,
+   database `panadan` owned by `panadan_owner`, with all seven ingest
+   foundation tables.
+2. Check independent rclone destination availability; in `--check` mode
+   **stop here** without creating backups or writing to the database.
+3. Stream `pg_dump -Fc` from the running owned DB into a protected temporary
+   directory; verify its TOC via `pg_restore --list`. The full dump includes
+   any existing `panadan_auth` tables; it is not restricted to `panadan_ingest`.
+4. Encrypt that temporary archive with the PUBLIC age recipient, upload with
+   immutable randomly named object keys, read remote bytes back, and compare
+   SHA-256. Retain a local mode-600 **encrypted-only** copy after verification.
+   Remove temporary plaintext on success and failure.
+
+`pg_restore --list` is **only an archive TOC check**; it cannot prove data
+integrity or a successful recovery. The true recovery gate is decrypting the
+off-VPS object with the independent private key and performing a disconnected
+PG18 restore, checking expected schemas, account records and permissions.
+The existing `verify-offsite-platform-restore.sh` currently validates a
+**specific pre-auth empty-source snapshot**; do not use it to declare a newer
+production auth backup restored. A modern post-auth restore drill is required
+before auth cutover.
+
+Configure an independent physically off-VPS rclone backend. A string such as
+`offsite:...` does **not** prove the backend is geographically/administratively
+independent. The root-only `/etc/panadan/backup.env` must include
+`PANADAN_BACKUP_AGE_RECIPIENT`, `PANADAN_PLATFORM_BACKUP_RCLONE_DEST`, and
+the private rclone config location. The PRIVATE age identity must remain off
+the VPS. The separate DB Compose credentials stay in the ignored
+`.env.platform` file (mode 600); never source Odoo credentials.
+
+On the VPS, use a trusted repository checkout:
+
+```bash
+cd /home/panafor/panadan
+
+# Read-only checks. No copy or database state change.
+sudo bash -c '
+  set -euo pipefail
+  set -a; source /etc/panadan/backup.env; set +a
+  bash tools/backup-platform-offsite.sh --check
+'
+
+# Real encrypted off-site upload: opt in only after remote/key review.
+sudo bash -c '
+  set -euo pipefail
+  set -a; source /etc/panadan/backup.env; set +a
+  bash tools/backup-platform-offsite.sh
+'
+```
+
+A matching **disabled-by-default** systemd service/timer is in
+`deploy/systemd/panadan-platform-backup.{service,timer}` (03:55 UTC + jitter).
+Review paths and validate with `systemd-analyze verify` before installing
+anything. Do **not** enable it until a real encrypted PG backup has
+independently passed a full isolated restore with the off-site key. Then
+configure external failed/missed-job alerts, offsite freshness checks,
+retention/immutability, independent recovery-key escrow and quarterly drills.
+Do not interpret merely merging this code as working automated backups.
 
 ## Disaster recovery checklist
 
