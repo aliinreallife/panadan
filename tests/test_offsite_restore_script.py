@@ -31,5 +31,11 @@ def test_restore_script_never_touches_host_services_or_external_network():
     assert "docker rm -f" in script
     assert "ssh " not in script
     assert "docker compose down" not in script
-    assert "--publish" not in script
-    assert "--privileged" not in script
+    # Ignore prose comments when asserting Docker flags: our runbook
+    # explicitly says that publishing or privileged mode is forbidden.
+    commands = "\n".join(
+        line for line in script.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+    assert "--publish" not in commands
+    assert "--privileged" not in commands
