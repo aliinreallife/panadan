@@ -17,9 +17,11 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette import status
 
 from . import database
+from .ingress import allowed_hosts, external_base_url, read_public_origin, valid_form_origin
 from .reporting_retries import read_with_retry
 from .transcript_ai import transcript_for_ai, MAX_TRANSCRIPT_CHARS
 from .mcp_tools import mcp
@@ -32,6 +34,7 @@ oauth_config = OAuthConfig.from_env()
 oauth_verifier = OAuthVerifier(oauth_config) if oauth_config.mode == 'oauth' else None
 COOKIE_SECURE = os.getenv('PANADAN_COOKIE_SECURE', 'true').lower() == 'true'
 COOKIE_NAME = 'panadan_session'
+PUBLIC_ORIGIN = read_public_origin(cookie_secure=COOKIE_SECURE)
 templates = Jinja2Templates(directory='templates')
 templates.env.filters['date_time'] = lambda value: datetime.fromtimestamp(value, timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if value else '—'
 # Date/time are separate isolated runs in RTL templates (clock on the right).
@@ -50,6 +53,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title='Panadan API', version='0.8.0', docs_url=None,
               redoc_url=None, openapi_url=None, lifespan=lifespan)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts(PUBLIC_ORIGIN))
 app.mount('/static', StaticFiles(directory='static'), name='static')
 # Activity logs contain ONLY a route category, actor, status and duration.
 # Query strings, token headers, request bodies and response bodies are omitted.
@@ -130,8 +134,7 @@ def csrf_check(request: Request, csrf: str, session: dict):
     if not hmac.compare_digest(str(csrf), session['csrf']):
         raise HTTPException(403, 'Invalid CSRF token')
     # Also reject an obviously cross-site POST to defend login/session actions.
-    origin = request.headers.get('origin')
-    if origin and origin.rstrip('/') != str(request.base_url).rstrip('/'):
+    if not valid_form_origin(request, PUBLIC_ORIGIN):
         raise HTTPException(403, 'Invalid request origin')
 
 
@@ -221,9 +224,8 @@ def login(request: Request):
 @app.post('/login', include_in_schema=False)
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...), nonce: str = Form(...)):
     cookie_nonce = request.cookies.get('panadan_login_nonce', '')
-    origin = request.headers.get('origin')
     if not cookie_nonce or not hmac.compare_digest(nonce, cookie_nonce) or (
-        origin and origin.rstrip('/') != str(request.base_url).rstrip('/')):
+        not valid_form_origin(request, PUBLIC_ORIGIN)):
         raise HTTPException(403, 'Login form expired; reload login page')
     ip = request.client.host if request.client else 'unknown'
     if is_rate_limited(ip):
@@ -623,7 +625,7 @@ def api_guide(request: Request, session: dict = Depends(current_session)):
     admin_only(session)
     return templates.TemplateResponse(request, 'api.html', {
         'session': session, 'csrf': session['csrf'],
-        'base_url': str(request.base_url).rstrip('/'),
+        'base_url': external_base_url(request, PUBLIC_ORIGIN),
     }, headers={'Cache-Control': 'no-store'})
 
 
@@ -669,7 +671,7 @@ def connect_page(request: Request, session: dict = Depends(current_session)):
     admin_only(session)
     return templates.TemplateResponse(request,'connect.html', {
         'session':session,'csrf':session['csrf'],
-        'mcp_path':'/mcp/', 'base_url':str(request.base_url).rstrip('/'),
+        'mcp_path':'/mcp/', 'base_url':external_base_url(request, PUBLIC_ORIGIN),
         'oauth': oauth_config,
     },headers={'Cache-Control':'no-store'})
 
