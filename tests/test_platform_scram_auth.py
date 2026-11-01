@@ -44,4 +44,6 @@ def test_locally_generated_scram_verifier_authenticates_in_postgres18():
                 with connect_as("incorrect_synthetic_password"):
                     pass
         finally:
+            admin.execute(sql.SQL("REVOKE CONNECT ON DATABASE panadan_ci FROM {}").format(
+                sql.Identifier(role)))
             admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
