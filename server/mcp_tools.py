@@ -1,12 +1,19 @@
 """MCP tools are deliberately restricted to safe, non-transcript fields."""
 from datetime import date
 from mcp.server.mcpserver import MCPServer, Context
+from mcp.types import ToolAnnotations
 from . import database
 
-mcp = MCPServer('Panadan', version='0.8.0', instructions='Read-only reporting for authorized business users. Transcript excerpts require separate user permissions. No raw SQL or writes.')
+mcp = MCPServer('Panadan', version='0.8.0', instructions='Read-only source reporting for authorized business users. Transcript excerpts require separate user permissions and record an access audit. No raw SQL or source writes.')
+
+# MCP annotations are advisory metadata, not authorization. Reporting tools
+# only SELECT from the restricted reporting source. The transcript tool also
+# appends a local disclosure audit, so it must NOT advertise readOnlyHint=true.
+REPORT_READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=False)
+AUDITED_DISCLOSURE = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)
 
 
-@mcp.tool()
+@mcp.tool(title='Recent calls', annotations=REPORT_READ_ONLY)
 def list_recent_calls(limit: int = 10, offset: int = 0, after: str = '', before: str = '',
                       state: str = '', operator: str = '', destination: str = '', team: str = '') -> list[dict]:
     """List summary metadata for calls; no customer phone numbers or transcripts."""
@@ -17,13 +24,13 @@ def list_recent_calls(limit: int = 10, offset: int = 0, after: str = '', before:
                                state or None,operator=operator or None,operator_names=names)
 
 
-@mcp.tool()
+@mcp.tool(title='Call summary', annotations=REPORT_READ_ONLY)
 def get_call_summary(call_id: int) -> dict:
     """Fetch non-sensitive reporting fields for one call ID."""
     return database.get_call(call_id, sensitive=False) or {'error': 'not_found'}
 
 
-@mcp.tool()
+@mcp.tool(title='Call metrics', annotations=REPORT_READ_ONLY)
 def get_call_metrics(after: str = '', before: str = '', operator: str = '',
                      destination: str = '', team: str = '') -> dict:
     """Aggregate counts, reported SoldOut states and averages for a date range."""
@@ -34,13 +41,13 @@ def get_call_metrics(after: str = '', before: str = '', operator: str = '',
                           operator_names=directory_operator_names(destination or None,team or None))
 
 
-@mcp.tool()
+@mcp.tool(title='Available call states', annotations=REPORT_READ_ONLY)
 def get_available_states() -> list[str]:
     """List available AI call status labels."""
     return database.statuses()
 
 
-@mcp.tool()
+@mcp.tool(title='Redacted transcript (audited)', annotations=AUDITED_DISCLOSURE)
 def get_redacted_call_transcript(call_id: int, ctx: Context, offset: int = 0) -> dict:
     """Get one redacted 6000-character page of a call (use next_offset). Requires separately granted
     calls:transcript:read permission, revalidates caller and records disclosure.
