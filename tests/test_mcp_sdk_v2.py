@@ -29,6 +29,23 @@ def test_modern_mcp_protocol_tool_discovery():
                 "get_call_metrics", "get_available_states",
                 "get_redacted_call_transcript",
             }
+            by_name = {item.name: item for item in tools}
+            for name in names - {"get_redacted_call_transcript"}:
+                annotations = by_name[name].annotations
+                assert annotations is not None
+                assert annotations.read_only_hint is True
+                assert annotations.destructive_hint is False
+                assert annotations.open_world_hint is False
+                assert by_name[name].title
+
+            # Disclosure is limited and uses a read-only SOURCE connection,
+            # but it also persists a local audit row for every successful read.
+            transcript = by_name["get_redacted_call_transcript"]
+            assert transcript.annotations is not None
+            assert transcript.annotations.read_only_hint is False
+            assert transcript.annotations.destructive_hint is False
+            assert transcript.annotations.open_world_hint is False
+            assert "audit" in transcript.title.lower()
     asyncio.run(check())
 
 
