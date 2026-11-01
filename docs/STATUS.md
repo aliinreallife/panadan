@@ -21,9 +21,11 @@
 - [ ] Compare decrypted off-site backup SHA-256 to *same* VPS plaintext snapshot;
   an isolated full restoration and verified recovery key escrow remain pending.
 - [ ] Daily automated off-site backup and failure monitoring (#55).
-- [ ] Align reviewed repository production entrypoints with hardened Compose
-  files; the existing VPS-local `prodctl.sh` works, but bare `panadan.sh up`
-  would omit secure overlays without new guardrails (#56).
+- [x] Repository now guards bare `panadan.sh up/down` when hardened HTTPS
+  overlays are present (merged #67 and #73); this does **not** update the
+  VPS-local production controller or make its untracked overlays reproducible.
+- [ ] Reconcile production Compose overlays and the VPS-local `prodctl.sh`
+  with the reviewed controller, then verify on a disposable host (#56).
 - [ ] Configure a compatible external OAuth authorization server (#57) and verify
   protected-resource metadata / 401 challenges (#58); no production OAuth mode yet.
 - [ ] Validate ChatGPT, Claude and Codex interoperability and per-user
@@ -35,14 +37,31 @@
 - [ ] Full disaster recovery, source DBA least privilege, CI and UI verification
   (#63, #22, #44, #24).
 
-## Reviewable changes (not deployed)
+## Merged into `main` (not deployed or cut over by these merges)
 
-- [Draft docs PR #66](https://github.com/aliinreallife/panadan/pull/66):
+- [PR #66](https://github.com/aliinreallife/panadan/pull/66):
   production runbook and [MCP client plan](MCP_CLIENTS.md).
-- [Draft ops PR #67](https://github.com/aliinreallife/panadan/pull/67):
-  production guardrails, encrypted backup tooling, versioned optional timer.
-- [Draft MCP PR #68](https://github.com/aliinreallife/panadan/pull/68):
-  discovery preflight and offline route/401 contract tests.
+- [PR #67](https://github.com/aliinreallife/panadan/pull/67):
+  production deployment guardrails, opt-in encrypted SQLite backup tooling
+  and uninstalled systemd timer templates.
+- [PR #68](https://github.com/aliinreallife/panadan/pull/68):
+  OAuth discovery preflight and offline route/401 tests.
+- [PR #51](https://github.com/aliinreallife/panadan/pull/51):
+  PostgreSQL role/credential rotation hardening.
+- [PR #73](https://github.com/aliinreallife/panadan/pull/73):
+  guarded `owned-pg plan/apply/verify/init-platform`, isolated Compose network
+  overlays, staging auth schema/roles, and restore safety checks.
+- [PR #74](https://github.com/aliinreallife/panadan/pull/74):
+  reproducible Python 3.13 / `npm ci` local setup and safer Git upgrades.
+
+**Production remains SQLite-authenticated.** The independent PostgreSQL 18
+backup was manually decrypted and restored on a disposable WSL instance,
+including the additive auth-schema/role rehearsal. This does **not** prove
+recurring off-site delivery, post-auth backups, full app disaster recovery,
+OAuth login, or a real account migration (#55, #57, #63, #70).
+
+The old setup PRs #14, #69, #71 and #72 were closed without merging; see
+#74, #59 and #73 for their supported replacement paths.
 
 ---
 
