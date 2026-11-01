@@ -119,7 +119,11 @@ to the new database by provisioning these roles. No source is enabled,
 and no customer records are copied.
 
 Reapplying `roles-apply` reuses the stored role passwords; it does not
-generate new ones. Never paste either secret into chat or GitHub.
+generate new ones. The CLI derives independent salted SCRAM-SHA-256 verifiers
+locally from each private password, so SQL contains the verifier rather than
+plaintext. Role provisioning refuses PostgreSQL statement logging settings
+other than `none`. The verifier can still be sensitive if captured in an
+audit log. Never paste either password into chat or GitHub.
 
 **Restore caveat:** `pg_dump -Fc` saves database objects and ACLs but
 does not export PostgreSQL cluster-global role definitions or passwords.
