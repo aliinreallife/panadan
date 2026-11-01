@@ -3,6 +3,15 @@
 Do not commit `.env.app`, `.env.db`, `.ovpn` files, VPN private keys, SQLite auth data, customer previews, or call transcripts. All are in `.gitignore` and `.dockerignore`. `git status` before publish.
 
 - Default exposure is loopback only. To expose beyond local WSL, place an authenticated TLS reverse proxy and separately configure allowed MCP Host/Origin values; never expose the current HTTP deployment on a public IP.
+
+## Canonical HTTPS ingress (opt-in; no automatic deployment)
+
+- Set `PANADAN_PUBLIC_ORIGIN=https://dan.panafor.com` **together with** `PANADAN_COOKIE_SECURE=true` in the private VPS `.env.app`. Invalid origins and insecure cookies fail at application startup. Do not enable until HTTPS termination is ready.
+- Panadan intentionally retains Uvicorn's `--no-proxy-headers`. Only the configured canonical HTTPS origin is used for browser POST Origin checks and rendered absolute links. Client-supplied `X-Forwarded-Host`, `X-Forwarded-Proto`, and `X-Forwarded-For` are **not trusted**. Host checking is restricted to the configured public domain and explicitly named local/private diagnostic hosts.
+- The reverse proxy must preserve `Host: dan.panafor.com`, terminate HTTPS, and use an isolated Docker network to reach Panadan's internal HTTP port. Never publish the upstream HTTP port on `0.0.0.0`. Since forwarding headers are ignored, per-IP rate limiting sees the proxy IP: install a trusted-edge rate limiter before public launch.
+- Configure MCP separately with `PANADAN_MCP_ALLOWED_HOSTS=dan.panafor.com` and `PANADAN_MCP_ALLOWED_ORIGINS=https://dan.panafor.com`. OAuth and customer-data permissions remain independently gated.
+- The existing HTTP SSH-tunnel path remains suitable for private diagnostics. A public `Secure` cookie may not function for HTTP browser login through that tunnel; use the canonical HTTPS hostname after cutover.
+- Do not edit or recreate Plane's proxy or web container in this code change. Its manually installed `/intake.html` lives inside the Plane web container and requires a persistent bind mount before any Plane web upgrade. Validate the private Caddy configuration and rollback separately.
 - Set a long random bootstrap password. It creates the admin account only once. After initialization, password changes require a dedicated management procedure (not supplied by this MVP).
 - Use separate short-lived scoped tokens. Token material is displayed once and only the SHA-256 digest is persisted.
 - Dashboard cookie is HttpOnly + SameSite=Lax; set secure cookies to true behind HTTPS. Login is throttled per source IP in process (single-worker only). Admin forms enforce per-session CSRF.
