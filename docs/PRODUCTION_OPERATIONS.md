@@ -150,6 +150,8 @@ Panadan already contains a resource-server-only OAuth mode with RSA/JWKS access-
 
 Track the remaining steps through #57 (IdP), #58 (discovery/proxy), #23 (live authorization and transcript matrix), #59 (metadata and profile), #64 (client interoperability). See [MCP clients](MCP_CLIENTS.md).
 
+See [the disaster-recovery sequence](DISASTER_RECOVERY.md) for an ordered, **not yet drill-proven** off-host restore, secret escrow checklist, shared Plane rollback boundaries, and go/no-go tests. The source-controlled runbook does not replace a real restore exercise (#63).
+
 ## Prioritized remaining work
 
 1. **P0:** #55 automatic age-encrypted off-site backups, checksums, restore drill, alarms; #56 reproducible production deployment and safe entrypoints.
