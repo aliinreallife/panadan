@@ -94,11 +94,20 @@ class Store:
                 ('users', 'role', "TEXT NOT NULL DEFAULT 'admin'"),
                 ('users', 'grants', 'TEXT'),
                 ('users', 'is_active', 'INTEGER NOT NULL DEFAULT 1'),
+                ('users', 'profile_id', 'TEXT'),
                 ('access_tokens', 'owner_id', 'INTEGER'),
             ]:
                 existing = {r['name'] for r in c.execute(f'PRAGMA table_info({table})')}
                 if col not in existing:
                     c.execute(f'ALTER TABLE {table} ADD COLUMN {col} {definition}')
+            # Stable, randomly allocated account identities for MCP multi-account
+            # linking. Never derive from username, numeric user ID or bearer token.
+            # Backfill only missing rows, once per existing auth database.
+            c.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_profile_id_unique ON users(profile_id)')
+            missing=c.execute("SELECT id FROM users WHERE profile_id IS NULL OR profile_id=''").fetchall()
+            for row in missing:
+                c.execute('UPDATE users SET profile_id=? WHERE id=?',
+                          ('prf_'+secrets.token_urlsafe(24), row['id']))
             # OAuth subject bindings are separate from browser sessions and
             # legacy API tokens. No personal information from the provider
             # is automatically used to grant reporting permissions.
@@ -159,8 +168,9 @@ class Store:
             if c.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 0:
                 if not password or len(password) < 14 or 'REPLACE' in password.upper():
                     raise RuntimeError('Set PANADAN_ADMIN_PASSWORD to at least 14 characters for first start.')
-                c.execute('INSERT INTO users(username,password_hash,role) VALUES(?,?,?)',
-                          (user, password_hash(password), 'admin'))
+                c.execute('INSERT INTO users(username,password_hash,role,profile_id) VALUES(?,?,?,?)',
+                          (user, password_hash(password), 'admin',
+                           'prf_'+secrets.token_urlsafe(24)))
             # Handles the initial bootstrap after a legacy SQLite migration.
             admin = c.execute('SELECT id FROM users WHERE role=? ORDER BY id LIMIT 1', ('admin',)).fetchone()
             if admin:
@@ -287,8 +297,9 @@ class Store:
             raise ValueError('Invalid user privileges')
         grants = json.dumps(sorted(set(caps))) if caps is not None and role != 'admin' else None
         with self.db() as c:
-            cur = c.execute('INSERT INTO users(username,password_hash,role,grants) VALUES(?,?,?,?)',
-                            (username, password_hash(password), role, grants))
+            cur = c.execute('INSERT INTO users(username,password_hash,role,grants,profile_id) VALUES(?,?,?,?,?)',
+                            (username, password_hash(password), role, grants,
+                             'prf_'+secrets.token_urlsafe(24)))
             return cur.lastrowid
 
     def update_user(self, user_id: int, role: str, caps: list[str] | None, active: bool, actor_id: int):
@@ -441,6 +452,40 @@ class Store:
                 (issuer,subject),
             ).fetchone()
         return int(row['id']) if row and row['is_active'] else None
+
+    def mcp_profile(self, *, oauth_issuer: str | None = None,
+                    oauth_subject: str | None = None,
+                    legacy_token: str | None = None) -> dict | None:
+        """Read the current user's immutable opaque profile from validated credentials.
+
+        No account can be chosen via tool arguments, and permissions are
+        rechecked even though MCPBearerGate has already authenticated the call.
+        """
+        if bool(oauth_subject) == bool(legacy_token):
+            return None
+        with self.db() as c:
+            if oauth_subject:
+                row=c.execute(
+                    """SELECT u.profile_id,u.username,u.role,u.grants,u.is_active
+                       FROM oauth_identities i JOIN users u ON u.id=i.user_id
+                       WHERE i.issuer=? AND i.subject=?""",
+                    (oauth_issuer,oauth_subject)
+                ).fetchone()
+            else:
+                if not legacy_token or len(legacy_token)>256:
+                    return None
+                row=c.execute(
+                    """SELECT u.profile_id,u.username,u.role,u.grants,u.is_active
+                       FROM access_tokens t JOIN users u ON u.id=t.owner_id
+                       WHERE t.token_hash=? AND t.scope='mcp:read'
+                       AND t.expires_at>?""",
+                    (digest(legacy_token),int(time.time()))
+                ).fetchone()
+        if not row or not row['is_active'] or not row['profile_id']:
+            return None
+        if not {'mcp:use','calls:read','metrics:read'} <= permissions(row['role'],row['grants']):
+            return None
+        return {'id':str(row['profile_id']), 'name':row['username']}
 
     def record_activity(self, *, user_id: int | None, surface: str, action: str,
                         http_status: int, duration_ms: int) -> None:
