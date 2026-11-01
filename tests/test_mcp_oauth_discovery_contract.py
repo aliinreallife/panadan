@@ -1,4 +1,5 @@
 """Offline OAuth discovery contract tests; no IdP, network, VPN or Odoo access."""
+from contextlib import asynccontextmanager
 import pytest
 from fastapi.testclient import TestClient
 
@@ -93,6 +94,14 @@ def test_actual_fastapi_metadata_and_401_route_contract(monkeypatch, tmp_path, c
     monkeypatch.setattr(main, "oauth_config", config)
     # This is an unauthenticated test. Never supply or mint tokens.
     monkeypatch.setattr(main, "oauth_verifier", None)
+    # Existing CI tests have already run the global MCP SDK session manager.
+    # These tests only exercise anonymous FastAPI routes / the bearer gate,
+    # so use a fresh isolated lifespan without restarting the one-shot SDK.
+    @asynccontextmanager
+    async def isolated_lifespan(_app):
+        main.store.bootstrap("admin", "synthetic-unique-admin-password-123")
+        yield
+    monkeypatch.setattr(main.app.router, "lifespan_context", isolated_lifespan)
     with TestClient(main.app, base_url="http://localhost:8508") as client:
         for route in (
             "/.well-known/oauth-protected-resource",
@@ -113,6 +122,14 @@ def test_legacy_mode_disables_discovery_but_still_denies_tools(monkeypatch, tmp_
     monkeypatch.setattr(main, "store", Store(str(tmp_path / "auth.sqlite")))
     monkeypatch.setattr(main, "oauth_config", OAuthConfig())
     monkeypatch.setattr(main, "oauth_verifier", None)
+    # Existing CI tests have already run the global MCP SDK session manager.
+    # These tests only exercise anonymous FastAPI routes / the bearer gate,
+    # so use a fresh isolated lifespan without restarting the one-shot SDK.
+    @asynccontextmanager
+    async def isolated_lifespan(_app):
+        main.store.bootstrap("admin", "synthetic-unique-admin-password-123")
+        yield
+    monkeypatch.setattr(main.app.router, "lifespan_context", isolated_lifespan)
     with TestClient(main.app, base_url="http://localhost:8508") as client:
         assert client.get("/.well-known/oauth-protected-resource").status_code == 404
         denied = client.get("/mcp/")
