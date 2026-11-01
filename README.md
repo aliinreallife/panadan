@@ -261,6 +261,29 @@ customer data before approving retention and recovery practices.
 See [PostgreSQL 18 platform guide](docs/POSTGRESQL_18_PLATFORM.md)
 for setup, security and restore validation.
 
+## Local verification without GitHub Actions minutes
+
+For a clean, **read-only-from-Odoo** quality gate, including detached Git
+worktrees without `.env.db`, `.env.app` or the VPN client file:
+
+```bash
+./panadan.sh verify             # Locked Python, Node, JavaScript/shell syntax
+./panadan.sh verify --assets    # Also npm ci + build (may fetch public packages)
+./panadan.sh verify --docker    # Also ephemeral PG18 synthetic-only integration
+./panadan.sh verify --docker --assets  # Full local pre-merge gate
+```
+
+The default command does **not** start Docker, use Actions minutes or load
+database credentials. It clears existing `PG*` and platform-test connection
+variables for Python unit tests. Shell syntax is checked **individually** for
+every script; `bash -n a.sh b.sh` checks only the first file and is not
+equivalent. The `--docker` opt-in creates and destroys only its own
+`panadan-ci-pg-...` container on a random loopback port, using synthetic
+credentials. Never use an Odoo DSN or the persistent platform volume for tests.
+Use this local gate while the repository has no available GitHub Actions
+runner minutes; CI failures caused by billing/quota exhaustion do not establish
+code test failures.
+
 ## Optional Panadan PostgreSQL 18.6 platform database
 
 The future multi-source ingestion database uses the **official PostgreSQL
