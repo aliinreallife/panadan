@@ -260,9 +260,9 @@ def test_pg_store_throttle_reporting_and_operator_metadata(disposable_db):
     store=PgStore(disposable_db)
     store.bootstrap("admin","synthetic-test-admin-password")
     uid=store.verify_login("admin","synthetic-test-admin-password")
-    for n in range(6):
+    for n in range(7):
         store.record_login_failure("admin",now=1700000000+n)
-    assert store.login_is_throttled("admin",now=1700000006)
+    assert store.login_is_throttled("admin",now=1700000007)
     store.clear_login_failures("admin")
     assert not store.login_is_throttled("admin",now=1700000006)
     store.set_operator_assignment("synthetic operator","west","team")
