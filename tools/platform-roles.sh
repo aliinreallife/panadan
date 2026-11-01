@@ -48,7 +48,7 @@ check_roles_file() {
     die "Expected exactly one reader password."
   writer="$(sed -n 's/^PANADAN_WRITER_PASSWORD=//p' "$ROLES_FILE")"
   reader="$(sed -n 's/^PANADAN_READER_PASSWORD=//p' "$ROLES_FILE")"
-  [[ "$writer" =~ ^[[:xdigit:]]{64}$ && "$reader" =~ ^[[:xdigit:]]{64}$ && "$writer" != "$reader" ]] ||
+  [[ "$writer" =~ ^[0-9a-f]{64}$ && "$reader" =~ ^[0-9a-f]{64}$ && "$writer" != "$reader" ]] ||
     die "Each role password must be distinct, exactly 64 hexadecimal characters."
 }
 audit_roles() {
