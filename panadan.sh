@@ -20,7 +20,7 @@ if [[ "$cmd" == "up" || "$cmd" == "down" ]]; then
                 data/ingress/compose.web.https.yaml; do
     if [[ -e "$marker" ]]; then
       echo "REFUSED: hardened production overlays detected; bare up/down is unsafe." >&2
-      echo "Use tools/prodctl-production.sh with all private overlays; review VPS-local prodctl.sh before deployment." >&2
+      echo "Use the reviewed production deployment controller tools/prodctl-production.sh with all private overlays; review VPS-local prodctl.sh before deployment." >&2
       exit 64
     fi
   done
