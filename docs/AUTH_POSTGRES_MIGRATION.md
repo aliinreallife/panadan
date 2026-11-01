@@ -108,6 +108,10 @@ bash /tmp/panadan-restore-check.sh \
 
 Expected: original 7 ingestion tables and zero sources pass restoration checks; the proposed DDL creates exactly eight auth tables; the original seven ingestion tables remain. With `--auth-grants`, this also creates a NOLOGIN test role only in the disposable container, applies the separate restricted-role SQL, checks *each* required auth DML privilege and denied ingest/schema/DDL permissions, and runs a real read as the restricted role. This does **not** exercise production credentials, auth data import, private connectivity, or an application cutover. Do not run the SQL against production as part of this rehearsal.
 
+### Role-grant rehearsal verified (2026-11-01)
+
+On the operator's local WSL workstation, the latest isolated restore helper executed successfully against the original off-VPS encrypted pre-auth PostgreSQL dump. It reported **PASS** for all four checks: restored PostgreSQL 18 with seven ingestion tables/no sources, additive eight-table auth schema, restricted `panadan_auth_runtime` privilege inspection plus a read under the test role, and removal of the disposable container. No production schema, role, network or application auth switch occurred. This is not proof of migrated-user login or OAuth readiness.
+
 ## Production cutover: deliberately NOT implemented yet
 
 1. **Confirm the owned PG18 instance exists on the VPS**, its image
