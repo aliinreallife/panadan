@@ -21,7 +21,14 @@ def test_pinned_postgres_image_matches_ci_and_local_platform_and_test_runner():
     assert f"image: {IMAGE}" in compose
     assert IMAGE in runner
     assert "postgres:17" not in (ci + compose + runner)
-    assert "tools/test-platform-integration.sh" in ci
+    # GitHub Actions uses its PostgreSQL service with pytest directly; the
+    # disposable Docker shell runner is for local/WSL integration testing.
+    # Both routes must exercise the transactional and role-permission tests.
+    assert "platform-integration:" in ci
+    assert "tests/test_platform_ingest.py" in ci
+    assert "tests/test_platform_role_permissions.py" in ci
+    assert "tests/test_platform_ingest.py" in runner
+    assert "tests/test_platform_role_permissions.py" in runner
 
 
 def test_pg18_persistent_volume_not_pg17_style_and_not_part_of_odoo_stack():
