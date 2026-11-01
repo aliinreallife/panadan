@@ -97,9 +97,19 @@ against the *same* snapshot if validating the original manual backup.
 
 ## Optional daily systemd schedule (only after successful manual restore drill)
 
-Install a service and timer explicitly during a maintenance review. The
-following units are templates for this deployment path; check and adjust
-paths if you deployed elsewhere.
+Install a service and timer explicitly during a maintenance review. Versioned
+examples are in `deploy/systemd/panadan-auth-backup.service` and
+`deploy/systemd/panadan-auth-backup.timer`. Check and adjust their paths for
+your server first. After manual backup and restore verification, copy them with:
+
+```bash
+sudo install -m 644 deploy/systemd/panadan-auth-backup.service /etc/systemd/system/
+sudo install -m 644 deploy/systemd/panadan-auth-backup.timer /etc/systemd/system/
+sudo systemd-analyze verify /etc/systemd/system/panadan-auth-backup.service /etc/systemd/system/panadan-auth-backup.timer
+```
+
+Then review the exact unit contents; the following snippets show their
+expected configuration. Installing files does not start a timer.
 
 `/etc/systemd/system/panadan-auth-backup.service`:
 
