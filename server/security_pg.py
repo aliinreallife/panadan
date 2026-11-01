@@ -286,3 +286,128 @@ class PgStore:
     def revoke(self, tid: int):
         with self.db() as con:
             con.execute("DELETE FROM panadan_auth.access_tokens WHERE id=%s",(tid,))
+
+    def bind_oauth_identity(self, issuer: str, subject: str, user_id: int) -> int:
+        if not isinstance(subject,str) or not 1<=len(subject)<=256 or subject.strip()!=subject:
+            raise ValueError("Invalid identity-provider subject")
+        if not issuer or len(issuer)>512:
+            raise ValueError("Invalid identity-provider issuer")
+        with self.db() as con:
+            user=con.execute(
+                "SELECT role,grants,is_active FROM panadan_auth.users WHERE id=%s FOR UPDATE",
+                (user_id,),
+            ).fetchone()
+            if (not user or not user["is_active"] or
+                    not {"mcp:use","calls:read","metrics:read"} <=
+                    permissions(user["role"],user["grants"])):
+                raise ValueError("Active user with MCP privileges required")
+            return int(con.execute(
+                """INSERT INTO panadan_auth.oauth_identities
+                   (issuer,subject,user_id,created_at)
+                   VALUES (%s,%s,%s,%s) RETURNING id""",
+                (issuer,subject,user_id,int(time.time())),
+            ).fetchone()["id"])
+
+    def list_oauth_identities(self, issuer: str) -> list[dict]:
+        with self.db() as con:
+            return con.execute(
+                """SELECT i.id,i.subject,i.created_at,u.username,u.is_active
+                   FROM panadan_auth.oauth_identities i
+                   JOIN panadan_auth.users u ON u.id=i.user_id
+                   WHERE i.issuer=%s ORDER BY i.id DESC""",(issuer,)
+            ).fetchall()
+
+    def revoke_oauth_identity(self, issuer: str, identity_id: int) -> None:
+        with self.db() as con:
+            con.execute(
+                "DELETE FROM panadan_auth.oauth_identities WHERE issuer=%s AND id=%s",
+                (issuer,identity_id),
+            )
+
+    def _oauth_user(self, con, issuer: str | None, subject: str):
+        return con.execute(
+            """SELECT u.id,u.profile_id,u.username,u.role,u.grants,u.is_active
+               FROM panadan_auth.oauth_identities i JOIN panadan_auth.users u
+               ON u.id=i.user_id WHERE i.issuer=%s AND i.subject=%s""",
+            (issuer,subject),
+        ).fetchone()
+
+    def oauth_identity_has_mcp_access(self, issuer: str, subject: str) -> bool:
+        with self.db() as con:
+            row=self._oauth_user(con,issuer,subject)
+        return bool(row and row["is_active"] and
+                    {"mcp:use","calls:read","metrics:read"} <=
+                    permissions(row["role"],row["grants"]))
+
+    def actor_for_oauth(self, issuer: str, subject: str) -> int | None:
+        if not issuer or not subject:
+            return None
+        with self.db() as con:
+            row=self._oauth_user(con,issuer,subject)
+        return int(row["id"]) if row and row["is_active"] else None
+
+    def authorized_transcript_actor(self, *, oauth_issuer: str | None = None,
+                                    oauth_subject: str | None = None,
+                                    legacy_token: str | None = None) -> int | None:
+        if bool(oauth_subject)==bool(legacy_token):
+            return None
+        with self.db() as con:
+            if oauth_subject:
+                row=self._oauth_user(con,oauth_issuer,oauth_subject)
+            else:
+                row=self._token_user(con,legacy_token)
+                if row and row["scope"]!="mcp:read":
+                    return None
+        if not row or not row["is_active"]:
+            return None
+        if not {"mcp:use","calls:read","metrics:read","calls:transcript:read"} <= permissions(row["role"],row["grants"]):
+            return None
+        return int(row["id"])
+
+    def mcp_profile(self, *, oauth_issuer: str | None = None,
+                    oauth_subject: str | None = None,
+                    legacy_token: str | None = None) -> dict | None:
+        if bool(oauth_subject)==bool(legacy_token):
+            return None
+        with self.db() as con:
+            if oauth_subject:
+                row=self._oauth_user(con,oauth_issuer,oauth_subject)
+            else:
+                row=self._token_user(con,legacy_token)
+                if row and row["scope"]!="mcp:read":
+                    return None
+        if not row or not row["is_active"] or not row["profile_id"]:
+            return None
+        if not {"mcp:use","calls:read","metrics:read"} <= permissions(row["role"],row["grants"]):
+            return None
+        return {"id":row["profile_id"],"name":row["username"]}
+
+    def audit_transcript_request(self, *, user_id: int, surface: str,
+                                 call_id: int, char_limit: int) -> bool:
+        if surface not in ("mcp","webmcp") or call_id<1 or not 1<=char_limit<=6000:
+            return False
+        with self.db() as con:
+            # FOR UPDATE serializes role revocation and transcript reads.
+            row=con.execute(
+                "SELECT role,grants,is_active FROM panadan_auth.users WHERE id=%s FOR UPDATE",
+                (user_id,),
+            ).fetchone()
+            caps=permissions(row["role"],row["grants"]) if row and row["is_active"] else set()
+            if not {"calls:read","calls:transcript:read"} <= caps:
+                return False
+            con.execute(
+                """INSERT INTO panadan_auth.transcript_access_audit
+                   (user_id,surface,call_id,char_limit,created_at)
+                   VALUES (%s,%s,%s,%s,%s)""",
+                (user_id,surface,call_id,char_limit,int(time.time())),
+            )
+            return True
+
+    def list_transcript_audit(self, limit: int = 100) -> list[dict]:
+        with self.db() as con:
+            return con.execute(
+                """SELECT a.id,u.username,a.surface,a.call_id,a.char_limit,a.created_at
+                   FROM panadan_auth.transcript_access_audit a
+                   JOIN panadan_auth.users u ON u.id=a.user_id
+                   ORDER BY a.id DESC LIMIT %s""",(max(1,min(int(limit),500)),)
+            ).fetchall()
