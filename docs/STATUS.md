@@ -37,6 +37,8 @@
 - [ ] Full disaster recovery, source DBA least privilege, CI and UI verification
   (#63, #22, #44, #24).
 
+A [single disaster-recovery runbook](DISASTER_RECOVERY.md) now records a safe off-host reconstruction sequence and unresolved verification gates. It is **not** evidence of a production restore or approved RPO/RTO (#63).
+
 ## Merged into `main` (not deployed or cut over by these merges)
 
 - [PR #66](https://github.com/aliinreallife/panadan/pull/66):
