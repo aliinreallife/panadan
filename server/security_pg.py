@@ -411,3 +411,121 @@ class PgStore:
                    JOIN panadan_auth.users u ON u.id=a.user_id
                    ORDER BY a.id DESC LIMIT %s""",(max(1,min(int(limit),500)),)
             ).fetchall()
+
+    def operator_assignments(self) -> dict[str,dict]:
+        with self.db() as con:
+            rows=con.execute(
+                """SELECT operator_name,destination,team
+                   FROM panadan_auth.operator_directory"""
+            ).fetchall()
+        return {r["operator_name"]:{
+            "destination":r["destination"] or "نامشخص",
+            "team":r["team"] or "نامشخص",
+        } for r in rows}
+
+    def set_operator_assignment(self, operator_name: str, destination: str,
+                                team: str) -> None:
+        if (not operator_name or len(operator_name)>180 or
+                any(ord(ch)<32 for ch in operator_name)):
+            raise ValueError("Invalid operator")
+        for field in (destination,team):
+            if len(field)>80 or any(ord(ch)<32 for ch in field):
+                raise ValueError("Invalid destination or team")
+        destination,team=destination.strip(),team.strip()
+        with self.db() as con:
+            if not destination and not team:
+                con.execute(
+                    "DELETE FROM panadan_auth.operator_directory WHERE operator_name=%s",
+                    (operator_name,),
+                )
+            else:
+                con.execute(
+                    """INSERT INTO panadan_auth.operator_directory
+                       (operator_name,destination,team,updated_at)
+                       VALUES (%s,%s,%s,%s) ON CONFLICT(operator_name)
+                       DO UPDATE SET destination=excluded.destination,
+                       team=excluded.team,updated_at=excluded.updated_at""",
+                    (operator_name,destination or None,team or None,int(time.time())),
+                )
+
+    def record_activity(self, *, user_id: int | None, surface: str, action: str,
+                        http_status: int, duration_ms: int) -> None:
+        if surface not in ("dashboard","api","mcp","auth") or not 1<=len(action)<=120:
+            raise ValueError("Invalid audit event")
+        if not 100<=http_status<=599:
+            raise ValueError("Invalid HTTP status")
+        with self.db() as con:
+            con.execute(
+                """INSERT INTO panadan_auth.activity_events
+                   (user_id,surface,action,http_status,duration_ms,created_at)
+                   VALUES (%s,%s,%s,%s,%s,%s)""",
+                (user_id,surface,action,http_status,max(0,min(duration_ms,600000)),
+                 int(time.time())),
+            )
+            con.execute(
+                "DELETE FROM panadan_auth.activity_events WHERE created_at<%s",
+                (int(time.time())-90*86400,),
+            )
+
+    def activity_report(self, *, days: int = 14, user_id: int | None = None,
+                        surface: str | None = None, errors_only: bool = False,
+                        limit: int = 100) -> dict:
+        if not 1<=days<=90 or not 1<=limit<=250:
+            raise ValueError("Invalid report range")
+        if surface and surface not in ("dashboard","api","mcp","auth"):
+            raise ValueError("Invalid activity surface")
+        where=["a.created_at>=%s"]
+        params=[int(time.time())-days*86400]
+        if user_id is not None:
+            where.append("a.user_id=%s")
+            params.append(user_id)
+        if surface:
+            where.append("a.surface=%s")
+            params.append(surface)
+        if errors_only:
+            where.append("a.http_status>=400")
+        clause=" WHERE "+" AND ".join(where)
+        with self.db() as con:
+            daily=con.execute(
+                """SELECT to_char(to_timestamp(a.created_at) AT TIME ZONE 'UTC',
+                                  'YYYY-MM-DD') AS day,
+                   count(*)::integer AS total,
+                   sum(CASE WHEN a.http_status>=400 THEN 1 ELSE 0 END)::integer AS errors
+                   FROM panadan_auth.activity_events a"""+
+                clause+" GROUP BY day ORDER BY day",params,
+            ).fetchall()
+            surfaces=con.execute(
+                """SELECT a.surface AS name,count(*)::integer AS total
+                   FROM panadan_auth.activity_events a"""+
+                clause+" GROUP BY a.surface ORDER BY total DESC",params,
+            ).fetchall()
+            actions=con.execute(
+                """SELECT a.action AS name,count(*)::integer AS total
+                   FROM panadan_auth.activity_events a"""+
+                clause+" GROUP BY a.action ORDER BY total DESC LIMIT 8",params,
+            ).fetchall()
+            users=con.execute(
+                """SELECT coalesce(u.username,'ناشناس') AS name,
+                   count(*)::integer AS total FROM panadan_auth.activity_events a
+                   LEFT JOIN panadan_auth.users u ON u.id=a.user_id"""+
+                clause+" GROUP BY a.user_id,u.username ORDER BY total DESC LIMIT 8",params,
+            ).fetchall()
+            active=con.execute(
+                """SELECT count(DISTINCT a.user_id)::integer AS n
+                   FROM panadan_auth.activity_events a"""+
+                clause+" AND a.user_id IS NOT NULL",params,
+            ).fetchone()["n"]
+            recent=con.execute(
+                """SELECT a.id,coalesce(u.username,'ناشناس') AS username,
+                   a.surface,a.action,a.http_status,a.duration_ms,a.created_at
+                   FROM panadan_auth.activity_events a
+                   LEFT JOIN panadan_auth.users u ON u.id=a.user_id"""+
+                clause+" ORDER BY a.id DESC LIMIT %s",[*params,limit],
+            ).fetchall()
+        return {
+            "total":sum(x["total"] for x in surfaces),
+            "errors":sum(x["errors"] for x in daily),
+            "active_users":active,
+            "days":daily,"surfaces":surfaces,"actions":actions,
+            "users":users,"recent":recent,
+        }
