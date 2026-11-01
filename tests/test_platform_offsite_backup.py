@@ -83,6 +83,7 @@ else:
         TMPDIR=str(tmp_path / "tmp"),
         MOCK_REMOTE_DIR=str(tmp_path / "remote"),
         MOCK_LOG=str(tmp_path / "commands.log"),
+        PANADAN_PLATFORM_BACKUP_LOCK_FILE=str(tmp_path / "backup.lock"),
         PANADAN_BACKUP_AGE_RECIPIENT="age1syntheticpublicrecipient",
         PANADAN_PLATFORM_BACKUP_RCLONE_DEST="offsite:panadan/owned-postgres",
     )
