@@ -102,7 +102,11 @@ docker pull ghcr.io/aliinreallife/panadan-web:main
 
 If your `gh` authentication lacks `read:packages`, grant the needed scope or use a suitable classic PAT via `docker login --password-stdin`. The `:main` tag moves with releases; prefer a specific `sha-` tag (or digest pin) for repeatable deployments. Set `PANADAN_VPN_IMAGE` and `PANADAN_WEB_IMAGE` in your local `.env.app` to select those images.
 
-`compose.prod.yaml` publishes dashboard port 8508 on **127.0.0.1 only**. The application is not ready to be exposed publicly: TLS termination, secure cookies, proxy host/origin validation, audit/abuse controls, and OAuth 2.1 for hosted MCP clients still require implementation and security review. A public domain is **not** required for local development.
+`compose.prod.yaml` alone publishes port 8508 on **127.0.0.1 only**. As of 2026-11-01, a separate production deployment at `https://dan.panafor.com` has verified TLS, Secure Cookie, login, and dashboard data behind an isolated Nginx gateway and a shared Plane Caddy proxy. **Those private ingress/HTTPS overrides are not in the base Compose file.** MCP OAuth remains unfinished and is NOT implied by a working HTTPS dashboard.
+
+**Never run `./panadan.sh up` or `./panadan.sh down` on the hardened deployment:** this can drop its required overlays; the CLI now refuses if the production override files are present. Use `bash tools/prodctl-production.sh check` / `status` to inspect deployment. Explicit `deploy-web --apply` and `deploy-proxy --apply` commands are only for reviewed controlled upgrades; proxy recreation briefly impacts Plane and requires preserving `/intake.html`. Until #56 closes, the existing VPS-local `prodctl.sh` and private Compose files remain the deployed authority; first reconcile script semantics without overwriting local untracked files.
+
+**Backups:** a manual online SQLite snapshot and encrypted off-site copy have been performed. See [backup automation](docs/BACKUP_AUTOMATION.md) for the new opt-in `age` + `rclone` tool and a proposed daily schedule. Do not enable unattended backups until an independent destination, recovery key escrow, alerts and restore drill have been verified. A public domain is **not** required for local development.
 
 ## Experimental WebMCP browser integration
 
