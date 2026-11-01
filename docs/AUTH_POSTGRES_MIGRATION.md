@@ -27,6 +27,9 @@ but role provisioning and production use are intentionally manual and pending. D
   `panadan` or `panadan_ci` and requires PostgreSQL major version 18.
   It is additive/idempotent and creates no external connectors.
 - `database/permissions/003_auth_runtime_role.sql`: opt-in, idempotent DML-only grants to a separately provisioned `panadan_auth_runtime` role. It does **not** create login credentials or activate runtime access, and may not be applied to Odoo.
+- `server/security_pg.py`: **staging-only** explicit PostgreSQL `PgStore` implementation for login/session, password verification, users/roles, persistent throttling, revocable API and MCP tokens, OAuth bindings, transcript audit, activity reporting and operator assignment. The live `server/main.py` still constructs SQLite `Store` unconditionally; **no feature flag or production auth cutover** has been introduced.
+- Synthetic PostgreSQL-18 integration exercises account session and token revocation, OAuth rebinding, profile IDs, transcript permissions, login throttle, activity reporting and operator metadata. This is a new adapter; real copied-data rehearsal is still mandatory.
+- **VPS observation (2026-11-01):** operator verified `panadan-platform-db-1` running, healthy on PostgreSQL 18.6, the `panadan-platform_panadan_platform_pg18_data` volume present, and `.env.platform` available. This does not verify runtime grants or connectivity from Panadan Web's shared VPN network namespace.
 - `server/auth_pg_migration.py`: checks an offline, consistent SQLite
   backup using `PRAGMA integrity_check`, validates table columns and
   user ownership, then prints only table counts. **No connection to
@@ -106,7 +109,7 @@ of the cutover without introducing another production SQLite migration.
 
 ## Unfinished operations
 
-- No runtime auth PostgreSQL store or production switch yet.
+- A staging PostgreSQL runtime adapter exists but is **not selected by FastAPI** and not cut over to production.
 - No automatic schedule, migrated production accounts, or proven restore.
 - Existing source Odoo PostgreSQL privileges (#22) remain separately
   subject to DBA review; no changes should be made in that database.
