@@ -94,14 +94,17 @@ This operates **only** on the independently named `panadan-platform`
 Compose service. It refuses symlinked/group-readable credentials and
 checks the PostgreSQL major version, database name and owner identity.
 It refuses to rotate while PostgreSQL's `log_statement` setting is not
-`none`, to avoid logging the literal password during `ALTER ROLE`.
+`none`, to avoid unnecessarily logging the SCRAM verifier during `ALTER ROLE`.
 Other server-side audit extensions may log SQL separately: review those
 settings independently and never assume stdout suppression protects
 the database's own logs.
 It generates a fresh cryptographic secret, stages an updated local
-`.env.platform` with mode 600, and changes the PostgreSQL
-`panadan_owner` role using a local psql connection (secret over stdin,
-not an argument). It atomically replaces the env file, recreates **only**
+`.env.platform` with mode 600, and derives a uniquely salted
+**SCRAM-SHA-256 verifier locally** using Python 3. The plaintext password
+is used only for local derivation and the private env file; the SQL sent
+to PostgreSQL contains the SCRAM verifier, not the plaintext password.
+PostgreSQL accepts correctly formatted SCRAM verifiers as-is. The command
+uses a local psql connection (verifier via stdin, not an argument). It atomically replaces the env file, recreates **only**
 the DB container, and verifies TCP password authentication. The persistent
 named volume is **not** deleted. A brief database interruption is expected,
 so stop any clients before rotation.
