@@ -77,8 +77,15 @@ def test_real_mcp_http_authorization_and_transcript_audit(tmp_path, monkeypatch)
         assert initialized.status_code==200, initialized.text
         tools_result=post(approved_token,'tools/list',request_id=2)
         assert tools_result.status_code==200, tools_result.text
-        names=[x['name'] for x in unwrap(tools_result)['tools']]
+        advertised=unwrap(tools_result)['tools']
+        names=[x['name'] for x in advertised]
         assert 'get_redacted_call_transcript' in names
+        by_name={x['name']: x for x in advertised}
+        for name in ('list_recent_calls', 'get_call_summary',
+                     'get_call_metrics', 'get_available_states'):
+            assert by_name[name]['annotations']['readOnlyHint'] is True
+        # Never mislabel the audited transcript disclosure as a pure read.
+        assert by_name['get_redacted_call_transcript']['annotations']['readOnlyHint'] is False
 
         # A valid MCP bearer is NOT sufficient to disclose transcript text.
         denied=post(reader_token,'tools/call',{
