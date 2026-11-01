@@ -79,6 +79,23 @@ def test_real_mcp_http_authorization_and_transcript_audit(tmp_path, monkeypatch)
         assert tools_result.status_code==200, tools_result.text
         names=[x['name'] for x in unwrap(tools_result)['tools']]
         assert 'get_redacted_call_transcript' in names
+        assert 'get_authenticated_profile' in names
+
+        # Profile identities are resolved exclusively from each validated
+        # request's bearer token, never from a model-provided account ID.
+        profile_reader=unwrap(post(reader_token,'tools/call',{
+            'name':'get_authenticated_profile','arguments':{}
+        },request_id=6))
+        profile_approved=unwrap(post(approved_token,'tools/call',{
+            'name':'get_authenticated_profile','arguments':{}
+        },request_id=7))
+        assert profile_reader['name']=='mcpreader'
+        assert profile_approved['name']=='mcpanalyst'
+        assert profile_reader['id'] != profile_approved['id']
+        assert store.mcp_profile(legacy_token=reader_token)==profile_reader
+        assert unwrap(post(reader_token,'tools/call',{
+            'name':'get_authenticated_profile','arguments':{}
+        },request_id=8))==profile_reader
 
         # A valid MCP bearer is NOT sufficient to disclose transcript text.
         denied=post(reader_token,'tools/call',{
