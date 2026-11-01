@@ -19,7 +19,6 @@ require_config() {
   for exe in docker age rclone flock openssl sha256sum mktemp stat; do
     command -v "$exe" >/dev/null 2>&1 || die "Missing required command: $exe"
   done
-  docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required"
   [[ -s "$PRIVATE_ENV" && ! -L "$PRIVATE_ENV" ]] || die "Missing, empty or symlinked .env.platform"
   local perms
   perms="$(stat -c '%a' "$PRIVATE_ENV")" || die "Cannot inspect private platform configuration"
@@ -33,6 +32,7 @@ require_config() {
   [[ "${PANADAN_PLATFORM_BACKUP_RCLONE_DEST:-}" =~ ^[A-Za-z0-9_-]+:.+ ]] ||
     die "Set PANADAN_PLATFORM_BACKUP_RCLONE_DEST to a separately hosted rclone REMOTE:path"
   [[ "$PANADAN_PLATFORM_BACKUP_RCLONE_DEST" != *$'\n'* ]] || die "Invalid remote destination"
+  docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required"
 }
 
 compose() {
