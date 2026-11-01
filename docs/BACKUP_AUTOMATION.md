@@ -188,10 +188,43 @@ the live SQLite database. Its steps are:
 integrity or a successful recovery. The true recovery gate is decrypting the
 off-VPS object with the independent private key and performing a disconnected
 PG18 restore, checking expected schemas, account records and permissions.
-The existing `verify-offsite-platform-restore.sh` currently validates a
-**specific pre-auth empty-source snapshot**; do not use it to declare a newer
-production auth backup restored. A modern post-auth restore drill is required
-before auth cutover.
+There are now **two deliberately separate** local restore helpers:
+
+- `tools/verify-offsite-platform-restore.sh` validates the specific
+  historical pre-auth, zero-source PostgreSQL snapshot, optionally rehearsing
+  the auth migration. It must **not** be used for populated auth snapshots.
+- `tools/verify-populated-platform-restore.sh` is the new
+  **offline, disposable** restore verifier for backups containing the
+  `panadan_auth` schema and at least one account. It restores
+  a supplied archive into a PostgreSQL 18.6 container with `--network none`, an
+  ephemeral size-limited tmpfs, no host volumes or ports. It checks all seven
+  ingestion and eight auth tables, validated auth constraints, the presence
+  of accounts and the restricted runtime role permissions. It reads no raw
+  accounts into logs and discards the temporary database.
+
+Run the populated verifier **on a trusted independent recovery workstation**,
+not the live VPS. Retrieve the backup from off-site storage using your
+normal trusted channel and supply the independently escrowed age identity:
+
+```bash
+bash tools/verify-populated-platform-restore.sh \
+  /secure/backup/panadan-YYYYMMDD.dump.age \
+  /secure/keys/age-identity.txt \
+  database/permissions/003_auth_runtime_role.sql
+```
+
+The pinned PostgreSQL image must already be locally available. With adequate
+host RAM, set `PANADAN_RESTORE_TMPFS_MIB` (128–8192) only if the default
+1024 MiB temporary database is too small. This command is intentionally
+**read-only toward your source systems**, but it creates/deletes an isolated
+test Docker container on the recovery computer.
+
+A PASS confirms a real SQL restore, expected schema/constraints, account
+presence, and permissions of a **temporary role** reconstructed from the
+supplied grants. It does NOT establish that application login, OAuth recovery,
+all audit rows, backup-key escrow, off-site timers, network configuration,
+or whole-system disaster recovery will work. Do not run it on an archive
+without auth data or infer that this alone completes issue #55/#70.
 
 Configure an independent physically off-VPS rclone backend. A string such as
 `offsite:...` does **not** prove the backend is geographically/administratively
