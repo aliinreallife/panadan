@@ -255,9 +255,20 @@ BEGIN
 END
 $bootstrap$;
 """
+    # Derive a salted SCRAM-SHA-256 verifier locally; never put a plaintext
+    # password into an SQL statement or PostgreSQL statement logs.
+    from scram_secret import verifier
+    hashed = verifier(secret.encode("ascii"), secrets.token_bytes(16))
+    logging = run(
+        "docker", "exec", PG, "psql", "-X", "-A", "-t",
+        "-v", "ON_ERROR_STOP=1", "-U", "panadan_owner", "-d", "panadan",
+        "-c", "SHOW log_statement;"
+    )
+    if logging != "none":
+        raise Refusal("Refusing role credential update while PostgreSQL statement logging is enabled")
     role_sql += (
         "ALTER ROLE panadan_auth_runtime LOGIN NOSUPERUSER NOCREATEDB "
-        "NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '" + secret + "';\n"
+        "NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '" + hashed + "';\n"
     )
     # These two files were reviewed/tested against an offsite PG18 restore.
     sql = SCHEMA_SQL.read_text() + "\n" + role_sql + "\n" + GRANTS_SQL.read_text()
