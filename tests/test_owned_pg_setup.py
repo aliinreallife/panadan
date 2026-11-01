@@ -185,3 +185,37 @@ def test_fresh_database_init_requires_distinct_explicit_approval(monkeypatch,cap
                                    "--approve-live-network"])
     assert setup.main() == 1
     assert "--approve-new-db" in capsys.readouterr().err
+
+
+def test_auth_role_statement_uses_scram_verifier_not_plaintext(monkeypatch, tmp_path):
+    from tools.scram_secret import verifier
+    secret = "9" * 64
+    seen = []
+    monkeypatch.setattr(setup, "auth_password", lambda: secret)
+    monkeypatch.setattr(setup, "run", lambda *args, **kwargs:
+        seen.append((args, kwargs)) or ("none" if "-c" in args and "SHOW log_statement;" in args else ""))
+    monkeypatch.setattr(setup, "SCHEMA_SQL", tmp_path / "schema.sql")
+    monkeypatch.setattr(setup, "GRANTS_SQL", tmp_path / "grants.sql")
+    setup.SCHEMA_SQL.write_text("CREATE SCHEMA IF NOT EXISTS panadan_auth;")
+    setup.GRANTS_SQL.write_text("SELECT 1;")
+    setup.schema_apply()
+    sent_sql = [kw["input_text"] for args,kw in seen if kw.get("input_text")]
+    assert len(sent_sql) == 1
+    assert "SCRAM-SHA-256$" in sent_sql[0]
+    assert secret not in sent_sql[0]
+    assert "PASSWORD '9" not in sent_sql[0]
+
+
+def test_refuse_auth_role_change_when_sql_statement_logging_enabled(monkeypatch,tmp_path):
+    secret = "a" * 64
+    calls = []
+    monkeypatch.setattr(setup, "auth_password", lambda: secret)
+    monkeypatch.setattr(setup, "run", lambda *args, **kwargs:
+        calls.append((args,kwargs)) or "all")
+    monkeypatch.setattr(setup, "SCHEMA_SQL", tmp_path / "schema.sql")
+    monkeypatch.setattr(setup, "GRANTS_SQL", tmp_path / "grants.sql")
+    setup.SCHEMA_SQL.write_text("SELECT 1;")
+    setup.GRANTS_SQL.write_text("SELECT 1;")
+    with pytest.raises(setup.Refusal, match="statement logging"):
+        setup.schema_apply()
+    assert all(not kw.get("input_text") for _,kw in calls)
