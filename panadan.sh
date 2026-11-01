@@ -36,6 +36,17 @@ lock_if_needed() {
     echo 'Commit uv.lock before deploying or publishing the repository.'
   fi
 }
+# The normal production Compose omits hardened ingress/HTTPS overrides.
+# Never silently revert an already deployed public installation.
+refuse_unhardened_production() {
+  if [[ -f data/ingress/compose.panadan.yaml ||
+        -f data/ingress/compose.web.https.yaml ||
+        -f data/ingress/compose.web.release.yaml ]]; then
+    echo 'REFUSED: this installation has hardened production overlays.' >&2
+    echo 'Use the reviewed tools/prodctl-production.sh workflow instead of panadan.sh up/down.' >&2
+    return 64
+  fi
+}
 compose_dev() { docker compose --env-file .env.app -f compose.dev.yaml "$@"; }
 compose_prod() { docker compose --env-file .env.app -f compose.prod.yaml "$@"; }
 case "$cmd" in
@@ -75,13 +86,14 @@ case "$cmd" in
     ;;
   vpn-down) compose_dev down ;;
   up)
+    refuse_unhardened_production
     check_config
     # Production: prebuilt images from GHCR; requires registry access for first pull.
     compose_prod up -d --no-build
     compose_prod ps
     echo "Dashboard: http://localhost:$port/login"
     ;;
-  down) compose_prod down ;;
+  down) refuse_unhardened_production; compose_prod down ;;
   status) compose_dev ps || true; compose_prod ps || true ;;
   logs) compose_dev logs --tail=80 pgrelay vpn ;;
   prod-logs) compose_prod logs --tail=80 web vpn ;;
