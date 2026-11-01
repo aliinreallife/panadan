@@ -50,8 +50,13 @@ def test_panadan_vpn_keeps_default_private_ingress_and_web_namespace(tmp_path):
         "      ingress: {}\nnetworks:\n  ingress:\n"
         "    external: true\n    name: panadan-ingress\n"
     )
+    # Compose resolves env_file relative to its *first* compose file,
+    # not cwd. Copy the baseline config into the synthetic temp directory
+    # so no real private .env files are read in CI.
+    baseline=tmp_path/"compose.prod.yaml"
+    shutil.copyfile(ROOT/"compose.prod.yaml",baseline)
     config=_compose(tmp_path,[
-        ROOT/"compose.prod.yaml",
+        baseline,
         ingress,
         ROOT/"deploy/compose.auth-network.panadan.yaml",
     ])
