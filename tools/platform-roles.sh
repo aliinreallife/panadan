@@ -106,6 +106,7 @@ case "${1:-help}" in
     echo "No PostgreSQL permissions or connections changed."
     ;;
   apply)
+    set +x
     need_runtime
     check_permissions "$PLATFORM_FILE"
     check_roles_file
@@ -114,8 +115,20 @@ case "${1:-help}" in
     # Schema must already exist: provisioning should never silently bootstrap a DB.
     schema_count="$(admin_psql -A -t -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'panadan_ingest' AND table_type = 'BASE TABLE' AND table_name IN ('sources','source_records','raw_revisions','processing_jobs','derived_facts','sync_checkpoints','sync_runs')")"
     [[ "$schema_count" == "7" ]] || die "Initialize the 7-table platform schema before provisioning roles."
-    # Feed role passwords only on stdin to local psql. Never use -v for
-    # secrets, echo the SQL, enable shell tracing, or embed them in Docker argv.
+    command -v python3 >/dev/null 2>&1 || die "python3 is required for local SCRAM derivation."
+    [[ -s tools/scram_secret.py ]] || die "Missing local SCRAM derivation helper."
+    logging="$(admin_psql -A -t -c 'SHOW log_statement;' 2>/dev/null)" ||
+      die "Cannot verify PostgreSQL SQL statement logging policy."
+    [[ "$logging" == "none" ]] ||
+      die "Refusing role provisioning while PostgreSQL statement logging is enabled."
+    writer_verifier="$(printf '%s' "$writer" | python3 tools/scram_secret.py)" ||
+      die "Failed to derive writer SCRAM verifier."
+    reader_verifier="$(printf '%s' "$reader" | python3 tools/scram_secret.py)" ||
+      die "Failed to derive reader SCRAM verifier."
+    [[ "$writer_verifier" == SCRAM-SHA-256\$* && "$reader_verifier" == SCRAM-SHA-256\$* ]] ||
+      die "Invalid derived SCRAM verifier."
+    # Feed only locally derived SCRAM verifiers on stdin to local psql.
+    # Never send plaintext credentials in SQL, shell arguments or logs.
     {
       cat <<'ROLE_SQL'
 DO $create$
@@ -129,12 +142,13 @@ BEGIN
 END
 $create$;
 ROLE_SQL
-      printf "ALTER ROLE panadan_ingest_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" "$writer"
-      printf "ALTER ROLE panadan_report_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" "$reader"
+      printf "ALTER ROLE panadan_ingest_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" "$writer_verifier"
+      printf "ALTER ROLE panadan_report_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" "$reader_verifier"
       # Additive foundation migration installs the lock helper on existing DBs.
       cat "$FOUNDATION_SQL"
       cat "$SQL_FILE"
-    } | admin_psql --single-transaction >/dev/null
+    } | admin_psql --single-transaction >/dev/null 2>&1
+    unset writer reader writer_verifier reader_verifier
     audit_roles
     echo "Restricted ingest-writer and safe-facts reader roles provisioned."
     echo "No Odoo connection, source activation, or dashboard cutover occurred."
