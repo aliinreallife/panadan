@@ -16,6 +16,7 @@ SCRIPT = ROOT / "tools/platform-db.sh"
 def _sandbox(tmp_path, *, mode=0o600):
     (tmp_path / "tools").mkdir()
     shutil.copyfile(SCRIPT, tmp_path / "tools/platform-db.sh")
+    shutil.copyfile(ROOT / "tools/scram_secret.py", tmp_path / "tools/scram_secret.py")
     original = (
         "PANADAN_PLATFORM_DB_PORT=15433\n"
         "PANADAN_PLATFORM_DB_PASSWORD=" + "a" * 64 + "\n"
@@ -38,7 +39,7 @@ if [[ "$args" == *"current_database()"* ]]; then echo panadan:panadan_owner; exi
 if [[ "$args" == *"SHOW log_statement"* ]]; then echo "${MOCK_LOG_STATEMENT:-none}"; exit 0; fi
 if [[ "$args" == *"--single-transaction"* ]]; then
     IFS= read -r statement
-    [[ "$statement" =~ ^ALTER[[:space:]]ROLE[[:space:]]panadan_owner[[:space:]]PASSWORD[[:space:]]\'[a-f0-9]{64}\'\;$ ]] || exit 2
+    [[ "$statement" =~ ^ALTER[[:space:]]ROLE[[:space:]]panadan_owner[[:space:]]PASSWORD[[:space:]]\'SCRAM-SHA-256\\$[0-9]+:[A-Za-z0-9+/=]+\\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+\'\;$ ]] || exit 2
     [[ "${MOCK_ALTER_FAIL:-}" != YES ]] || exit 4
     printf 'alter\n' >> "$MOCK_LOG"
     exit 0
@@ -85,6 +86,8 @@ def test_rotate_password_updates_private_env_and_probes_tcp(tmp_path):
     assert ("a" * 64) not in run.stdout + run.stderr
     assert (tmp_path / "mock.log").read_text().splitlines() == ["alter", "recreate", "auth"]
     assert not list(tmp_path.glob(".env.platform.rotate.*"))
+    assert "SCRAM-SHA-256$" not in updated  # only the plaintext password belongs in env
+    assert "python3 tools/scram_secret.py" in SCRIPT.read_text()
     assert "--force-recreate db" in SCRIPT.read_text()
     assert 'PGPASSWORD="$POSTGRES_PASSWORD"' in SCRIPT.read_text()
     assert "docker volume rm" not in SCRIPT.read_text()
