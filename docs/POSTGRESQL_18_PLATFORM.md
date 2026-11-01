@@ -129,6 +129,46 @@ restore with `--no-owner --no-acl` and then reapply the reviewed grants.
 Do not test a restore against the existing live volume. Local unencrypted
 backups are not yet an acceptable protection for real customer data.
 
+## Rotate an exposed Panadan-owned DB password
+
+An existing PostgreSQL cluster **does not change the owner role password**
+when someone edits `.env.platform` or changes `POSTGRES_PASSWORD`.
+Use this explicit command instead of printing or editing live credentials:
+
+```bash
+cd ~/panadan
+./panadan.sh platform-db rotate-password
+./panadan.sh platform-db check
+```
+
+This operates **only** on the independently named `panadan-platform`
+Compose service. It refuses symlinked/group-readable credentials and
+checks the PostgreSQL major version, database name and owner identity.
+It refuses to rotate while PostgreSQL's `log_statement` setting is not
+`none`, to avoid unnecessarily logging the SCRAM verifier during `ALTER ROLE`.
+Other server-side audit extensions may log SQL separately: review those
+settings independently and never assume stdout suppression protects
+the database's own logs.
+It generates a fresh cryptographic secret, stages an updated local
+`.env.platform` with mode 600, and derives a uniquely salted
+**SCRAM-SHA-256 verifier locally** using Python 3. The plaintext password
+is used only for local derivation and the private env file; the SQL sent
+to PostgreSQL contains the SCRAM verifier, not the plaintext password.
+PostgreSQL accepts correctly formatted SCRAM verifiers as-is. The command
+uses a local psql connection (verifier via stdin, not an argument). It atomically replaces the env file, recreates **only**
+the DB container, and verifies TCP password authentication. The persistent
+named volume is **not** deleted. A brief database interruption is expected,
+so stop any clients before rotation.
+
+If the SQL update fails, the env file is left unchanged. If the container
+recreation fails after the password changes, the new private env file is
+retained: fix Docker availability and run `./panadan.sh platform-db up`,
+then `check`. Never run `platform-db setup` or reset the volume to
+recover from a password change. Do not post `.env.platform` contents,
+copy it into a worktree, or put the password in command arguments or logs.
+Authorized clients that previously used the owner credentials must be
+updated. This does **not** rotate separate, least-privilege runtime roles.
+
 ## Manual Compose alternative (WSL + Docker)
 
 The CLI above is preferred because it generates and checks the private
