@@ -40,7 +40,7 @@ managed by Docker Compose/production operations.
 Prerequisites: current healthy `panadan-platform-db-1`,
 `panadan-vpn-1`, `panadan-web-1`, healthy HTTPS `dan.panafor.com`
 and `plane.panafor.com/intake.html`. Run from the source checkout
-with this PR present (merge reviewed PR before applying).
+with the reviewed setup code already merged into `main` (PR #73).
 
 The operator has already verified independent age-encrypted PostgreSQL 18
 backup restoration and schema + permission rehearsal on WSL. The **apply**
