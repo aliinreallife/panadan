@@ -162,3 +162,38 @@ PANADAN_MCP_ALLOWED_ORIGINS=https://reports.example.org
 Replace placeholders with a real domain and exact origin. Wildcard public hosts/origins are rejected. Ensure the proxy forwards the correct Host value. Missing public host configuration causes blocked MCP requests rather than silently disabling protection. Continue to require HTTPS, independent role checks and an actual OAuth provider before Internet exposure.
 
 For local development after this upgrade: `uv python install 3.13`, then `./panadan.sh setup` and `./panadan.sh test`. The source database remains READ ONLY. New modern-protocol and legacy HTTP integration tests are exercised in CI, as are web and VPN Docker builds.
+
+
+## Non-mutating discovery preflight (before client connection)
+
+A working HTTPS dashboard is **not evidence that OAuth MCP authentication is
+configured**. On the 2026-11-01 production deployment, ChatGPT reported
+`Couldn't discover OAuth settings` while Panadan still used the default
+`PANADAN_MCP_AUTH_MODE=legacy`. In this mode the protected-resource metadata
+is deliberately absent; don't change the URL or disable authorization to bypass
+this behavior.
+
+The repository provides a read-only Python standard-library diagnostic:
+
+```bash
+python3 tools/check_mcp_oauth.py https://dan.panafor.com/mcp/
+```
+
+It makes only anonymous HTTPS GET requests: the two RFC 9728 protected-resource
+metadata paths, issuer RFC 8414/OIDC discovery, and an unauthenticated GET to
+`/mcp/` to check the expected `401 WWW-Authenticate` challenge. It checks
+issuer identity, canonical resource/scope, S256 PKCE, token-endpoint auth
+methods and automatic client-registration metadata. It sends **no password,
+Bearer token, authorization code, customer data or MCP tool calls**.
+
+Expected current result, until a production IdP is configured: **FAIL** with
+`No OAuth protected-resource metadata (HTTP 404)`. This is an accurate
+operational status, not a reason to weaken the MCP bearer gate. The script
+cannot prove the IdP accepts ChatGPT/Claude's actual CIMD document, implements
+user consent/refresh, or issues correctly audience-bound JWTs. All of those
+require a full staging MCP Inspector / real-client test (#57, #58, #23, #64).
+
+A future successful diagnostic result is necessary but **not sufficient** for
+production OAuth. Even if issuer discovery is valid, enforce access token
+signature, audience, issuer, scope, expiry and local Panadan account binding
+on each request, then separately verify consent, callback and revocation.
