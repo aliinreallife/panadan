@@ -102,7 +102,8 @@ def ingest_batch(conn, *, source_key: str, stream: str,
                  next_cursor: Mapping[str, object] | None) -> BatchResult:
     """Write revisions, jobs, run stats and cursor in one ACID transaction.
 
-    - The owner-only lock helper protects source enablement until commit.\n    - SELECT/lock on (source,stream) serializes concurrent workers.
+    - The owner-only lock helper protects source enablement until commit.
+    - SELECT/lock on (source,stream) serializes concurrent workers.
     - CAS expected_cursor prevents stale workers from overwriting checkpoints.
     - Same content replay creates no new revision/job.
     - Tombstones ONLY come from explicit upstream change events; never infer
