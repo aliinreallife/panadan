@@ -322,7 +322,8 @@ The dashboard/API/MCP must remain read-only against the source reporting databas
 - [x] Create opt-in `roles-setup`, `roles-apply` and `roles-check` commands for the owned PostgreSQL 18 database, using independent ignored private credentials, no Odoo/VPN configuration and no shell-argument password exposure.
 - [x] Add transactional, explicit grants: limited ingestion writer, owner-only source enablement, reporting reader restricted to a sanitized current `normalize:v1` facts view.
 - [x] Add guarded, synthetic-only PostgreSQL integration tests for non-superuser roles, writer insert+process, forbidden source activation, hidden raw tables, and report view data filtering.
-- [ ] Run local WSL/Docker integration checks and restricted role provisioning against the owned instance before merging/deploying these roles.
+- [x] Verify locally on WSL against disposable PostgreSQL 18.6 (39 synthetic integration tests passed, plus 192 offline Python tests; commit `c1877a6`).
+- [ ] Provision and audit restricted roles on the **persistent Panadan-owned** PostgreSQL instance only after merging/review; no Odoo changes or dashboard cutover.
 - [ ] Define per-user authorization for REST/dashboard/MCP, encryption and off-host restore, deletion and retention rules, and source `updated_at` contract before ingesting any customer data.
 
 ## PostgreSQL platform initialization and recovery verification (2026-10-31)
