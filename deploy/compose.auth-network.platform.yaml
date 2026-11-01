@@ -1,0 +1,15 @@
+# Optional overlay for the separately managed Panadan-owned PostgreSQL service.
+# This does not connect to, change or import from the external Odoo database.
+# Prerequisite: manually create an INTERNAL Docker network named panadan-auth-db.
+# Never apply to the live PostgreSQL container before a backup and change review.
+services:
+  db:
+    networks:
+      default: {}
+      auth_db:
+        aliases:
+          - panadan-auth-postgres
+networks:
+  auth_db:
+    external: true
+    name: panadan-auth-db
