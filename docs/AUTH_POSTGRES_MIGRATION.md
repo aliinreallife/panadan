@@ -70,6 +70,19 @@ container and never reaches the production account store. It uses
 `PANADAN_AUTH_MIGRATION_TEST_ALLOW_APPLY=YES` flag. The integration
 tests set that flag on their own for synthetic transactions.
 
+## Confirmed production preflight — 2026-11-01
+
+The operator ran **read-only checks** on the existing VPS and verified:
+- PostgreSQL 18 healthy, `panadan_ingest` has 7 tables and no registered/active sources.
+- Existing `panadan_ingest_writer` and `panadan_report_reader` passed restricted-role verification. These checks do **not** establish the future `panadan_auth_runtime` role.
+- `panadan_auth` schema is currently **not installed** in `panadan`, so the application database contains no imported authentication accounts.
+- Local PostgreSQL custom-format dump created: `data/platform-backups/panadan-20261101T130707Z-673d8eb3.dump` (mode 600). The existing `platform-db backup` workflow verifies `pg_restore --list`, **not** an independent restore or off-server copy.
+- Public `https://dan.panafor.com/healthz` and `https://plane.panafor.com/intake.html` continued responding successfully.
+
+**Next gates:** encrypt and transfer this *PostgreSQL* backup off-VPS using a public `age` recipient (never place the private key on VPS); verify remote decrypt/checksum equality; rehearse restoration into disposable `panadan_ci`; review and merge this PR; only then consider installing the additive `panadan_auth` schema and dedicated restricted role in the owned production database, without switching FastAPI.
+
+Neither the local dump nor the previously backed-up SQLite auth snapshot may be used as proof of a complete off-site disaster-recovery procedure. No production `pg_dump` timer is enabled.
+
 ## Production cutover: deliberately NOT implemented yet
 
 1. **Confirm the owned PG18 instance exists on the VPS**, its image
