@@ -11,6 +11,9 @@ import time
 from pathlib import Path
 
 SESSION_SECONDS = 8 * 3600
+LOGIN_THROTTLE_WINDOW = 600  # rolling 10-minute observation window
+LOGIN_THROTTLE_THRESHOLD = 6
+LOGIN_THROTTLE_MAX_DELAY = 60  # bounded backoff to limit account-lockout DoS
 LOGIN_FAILURES: dict[str, list[float]] = {}
 CAPABILITIES = ('calls:read', 'calls:sensitive', 'calls:transcript:read', 'metrics:read', 'tokens:manage', 'mcp:use', 'users:manage')
 ROLE_GRANTS = {
@@ -128,6 +131,15 @@ class Store:
             )""")
             c.execute('CREATE INDEX IF NOT EXISTS activity_events_time ON activity_events(created_at)')
             c.execute('CREATE INDEX IF NOT EXISTS activity_events_user_time ON activity_events(user_id,created_at)')
+            # Persistent per-username throttle: no passwords, cleartext usernames,
+            # network addresses, or credentials are stored in this table.
+            c.execute("""CREATE TABLE IF NOT EXISTS login_throttle (
+                username_hash TEXT PRIMARY KEY,
+                failure_count INTEGER NOT NULL,
+                window_started INTEGER NOT NULL,
+                next_allowed INTEGER NOT NULL
+            )""")
+            c.execute('CREATE INDEX IF NOT EXISTS login_throttle_expiry ON login_throttle(window_started)')
             # Operator directory contains only administrative metadata.
             # It is NOT a reporting-data copy and is NOT yet used to grant access.
             c.execute("""CREATE TABLE IF NOT EXISTS operator_directory (
@@ -153,6 +165,55 @@ class Store:
             admin = c.execute('SELECT id FROM users WHERE role=? ORDER BY id LIMIT 1', ('admin',)).fetchone()
             if admin:
                 c.execute('UPDATE access_tokens SET owner_id=? WHERE owner_id IS NULL', (admin['id'],))
+
+    @staticmethod
+    def _login_throttle_key(username: str) -> str:
+        # Valid local usernames have at most 80 characters. Long/invalid
+        # identifiers share a bounded invalid lane rather than enabling
+        # unbounded storage of attacker-controlled long strings.
+        return digest(username if 0 < len(username) <= 80 else '<invalid-login-identifier>')
+
+    def login_is_throttled(self, username: str, *, now: int | None = None) -> bool:
+        """Persistent throttle, independent of proxy IP and worker restarts."""
+        now = int(time.time()) if now is None else now
+        with self.db() as c:
+            row = c.execute(
+                'SELECT window_started,next_allowed FROM login_throttle WHERE username_hash=?',
+                (self._login_throttle_key(username),)
+            ).fetchone()
+        return bool(row and row['window_started'] > now - LOGIN_THROTTLE_WINDOW
+                    and row['next_allowed'] > now)
+
+    def record_login_failure(self, username: str, *, now: int | None = None) -> None:
+        """Record one failure atomically, with capped exponential delay."""
+        now = int(time.time()) if now is None else now
+        key = self._login_throttle_key(username)
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            c.execute('DELETE FROM login_throttle WHERE window_started <= ?',
+                      (now - LOGIN_THROTTLE_WINDOW,))
+            row = c.execute(
+                'SELECT failure_count,window_started FROM login_throttle WHERE username_hash=?',
+                (key,)
+            ).fetchone()
+            count = int(row['failure_count']) + 1 if row else 1
+            started = int(row['window_started']) if row else now
+            delay = (min(LOGIN_THROTTLE_MAX_DELAY,
+                         2 ** min(count - LOGIN_THROTTLE_THRESHOLD, 6))
+                     if count >= LOGIN_THROTTLE_THRESHOLD else 0)
+            c.execute("""INSERT INTO login_throttle
+                         (username_hash,failure_count,window_started,next_allowed)
+                         VALUES(?,?,?,?)
+                         ON CONFLICT(username_hash) DO UPDATE SET
+                           failure_count=excluded.failure_count,
+                           window_started=excluded.window_started,
+                           next_allowed=excluded.next_allowed""",
+                      (key, count, started, now + delay))
+
+    def clear_login_failures(self, username: str) -> None:
+        with self.db() as c:
+            c.execute('DELETE FROM login_throttle WHERE username_hash=?',
+                      (self._login_throttle_key(username),))
 
     def verify_login(self, name: str, password: str) -> int | None:
         with self.db() as c:
