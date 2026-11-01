@@ -8,7 +8,7 @@ umask 077
 ARCHIVE="${1:-}"
 IDENTITY="${2:-}"
 IMAGE="postgres:18.6-alpine3.24@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5"
-NAME="panadan-restore-test-$$"
+NAME="panadan-restore-test-$-$(openssl rand -hex 5)"
 DB_USER="panadan_owner"
 DB_NAME="panadan"
 
@@ -30,7 +30,12 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   exit 1
 fi
 
-cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
+started=0
+cleanup() {
+  if [[ "$started" == "1" ]]; then
+    docker rm -f "$NAME" >/dev/null 2>&1 || true
+  fi
+}
 trap cleanup EXIT
 
 # No --publish, no --volume. Data and socket live only in the disposable
@@ -42,6 +47,7 @@ docker run -d --rm --pull never --name "$NAME" \
   -e POSTGRES_DB="$DB_NAME" \
   -e POSTGRES_PASSWORD="$(openssl rand -hex 24)" \
   "$IMAGE" >/dev/null
+started=1
 
 healthy=0
 for attempt in $(seq 1 40); do
