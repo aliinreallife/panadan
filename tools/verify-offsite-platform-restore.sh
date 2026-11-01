@@ -13,10 +13,15 @@ DB_USER="panadan_owner"
 DB_NAME="panadan"
 
 SCHEMA_SQL=""
-if [[ "$#" == 4 && "${3:-}" == "--auth-schema" && -f "${4:-}" ]]; then
+GRANTS_SQL=""
+if [[ "$#" == 6 && "${3:-}" == "--auth-schema" && "${5:-}" == "--auth-grants" &&
+      -f "${4:-}" && -f "${6:-}" ]]; then
+  SCHEMA_SQL="$4"
+  GRANTS_SQL="$6"
+elif [[ "$#" == 4 && "${3:-}" == "--auth-schema" && -f "${4:-}" ]]; then
   SCHEMA_SQL="$4"
 elif [[ "$#" != 2 ]]; then
-  echo "Usage: bash $0 /path/to/panadan.dump.age /path/to/age-identity.txt [--auth-schema /path/to/003_auth_foundation.sql]" >&2
+  echo "Usage: bash $0 /path/to/panadan.dump.age /path/to/age-identity.txt [--auth-schema /path/to/003_auth_foundation.sql [--auth-grants /path/to/003_auth_runtime_role.sql]]" >&2
   exit 2
 fi
 if [[ ! -f "$ARCHIVE" || ! -f "$IDENTITY" ]]; then
@@ -124,6 +129,51 @@ WHERE table_schema='panadan_ingest' AND table_type='BASE TABLE';
     exit 1
   }
   echo "PASS: additive auth schema applied ONLY in disposable restore (8 auth + 7 ingest tables)"
+
+  if [[ -n "$GRANTS_SQL" ]]; then
+    # NOLOGIN test role is only created inside this isolated ephemeral cluster.
+    # Do not create or grant roles on the VPS as part of this validation.
+    docker exec "$NAME" psql -X -v ON_ERROR_STOP=1 -U "$DB_USER" \
+      -d "$DB_NAME" -c \
+      "CREATE ROLE panadan_auth_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS" \
+      >/dev/null
+    docker exec -i "$NAME" psql -X -v ON_ERROR_STOP=1 -1 \
+      -U "$DB_USER" -d "$DB_NAME" < "$GRANTS_SQL" >/dev/null
+
+    # Check individual privileges rather than a comma-separated list:
+    # has_table_privilege(..., 'SELECT,INSERT') succeeds with ANY listed
+    # permission, which would mask partial grants.
+    rights="$(docker exec "$NAME" psql -X -A -t -v ON_ERROR_STOP=1 \
+      -U "$DB_USER" -d "$DB_NAME" -c "
+SELECT
+  has_schema_privilege('panadan_auth_runtime','panadan_auth','USAGE'),
+  has_schema_privilege('panadan_auth_runtime','panadan_auth','CREATE'),
+  has_table_privilege('panadan_auth_runtime','panadan_auth.users','SELECT'),
+  has_table_privilege('panadan_auth_runtime','panadan_auth.users','INSERT'),
+  has_table_privilege('panadan_auth_runtime','panadan_auth.users','UPDATE'),
+  has_table_privilege('panadan_auth_runtime','panadan_auth.users','DELETE'),
+  has_table_privilege('panadan_auth_runtime','panadan_auth.users','TRUNCATE'),
+  has_table_privilege('panadan_auth_runtime','panadan_auth.users','REFERENCES'),
+  has_table_privilege('panadan_auth_runtime','panadan_auth.users','TRIGGER'),
+  has_schema_privilege('panadan_auth_runtime','panadan_ingest','USAGE'),
+  has_table_privilege('panadan_auth_runtime','panadan_ingest.sources','SELECT'),
+  has_database_privilege('panadan_auth_runtime',current_database(),'CREATE');
+")"
+    [[ "$rights" == "t|f|t|t|t|t|f|f|f|f|f|f" ]] || {
+      echo "FAIL: auth runtime privileges are too broad or too narrow" >&2
+      exit 1
+    }
+
+    # Execute a real SELECT under the restricted role. Never print records.
+    docker exec -i "$NAME" psql -X -v ON_ERROR_STOP=1 \
+      -U "$DB_USER" -d "$DB_NAME" >/dev/null <<'SQL'
+SET ROLE panadan_auth_runtime;
+SELECT count(*) FROM panadan_auth.users;
+RESET ROLE;
+SQL
+
+    echo "PASS: disposable auth runtime role can read auth but cannot access ingestion, DDL or dangerous table actions"
+  fi
 fi
 
 echo "PASS: local disposable database is destroyed automatically after check"
