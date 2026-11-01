@@ -134,6 +134,9 @@ def test_import_rollback_on_invalid_late_row(snapshot,disposable_db,monkeypatch)
     monkeypatch.setenv("PANADAN_AUTH_MIGRATION_TEST_ALLOW_APPLY","YES")
     path,*_=snapshot
     with sqlite3.connect(path) as s:
+        # Test fixture is an offline disposable snapshot; make the deliberate
+        # corruption in rollback-journal mode, without leaving WAL sidecars.
+        s.execute("PRAGMA journal_mode=DELETE")
         s.execute("UPDATE activity_events SET duration_ms=999999 WHERE id=(SELECT MIN(id) FROM activity_events)")
     source,counts=inspect_snapshot(path)
     try:
