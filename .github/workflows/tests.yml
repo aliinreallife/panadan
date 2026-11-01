@@ -36,7 +36,10 @@ jobs:
       - name: Compile dashboard assets
         run: npm ci --no-audit --no-fund && npm run build
       - name: Validate shell scripts
-        run: bash -n panadan.sh migrate-from-danf.sh tools/test-platform-integration.sh tools/platform-db.sh tools/platform-roles.sh
+        run: |
+          for script in panadan.sh migrate-from-danf.sh start-vpn.sh tools/*.sh; do
+            bash -n "$script"
+          done
 
 
   platform-integration:
