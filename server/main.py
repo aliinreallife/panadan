@@ -228,15 +228,19 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
         not valid_form_origin(request, PUBLIC_ORIGIN)):
         raise HTTPException(403, 'Login form expired; reload login page')
     ip = request.client.host if request.client else 'unknown'
-    if is_rate_limited(ip):
+    if store.login_is_throttled(username) or (not PUBLIC_ORIGIN and is_rate_limited(ip)):
+        audit_auth_event(None, 'POST /login:throttled', 429)
         raise HTTPException(429, 'Too many attempts; retry later')
     uid = store.verify_login(username, password)
     if not uid:
-        record_failure(ip)
+        store.record_login_failure(username)
+        if not PUBLIC_ORIGIN:
+            record_failure(ip)
         audit_auth_event(None,'POST /login:failed',401)
         response = RedirectResponse('/login?error=1', status_code=303)
         response.delete_cookie('panadan_login_nonce')
         return response
+    store.clear_login_failures(username)
     raw, _ = store.create_session(uid)
     audit_auth_event(uid,'POST /login:success',200)
     response = RedirectResponse('/dashboard', status_code=303)
