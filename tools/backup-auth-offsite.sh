@@ -14,6 +14,7 @@ require_config() {
   command -v python3 >/dev/null || fail "Python 3 missing"
   command -v age >/dev/null || fail "age encryption command missing"
   command -v rclone >/dev/null || fail "rclone off-site client missing"
+  command -v flock >/dev/null || fail "flock lock command missing"
   [[ "${PANADAN_BACKUP_AGE_RECIPIENT:-}" == age1* ]] || fail "PANADAN_BACKUP_AGE_RECIPIENT must be an age public key"
   [[ "${PANADAN_BACKUP_RCLONE_DEST:-}" =~ ^[A-Za-z0-9_-]+:.+ ]] || fail "PANADAN_BACKUP_RCLONE_DEST must be an rclone REMOTE:path, not a local directory"
   [[ -f "$ROOT/compose.prod.yaml" ]] || fail "Panadan repository missing"
@@ -29,6 +30,9 @@ if [[ "${1:-}" == "--check" ]]; then
 fi
 [[ "$#" -eq 0 ]] || fail "Usage: bash tools/backup-auth-offsite.sh [--check]"
 
+# Prevent overlapping timer/manual runs and ambiguous cleanup.
+exec 9>"${PANADAN_BACKUP_LOCK_FILE:-/run/lock/panadan-auth-backup.lock}"
+flock -n 9 || fail "another Panadan auth backup is running"
 docker inspect "$DB_CONTAINER" --format '{{.State.Running}}' | grep -qx 'true' \
   || fail "Panadan web container not running"
 WORK="$(mktemp -d -t panadan-auth-XXXXXXXX)"
