@@ -39,3 +39,28 @@ def test_restore_script_never_touches_host_services_or_external_network():
     )
     assert "--publish" not in commands
     assert "--privileged" not in commands
+
+
+def test_offline_auth_schema_rehearsal_is_optional_and_isolated():
+    script = (ROOT / "tools/verify-offsite-platform-restore.sh").read_text()
+    assert '"--auth-schema"' in script
+    assert 'SCHEMA_SQL="$4"' in script
+    assert 'psql -X -v ON_ERROR_STOP=1 -1' in script
+    assert 'auth_tables" == "8"' in script
+    assert 'ingest_tables" == "7"' in script
+    assert 'if [[ -n "$SCHEMA_SQL" ]]' in script
+    assert '--network none' in script
+
+
+def test_offline_auth_schema_requires_existing_file(tmp_path):
+    script = ROOT / "tools/verify-offsite-platform-restore.sh"
+    archive = tmp_path / "test.dump.age"
+    identity = tmp_path / "test.identity"
+    archive.write_bytes(b"synthetic only")
+    identity.write_bytes(b"synthetic only")
+    result = subprocess.run(
+        ["bash", str(script), str(archive), str(identity),
+         "--auth-schema", str(tmp_path / "missing.sql")],
+        capture_output=True, text=True, timeout=8,
+    )
+    assert result.returncode == 2
