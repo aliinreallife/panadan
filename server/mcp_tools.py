@@ -1,12 +1,22 @@
 """MCP tools are deliberately restricted to safe, non-transcript fields."""
 from datetime import date
+from typing import TypedDict
+from mcp.types import ToolAnnotations
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver import MCPServer, Context
 from . import database
 
 mcp = MCPServer('Panadan', version='0.8.0', instructions='Read-only reporting for authorized business users. Transcript excerpts require separate user permissions. No raw SQL or writes.')
 
+READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 
-@mcp.tool()
+
+class PanadanProfile(TypedDict):
+    id: str
+    name: str
+
+
+@mcp.tool(annotations=READ_ONLY)
 def list_recent_calls(limit: int = 10, offset: int = 0, after: str = '', before: str = '',
                       state: str = '', operator: str = '', destination: str = '', team: str = '') -> list[dict]:
     """List summary metadata for calls; no customer phone numbers or transcripts."""
@@ -17,13 +27,13 @@ def list_recent_calls(limit: int = 10, offset: int = 0, after: str = '', before:
                                state or None,operator=operator or None,operator_names=names)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def get_call_summary(call_id: int) -> dict:
     """Fetch non-sensitive reporting fields for one call ID."""
     return database.get_call(call_id, sensitive=False) or {'error': 'not_found'}
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def get_call_metrics(after: str = '', before: str = '', operator: str = '',
                      destination: str = '', team: str = '') -> dict:
     """Aggregate counts, reported SoldOut states and averages for a date range."""
@@ -34,13 +44,13 @@ def get_call_metrics(after: str = '', before: str = '', operator: str = '',
                           operator_names=directory_operator_names(destination or None,team or None))
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def get_available_states() -> list[str]:
     """List available AI call status labels."""
     return database.statuses()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def get_redacted_call_transcript(call_id: int, ctx: Context, offset: int = 0) -> dict:
     """Get one redacted 6000-character page of a call (use next_offset). Requires separately granted
     calls:transcript:read permission, revalidates caller and records disclosure.
@@ -76,3 +86,26 @@ def get_redacted_call_transcript(call_id: int, ctx: Context, offset: int = 0) ->
         return {'error': 'permission_denied'}
     record = database.transcript_excerpt(call_id, MAX_TRANSCRIPT_CHARS, offset)
     return transcript_for_ai(record, offset=offset) or {'error': 'not_found'}
+
+
+@mcp.tool(
+    title="Identify connected Panadan account",
+    description="Get the identity of the currently authenticated Panadan MCP account. "
+                "Uses the validated request credential; never accepts another user ID.",
+    annotations=READ_ONLY,
+    meta={"openai/profile": True},
+)
+def get_authenticated_profile(ctx: Context) -> PanadanProfile:
+    """Return a stable opaque account ID and a display name for the caller."""
+    from .main import store, oauth_config, oauth_verifier
+    authorization=(ctx.headers or {}).get('authorization','')
+    token=authorization[7:] if authorization.startswith('Bearer ') else ''
+    if oauth_config.mode == 'oauth':
+        subject=oauth_verifier.verify(token) if oauth_verifier else None
+        profile=(store.mcp_profile(oauth_issuer=oauth_config.issuer,oauth_subject=subject)
+                 if subject else None)
+    else:
+        profile=store.mcp_profile(legacy_token=token)
+    if not profile:
+        raise ToolError("Authentication or MCP permission required")
+    return {'id':profile['id'],'name':profile['name']}
