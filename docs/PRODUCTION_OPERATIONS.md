@@ -62,7 +62,7 @@ Caddy initially served a temporary HTTPS staging 503 page until the domain certi
   plane.env
 ```
 
-Use the existing VPS-local `sudo ./prodctl.sh check` and `sudo ./prodctl.sh status` to inspect safely. The `web` and `proxy` subcommands **recreate** containers and must not be used as health checks. The in-repository `./panadan.sh up` currently omits the private ingress, pinned release, and secure HTTPS overrides: **do not use it to update this production deployment** until #56 is resolved. See #56 for migrating the configuration to reproducible, reviewed, secret-free files.
+Use the existing VPS-local `sudo ./prodctl.sh check` and `sudo ./prodctl.sh status` to inspect safely. The `web` and `proxy` subcommands **recreate** containers and must not be used as health checks. The in-repository `./panadan.sh up/down` does **not** replace the VPS-local production controller. As of merged PRs #67/#73, it **refuses bare up/down when hardened private HTTPS overlay files are detected**; that guard is not a substitute for the correct production Compose overlays and an approved controller. **Do not use bare commands to update this deployment.** Keep #56 open until a disposable fresh-host rehearsal proves the full topology. See #56 for migrating the configuration to reproducible, reviewed, secret-free files.
 
 Safe non-mutating checks:
 
@@ -88,6 +88,25 @@ cd /home/panafor/panadan && sudo ./prodctl.sh check && sudo ./prodctl.sh status
 - This is a **manual off-VPS copy**, not a scheduled, monitored, second independent off-site store. An in-memory restore or full alternate-host application recovery should be explicitly tested before claiming comprehensive recovery.
 - Never commit account DB, plaintext backup, decryption private key, token records, OAuth credentials, VPN files or customer data. Private recovery material belongs in independent encrypted storage.
 - Source Odoo PostgreSQL remains an external system and is **not** included in this account-backup snapshot. Full stack recovery requires VPN, ingress, images, secrets/keys, Caddy TLS handling, and tested restore procedures: #55 and #63.
+
+## Independent Panadan PostgreSQL backup (not an auth cutover)
+
+The operator independently age-encrypted and copied a Panadan-owned PG18
+`pg_dump -Fc` to WSL. The decrypted stream's SHA-256 matched the original
+VPS dump, and the disposable isolated PG18 restore passed: seven existing
+`panadan_ingest` tables, zero registered sources, followed by an additive
+`panadan_auth` schema and restricted-role rehearsal. This backup predates
+production PostgreSQL auth data. It **does not** establish automated PG
+backup, alerting, safe retention, off-site key escrow, SQLite account
+restore, or a complete production recovery. See #55 and #63.
+
+Merged PR #73 makes PostgreSQL auth infrastructure preparation opt-in via
+`sudo bash ./panadan.sh owned-pg plan` (read-only preflight), `apply`
+(explicit acknowledgments and real infrastructure changes) and `verify`.
+No VPS application, runtime authentication migration or new production
+network attachment has been performed by this repository merge. Read
+[the one-command operator guide](ONE_COMMAND_OWNED_PG_SETUP.md) before any
+future authorized apply.
 
 ## MCP and OAuth: current limitations
 
