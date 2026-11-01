@@ -263,6 +263,44 @@ configure external failed/missed-job alerts, offsite freshness checks,
 retention/immutability, independent recovery-key escrow and quarterly drills.
 Do not interpret merely merging this code as working automated backups.
 
+## Read-only off-site freshness check (not an alerting service)
+
+The optional `tools/check_backup_freshness.py` validates the **presence and age
+of encrypted backup object names** on the two independent rclone prefixes.
+It requires an operator-approved threshold; it does not invent an RPO. It
+never decrypts, modifies, prunes or downloads the archive bytes.
+
+After configuring the private root-only `/etc/panadan/backup.env` and
+both rclone remote destinations, run:
+
+```bash
+cd /home/panafor/panadan
+sudo bash -c '
+  set -euo pipefail
+  set -a; source /etc/panadan/backup.env; set +a
+  python3 tools/check_backup_freshness.py --store both --max-age-hours 36
+'
+```
+
+**36 hours is only an example:** replace it with an explicitly approved
+maximum age for both stores. Use `--store sqlite` or `--store platform` to check
+one backup system during a staged rollout. This command lists only rclone
+object metadata with known generated filename patterns and rejects backups
+with implausible timestamps, malformed filenames or tiny encrypted objects.
+It does not disclose cloud paths or object names in ordinary status output.
+
+Exit code 0 means **the required remote contains a filename dated within
+the configured window**. Exit code 1 means stale, missing or unreadable
+metadata; code 2 means invalid configuration. A filename/size check cannot
+prove independent storage, ciphertext integrity, decryption-key availability,
+or actual PostgreSQL/SQLite application recoverability.
+
+To operationalize this check later, schedule it **outside** the existing
+backup job, deliver failure/late-run alerts to an independently configured
+monitoring service, test delivery and missed-execution detection, then
+document the approved RPO, escalation owner, and recovery procedure. Merely
+merging the checker does not enable any timer, alert or off-site backup.
+
 ## Disaster recovery checklist
 
 - Confirm you can decrypt an off-site copy with the independent private key.
