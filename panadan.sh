@@ -71,10 +71,11 @@ case "$cmd" in
   setup)
     require_uv
     lock_if_needed
-    uv sync --locked --dev
+    uv sync --locked --dev --python 3.13
     echo 'uv environment ready; uv.lock is the source of truth.'
     if command -v npm >/dev/null 2>&1; then
-      npm install --no-audit --no-fund && npm run build
+      [[ -s package-lock.json ]] || { echo 'Missing package-lock.json: pull the committed lockfile first.' >&2; exit 1; }
+      npm ci --no-audit --no-fund && npm run build
     else
       echo 'Node 20+ is needed to build Doran and Vazirmatn assets.' >&2
       exit 1
@@ -176,7 +177,7 @@ case "$cmd" in
     echo 'VPN route:'
     compose_dev exec -T vpn ip -4 route get 192.168.3.9
     echo 'Local proxy (TCP reachability only):'
-    uv run --no-project --python 3.12 python -c 'import socket,sys; c=socket.create_connection(("127.0.0.1",int(sys.argv[1])),timeout=5); c.close(); print("local relay reachable")' "$proxy_port"
+    uv run --no-project --python 3.13 python -c 'import socket,sys; c=socket.create_connection(("127.0.0.1",int(sys.argv[1])),timeout=5); c.close(); print("local relay reachable")' "$proxy_port"
     ;;
   diagnose)
     echo "uv: $(command -v uv || echo missing)"

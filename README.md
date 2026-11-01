@@ -68,6 +68,24 @@ git pull --ff-only
 ./panadan.sh dev
 ```
 
+If you installed packages on an older checkout and have an **untracked**
+`package-lock.json` that blocks an update, move it outside the repository
+before retrying (works in fish too):
+
+```bash
+cd ~/panadan
+git status --short
+# Only when status shows "?? package-lock.json":
+mv -i package-lock.json ../panadan-pre-v0.8-package-lock.json
+git pull --ff-only
+./panadan.sh setup
+./panadan.sh test
+```
+
+Do **not** use `git reset --hard` or `git clean -fd` just to repair the
+local checkout. The tracked lockfile is authoritative and generated frontend
+assets under `static/vendor/` remain gitignored.
+
 `git pull --ff-only` advances a local branch **only if it can fast-forward**. If your history has diverged, it stops instead of creating an unexpected merge commit. It does not delete divergent local commits.
 
 If a checkout has lost the executable file mode, `bash ./panadan.sh setup` can run the Bash script without executing it directly. The repository and CI now track/check its executable permission.
@@ -101,7 +119,7 @@ reviewed production deployment controller instead.
 | Command | Purpose |
 | --- | --- |
 | `./panadan.sh owned-pg plan/apply/verify` | Guarded owned PostgreSQL auth and network infrastructure setup (no auth cutover) |
-| `./panadan.sh setup` | `uv sync --locked --dev`, npm dependencies and frontend assets |
+| `./panadan.sh setup` | `uv sync --locked --dev --python 3.13`, `npm ci` and frontend assets |
 | `./panadan.sh dev` | Local WSL FastAPI with isolated Docker VPN relay |
 | `./panadan.sh test` | Python unit/integration tests (synthetic test data) |
 | `./panadan.sh vpn-up` / `vpn-down` | Manage only the local VPN/relay containers |
