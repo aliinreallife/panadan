@@ -147,3 +147,45 @@ def test_import_rollback_on_invalid_late_row(snapshot,disposable_db,monkeypatch)
     with psycopg.connect(disposable_db) as pg:
         for table in ("users","sessions","activity_events","access_tokens"):
             assert pg.execute(f"SELECT COUNT(*) FROM panadan_auth.{table}").fetchone()[0]==0
+
+
+def test_auth_role_grants_are_narrow_and_idempotent(disposable_db):
+    """Synthetic role can access auth only, never DDL or source reporting."""
+    cfg=conninfo_to_dict(disposable_db)
+    with psycopg.connect(disposable_db,autocommit=True) as owner:
+        owner.execute("""
+        DO $role$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='panadan_auth_runtime') THEN
+            CREATE ROLE panadan_auth_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+          END IF;
+        END
+        $role$;
+        ALTER ROLE panadan_auth_runtime PASSWORD 'synthetic_auth_runtime_test_password';
+        """)
+        sql=Path("database/permissions/003_auth_runtime_role.sql").read_text()
+        owner.execute(sql)
+        owner.execute(sql)
+        row=owner.execute("""
+            SELECT has_schema_privilege('panadan_auth_runtime','panadan_auth','USAGE'),
+                   has_schema_privilege('panadan_auth_runtime','panadan_auth','CREATE'),
+                   has_table_privilege('panadan_auth_runtime','panadan_auth.users','SELECT,INSERT,UPDATE,DELETE'),
+                   has_table_privilege('panadan_auth_runtime','panadan_auth.users','TRUNCATE'),
+                   has_database_privilege('panadan_auth_runtime',current_database(),'CREATE,TEMP')
+        """).fetchone()
+        assert row==(True,False,True,False,False)
+        exists=owner.execute("SELECT to_regclass('panadan_ingest.sources')").fetchone()[0]
+        if exists:
+            assert not owner.execute(
+                "SELECT has_table_privilege('panadan_auth_runtime','panadan_ingest.sources','SELECT')"
+            ).fetchone()[0]
+    with psycopg.connect(
+        host=cfg["host"],port=cfg.get("port","5432"),dbname="panadan_ci",
+        user="panadan_auth_runtime",password="synthetic_auth_runtime_test_password",
+        connect_timeout=5,autocommit=True
+    ) as limited:
+        assert limited.execute("SELECT count(*) FROM panadan_auth.users").fetchone()[0]==0
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            limited.execute("CREATE TABLE panadan_auth.forbidden(id INT)")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            limited.execute("TRUNCATE panadan_auth.users")
