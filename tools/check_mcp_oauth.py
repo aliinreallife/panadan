@@ -10,7 +10,7 @@ import argparse
 import json
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 def require_https(url: str) -> str:
@@ -64,7 +64,8 @@ def validate_authorization_server(document: dict, issuer: str) -> str:
         if not isinstance(endpoint, str):
             raise ValueError(f"Authorization server missing {key}")
         require_https(endpoint)
-    if "S256" not in document.get("code_challenge_methods_supported", []):
+    pkce = document.get("code_challenge_methods_supported")
+    if not isinstance(pkce, list) or "S256" not in pkce:
         raise ValueError("Authorization server does not advertise PKCE S256")
     methods = document.get("token_endpoint_auth_methods_supported")
     if not isinstance(methods, list) or not methods:
@@ -87,11 +88,18 @@ def verify_challenge(header: str, metadata_url: str, scope: str) -> None:
         raise ValueError("401 WWW-Authenticate lacks required MCP scope")
 
 
+class HTTPSOnlyRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        require_https(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def request(url: str) -> tuple[int, dict, bytes]:
     # Explicit cap: metadata may be public, but never store unbounded responses.
     try:
-        with urlopen(Request(require_https(url), headers={"Accept": "application/json"}),
-                     timeout=10) as response:
+        opener = build_opener(HTTPSOnlyRedirectHandler())
+        with opener.open(Request(require_https(url), headers={"Accept": "application/json"}),
+                         timeout=10) as response:
             return response.status, dict(response.headers), response.read(65537)
     except HTTPError as exc:
         return exc.code, dict(exc.headers), exc.read(65537)
