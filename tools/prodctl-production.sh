@@ -78,6 +78,9 @@ gateway_compose() (
 preflight() {
   require_files
   inspect_auth_network
+  docker network inspect panadan-edge panadan-ingress 2>/dev/null |
+    python3 "$ROOT/tools/validate_production_compose.py" private-networks >/dev/null ||
+      fail "private Plane/Caddy/Panadan bridge topology mismatch"
   panadan_compose config --quiet >/dev/null 2>&1 ||
     fail "invalid Panadan overlay stack"
   plane_compose config --quiet >/dev/null 2>&1 ||
