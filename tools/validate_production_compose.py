@@ -134,6 +134,28 @@ def validate_auth_network(data: object) -> None:
     # existing check_auth_db_network.py queries each container for aliases.
 
 
+def validate_private_networks(data: object) -> None:
+    require(isinstance(data, list) and len(data) == 2,
+            "expected edge and ingress private networks")
+    networks = {
+        n.get("Name"): n for n in data
+        if isinstance(n, dict) and isinstance(n.get("Name"), str)
+    }
+    require(set(networks) == {"panadan-edge", "panadan-ingress"},
+            "wrong private production network names")
+    expected = {
+        "panadan-edge": {"plane-app-proxy-1", "panadan-edge-gateway-gateway-1"},
+        "panadan-ingress": {"panadan-edge-gateway-gateway-1", "panadan-vpn-1"},
+    }
+    for name, members in expected.items():
+        net = networks[name]
+        require(net.get("Driver") == "bridge" and net.get("Internal") is True,
+                "production bridge must remain internal")
+        containers = object_value(net.get("Containers"), "network membership absent")
+        observed = {v.get("Name") for v in containers.values() if isinstance(v, dict)}
+        require(observed == members, "private production network membership differs")
+
+
 def validate_caddy(source: str) -> None:
     # This is only a public-site-name guard. Detailed private Caddy routing
     # and upstream must be reviewed against the actual operator backup.
@@ -144,7 +166,7 @@ def validate_caddy(source: str) -> None:
 
 def main() -> int:
     if len(sys.argv) not in (2, 3):
-        print("Usage: validate_production_compose.py panadan|plane|gateway|auth-network|caddy [--auth]", file=sys.stderr)
+        print("Usage: validate_production_compose.py panadan|plane|gateway|auth-network|private-networks|caddy [--auth]", file=sys.stderr)
         return 2
     part = sys.argv[1]
     try:
@@ -165,6 +187,8 @@ def main() -> int:
                     validate_gateway(object_value(data, "invalid Compose file"))
                 elif part == "auth-network":
                     validate_auth_network(data)
+                elif part == "private-networks":
+                    validate_private_networks(data)
                 else:
                     raise InvalidDeployment("unknown component")
     except (ValueError, KeyError, TypeError, StopIteration):
