@@ -104,6 +104,32 @@ not create or enable a source by itself. The existing platform source
 registry defaults to disabled. This deliberately prevents accidental
 real data ingestion before approval.
 
+## 2026-11-02 operator report: possible `write_at` / `write_date`
+
+The source operator reports a new update-like column on the Odoo reporting
+view, possibly named `write_at`. **This has not been verified against the
+actual database.** Odoo integrations may instead expose a `write_date` field;
+do not guess which is installed.
+
+The read-only `audit-sync` metadata inventory now detects either exact
+identifier among update-marker candidates and prints its PostgreSQL
+data type and nullability, without outputting any customer rows or individual
+timestamps. On the authorized WSL VPN connection, inspect metadata only:
+
+```bash
+cd ~/panadan
+./panadan.sh audit-sync --sample 0 --no-explain
+```
+
+**This is only discovery**, not approval. The incremental adapter deliberately
+still accepts just `sync_updated_at` and `updated_at`. Never redirect it to
+`write_at` or `write_date` until the DBA documents whether the marker
+changes on **joined-field edits as well as call-row edits**, stable ID and
+timezone semantics, complete/non-null coverage and late commits. A base
+Odoo `write_date` timestamp alone usually cannot prove joined-field
+coverage. Source edits to verify it must be made by the authorized Odoo
+operator in a test environment, never by Panadan.
+
 ## Safe next actions
 
 1. Get `updated_at` or `sync_updated_at` added to the view; ask the
