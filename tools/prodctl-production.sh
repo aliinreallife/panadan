@@ -134,6 +134,37 @@ check_endpoints() {
   echo "PASS: Panadan, Plane, and intake HTTPS reachable"
 }
 
+# After Docker reports "Started", uvicorn, the shared VPN-namespace
+# upstream, and the HTTPS proxy can need additional time to be ready.
+# Bound the retry window. Only 200 counts as healthy. All commands are
+# GET requests to the public health endpoint; never retry a login/write.
+wait_web_ready() {
+  local attempt status
+  for ((attempt=1; attempt<=12; attempt++)); do
+    status="$(curl --silent --proto '=https' --max-redirs 0 --max-time 5 \
+      --output /dev/null --write-out '%{http_code}' "$ORIGIN/healthz" 2>/dev/null)" || status=""
+    if [[ "$status" == "200" ]]; then
+      echo "PASS: Panadan Web HTTPS health ready (attempt $attempt/12)"
+      return 0
+    fi
+    if ((attempt < 12)); then
+      sleep 5
+    fi
+  done
+  fail "Panadan Web did not reach HTTPS 200 within bounded readiness window"
+}
+
+# Rollback must NOT depend on a healthy Panadan Web endpoint: a persistent
+# 502 is exactly when rollback is needed. The shared Plane endpoints,
+# topology and exact pinned previous image remain fail-closed gates.
+check_plane_endpoints() {
+  curl --fail --silent --show-error --max-time 10 https://plane.panafor.com/ >/dev/null ||
+    fail "Plane HTTPS health failed"
+  curl --fail --silent --show-error --max-time 10 https://plane.panafor.com/intake.html >/dev/null ||
+    fail "Plane intake HTTPS failed"
+  echo "PASS: Plane and intake HTTPS reachable"
+}
+
 # A web-only deployment may use only a reviewed, already downloaded,
 # commit-pinned web image. Never let a movable :main tag or private override
 # silently substitute another build. Only the *image name* is emitted here,
@@ -195,9 +226,27 @@ case "$cmd" in
     echo "NOTICE: recreating Panadan web only, preserving Plane, VPN and owned PostgreSQL" >&2
     panadan_compose --dry-run up -d --no-deps --no-build --pull never web
     panadan_compose up -d --no-deps --no-build --pull never web
+    wait_web_ready
     check_endpoints
     bash "$ROOT/tools/smoke-production-web.sh" --expected-image "$4" ||
       fail "post-release smoke failed; stop and use reviewed previous image rollback"
+    ;;
+  rollback-web)
+    [[ $# -eq 5 && "${2:-}" == "--apply" && "${3:-}" == "--expect-image" && "${5:-}" == "--ack-restored-backup" ]] ||
+      fail "rollback-web requires --apply --expect-image PINNED_PREVIOUS_IMAGE --ack-restored-backup"
+    preflight
+    require_release_image "$4"
+    # No Panadan health baseline: this path is specifically for an outage.
+    # Exact image selection, installed image, security topology, Plane
+    # availability and a dry-run still gate the one-service operation.
+    check_plane_endpoints
+    echo "NOTICE: recovering Panadan Web only; VPN, Plane, gateway and PostgreSQL unchanged" >&2
+    panadan_compose --dry-run up -d --no-deps --no-build --pull never web
+    panadan_compose up -d --no-deps --no-build --pull never web
+    wait_web_ready
+    check_endpoints
+    bash "$ROOT/tools/smoke-production-web.sh" --expected-image "$4" ||
+      fail "post-rollback smoke failed; inspect web-only failure without touching dependencies"
     ;;
   deploy-proxy)
     [[ $# -eq 3 && "${2:-}" == "--apply" && "${3:-}" == "--ack-plane-impact" ]] ||
@@ -211,7 +260,7 @@ case "$cmd" in
     verify_plane_recovery_material
     ;;
   *)
-    echo "Usage: bash tools/prodctl-production.sh {plan|check|status|deploy-web --apply --expect-image PINNED_IMAGE --ack-restored-backup|deploy-proxy --apply --ack-plane-impact}"
+    echo "Usage: bash tools/prodctl-production.sh {plan|check|status|deploy-web --apply --expect-image PINNED_IMAGE --ack-restored-backup|rollback-web --apply --expect-image PINNED_PREVIOUS_IMAGE --ack-restored-backup|deploy-proxy --apply --ack-plane-impact}"
     exit 2
     ;;
 esac

@@ -203,6 +203,65 @@ existing owned-auth bridge. It does **not** pull, rebuild, restart the
 VPN, recreate Plane, or change production auth. The backup acknowledgment
 is an operator assertion, **not** an automatic backup verifier.
 
+## November 2 live release outcome and hardened controller follow-up
+
+**Operator-confirmed running state:** The web-only release of
+`ghcr.io/aliinreallife/panadan-web:sha-cb5d0823aa5d81a72c089375043b32c24d455eaf`
+**succeeded** at the container level. Docker Compose reported `Started`
+in less than a second, but the controller's **immediate** first public HTTPS
+`/healthz` check returned HTTP 502, causing the controller to report a
+deployment failure. The operator checked again after the container had been
+running for 47 minutes: HTTPS `/healthz` was **200**, the web container was
+running with **zero restarts**, and the independent full
+`smoke-production-web.sh --expected-image` **PASSed**. The running VPN remained
+`panadan-vpn:local`, healthy and unchanged. **No rollback was executed.**
+This evidence fits a transient startup/readiness delay but cannot prove the
+specific cause without diagnostics. Authenticated end-to-end browser
+acceptance and original Plane intake byte-fingerprint remain separate checks.
+
+### What the updated controller does
+
+After an explicit `deploy-web`, it now allows a **bounded** HTTPS readiness
+period (12 attempts, 5 seconds between failed attempts; only exact HTTP 200
+passes) before running the full post-deploy smoke. It never interprets
+Docker's `Started` message as readiness, and it still fails if the Web
+does not become healthy. This does **not** change the baseline healthy check
+required before a normal deploy. The wait loop does not authenticate or touch
+the databases, shared proxy, VPN or Plane.
+
+A distinct `rollback-web` command is provided for an **unhealthy Panadan
+Web**; unlike `deploy-web`, it does *not* require the failing public Panadan
+`/healthz` endpoint to be healthy before recovery. All other strict
+preflight network/volume/security validations, Caddy adapter checks, cached
+commit-pinned image agreement, independent backup acknowledgment and Plane
+HTTPS checks remain mandatory.
+
+**Operator review required before a rollback**: restore ONLY the Web
+`image:` value in the private
+`data/ingress/compose.web.release.yaml` to the exact cached previous pinned
+reference (currently `panadan-web:cac4b36`), keep a secured copy of the
+current override, then verify with the read-only `plan`. When a rollback
+is actually required and authorized:
+
+```bash
+cd /home/panafor/panadan
+sudo bash tools/prodctl-production.sh plan
+
+sudo bash tools/prodctl-production.sh rollback-web --apply \
+  --expect-image panadan-web:cac4b36 --ack-restored-backup
+
+sudo bash tools/smoke-production-web.sh \
+  --expected-image panadan-web:cac4b36
+```
+
+The rollback command uses `docker compose ... --dry-run up` followed by
+`up -d --no-deps --no-build --pull never web` with the existing private
+overlays and optional auth bridge, **never** `down` or restart of the VPN,
+Caddy, Plane, gateway or PostgreSQL. It verifies HTTPS 200 and runs the
+full read-only smoke. It never overwrites `/data/auth.sqlite`.
+If the issue is only a transient 502 and the full smoke is already
+passing, **do not roll back**.
+
 ## 3. Manual user acceptance tests — after successful smoke
 
 In an incognito browser, use the normal real credentials **locally**
@@ -238,8 +297,10 @@ Before deploy record the old `docker inspect panadan-web-1` image reference
 and keep the previous image local. On failure, restore only the intended
 private `.env.app` web-image selection (or reviewed web release overlay)
 to the old pinned image; **re-run the read-only plan** and
-`deploy-web --apply --expect-image OLD_PINNED_IMAGE --ack-restored-backup`
-during an approved recovery window, then repeat the smoke test. Existing
+`rollback-web --apply --expect-image OLD_PINNED_IMAGE --ack-restored-backup`
+during an approved recovery window, then repeat the smoke test. The
+recovery path deliberately does not require the failed Panadan baseline
+to be healthy. Existing
 SQLite volume is **not** removed or overwritten; no automatic database
 restore is attempted. Never use broad `docker compose down`, `docker
 prune`, `git reset --hard`, shared proxy recreation, or VPN replacement
