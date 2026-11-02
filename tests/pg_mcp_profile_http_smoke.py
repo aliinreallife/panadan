@@ -82,6 +82,12 @@ with TestClient(main.app, base_url="http://localhost:8508") as client:
     _, alice_token = store.create_token("synthetic Alice MCP", "mcp:read", owner_id=alice)
     _, bob_token = store.create_token("synthetic Bob MCP", "mcp:read", owner_id=bob)
     _, api_token = store.create_token("synthetic Alice API", "api:read", owner_id=alice)
+    try:
+        store.create_token("forbidden reader MCP", "mcp:read", owner_id=restricted)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("reader unexpectedly permitted to create MCP bearer")
 
     # Authentication occurs BEFORE the tool SDK sees the request.
     assert client.post("/mcp/", json={}).status_code == 401
@@ -123,9 +129,16 @@ with TestClient(main.app, base_url="http://localhost:8508") as client:
     spoof = post(client, alice_token, "tools/call", {
         "name": "get_profile", "arguments": {"account_id": b1["id"]},
     }, request_id=6)
-    assert spoof.status_code == 200
-    payload = spoof.json()["result"]
-    assert payload["isError"] is True, "unexpected account selector accepted"
+    assert spoof.status_code in (200, 400, 422)
+    if spoof.status_code == 200:
+        answer = spoof.json()
+        if "result" in answer and not answer["result"].get("isError"):
+            # Some supported MCP SDK/Pydantic configurations ignore unknown
+            # tool args. In either case identity MUST remain token-bound.
+            details = answer["result"].get("structuredContent")
+            if details is None:
+                details = json.loads(answer["result"]["content"][0]["text"])
+            assert details["id"] == a1["id"]
 
     # Scope change invalidates session/token records, without stale MCP
     # authorization or a phantom profile for the former account.
