@@ -25,7 +25,7 @@ require_files() {
       "$ROOT/tools/validate_production_compose.py" \
       "$ROOT/tools/check_auth_db_network.py" \
       "$ROOT/tools/check-plane-intake.sh"; do
-    [[ -f "$f" && ! -L "$f" ]] || fail "missing reviewed deployment component"
+    [[ -f "$f" && ! -L "$f" ]] || fail "MISSING reviewed deployment component"
   done
   command -v python3 >/dev/null 2>&1 || fail "Python 3 required"
   command -v docker >/dev/null 2>&1 || fail "Docker required"
