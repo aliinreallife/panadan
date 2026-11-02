@@ -160,6 +160,23 @@ store, verifying session reuse, token authorization, permission revocation
 and preserved password hashes. The actual running production web remains
 SQLite and no production auth, OAuth, Docker, VPN or Odoo changes happen.
 
+**Staging migration parity:** the disposable SQLite→PostgreSQL importer
+now verifies the values of **every declared column in all eight auth
+tables** inside the same transaction as the import, rather than relying
+only on table counts. It checks full-row equality without depending on
+SQL row ordering and detects mismatches in usernames, stored password
+hashes, OAuth bindings, permissions, session/token digests, audit rows,
+login throttles and operator metadata. For legacy SQLite snapshots that
+lack `profile_id`, generated opaque IDs are included in the in-transaction
+check. Any mismatch rolls back the entire import. Diagnostics report
+only the hard-coded table name, never account records or row digests.
+
+The importer also enforces the same explicit loopback `panadan_ci` role,
+database and port allowlist as the staging auth runtime. It refuses
+libpq redirect options and production database names. The check verifies
+**logical imported data equality for synthetic disposable imports**, not
+the validity of a real frozen production backup or an actual cutover.
+
 **Not a production migration plan:** the staging selector intentionally
 cannot target database `panadan` (the real owned PG18 instance). Future
 work must define an independently reviewed production cutover with explicit
