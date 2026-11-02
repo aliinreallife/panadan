@@ -327,7 +327,8 @@ def test_existing_auth_bridge_is_rendered_in_all_app_compose_calls(tmp_path):
 def test_partial_auth_network_blocks_any_deploy(tmp_path):
     env=_sandbox(tmp_path)
     env["MOCK_AUTH_MODE"]="partial"
-    result=_ctrl(tmp_path,env,"deploy-web","--apply")
+    result=_ctrl(tmp_path,env,"deploy-web","--apply","--expect-image",
+                 "panadan-web:cac4b36","--ack-restored-backup")
     assert result.returncode!=0
     assert "REFUSED" in result.stderr
     assert " up " not in (tmp_path/"calls.txt").read_text()
