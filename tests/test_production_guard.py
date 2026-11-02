@@ -33,7 +33,11 @@ def panadan(auth=False):
             "environment": {
                 "PANADAN_COOKIE_SECURE": "true",
                 "PANADAN_PUBLIC_ORIGIN": "https://dan.panafor.com",
+                "PANADAN_AUTH_DB": "/data/auth.sqlite",
+                "PANADAN_MCP_AUTH_MODE": "legacy",
             },
+            "volumes": [{"type":"volume","source":"panadan_panadan_auth_data",
+                         "target":"/data"}],
         },
         "vpn": {
             "image": "ghcr.io/aliinreallife/panadan-vpn:sha-" + "a"*40,
@@ -343,3 +347,30 @@ def test_bare_controller_does_not_run_with_missing_private_overlays(tmp_path):
     assert result.returncode==64
     assert "missing reviewed" in result.stderr.lower()
     assert not (tmp_path/"calls.txt").exists()
+
+
+@pytest.mark.parametrize("change", [
+    lambda d: d["services"]["web"]["environment"].update(PANADAN_AUTH_BACKEND="postgres-staging"),
+    lambda d: d["services"]["web"]["environment"].update(PANADAN_AUTH_STAGING_ENABLE="YES"),
+    lambda d: d["services"]["web"]["environment"].update(PANADAN_AUTH_STAGING_ISOLATED="YES"),
+    lambda d: d["services"]["web"]["environment"].update(PANADAN_AUTH_STAGING_DSN="postgresql://secret"),
+    lambda d: d["services"]["web"]["environment"].update(PANADAN_AUTH_DB="/data/other.sqlite"),
+    lambda d: d["services"]["web"]["environment"].update(PANADAN_MCP_AUTH_MODE="oauth"),
+    lambda d: d["services"]["web"].update(volumes=[]),
+    lambda d: d["services"]["web"]["volumes"][0].update(type="bind"),
+    lambda d: d["services"]["web"]["volumes"][0].update(target="/tmp"),
+    lambda d: d["services"]["web"]["volumes"][0].update(read_only=True),
+])
+def test_normal_production_release_preserves_sqlite_and_unapproved_oauth_stays_off(change):
+    data = panadan()
+    change(data)
+    with pytest.raises(guard.InvalidDeployment):
+        guard.validate_panadan(data, auth_enabled=False)
+
+
+def test_empty_auth_backend_defaults_to_sqlite():
+    data = panadan()
+    del data["services"]["web"]["environment"]["PANADAN_MCP_AUTH_MODE"]
+    guard.validate_panadan(data, auth_enabled=False)
+    data["services"]["web"]["environment"]["PANADAN_AUTH_BACKEND"] = "sqlite"
+    guard.validate_panadan(data, auth_enabled=False)
