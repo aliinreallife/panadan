@@ -130,6 +130,43 @@ automatic "fresh" initialization: treat it as a recovery, not a new
 installation. Never delete or recreate existing Docker volumes to
 resolve a setup failure.
 
+## Disposable PostgreSQL auth runtime tests (no live cutover)
+
+The normal FastAPI/MCP runtime now selects its auth store through
+`server/auth_store.py`. **The default is still SQLite.** For
+explicit, isolated testing only, set:
+
+```bash
+export PANADAN_AUTH_BACKEND=postgres-staging
+export PANADAN_AUTH_STAGING_ENABLE=YES
+export PANADAN_AUTH_STAGING_ISOLATED=YES
+export PANADAN_AUTH_STAGING_DSN='postgresql://panadan_ci:SYNTHETIC_TEST_PASSWORD@127.0.0.1:5432/panadan_ci'
+```
+
+The PostgreSQL staging selector requires a **numeric loopback IPv4 address**,
+the disposable database and role *both* named `panadan_ci`, an explicit
+TCP port, a password, no libpq hostaddr/service/options redirection, and
+both explicit opt-in acknowledgments. **Do not put these variables in
+production `.env.app` or the live deployment controller.** The
+selector refuses any unknown backend, wrong database/host, or absent
+acknowledgment; it never silently falls back from failed PostgreSQL to
+SQLite (which would create split-brain authentication).
+
+The controlled CI path runs `tests/test_auth_pg_migration.py` against
+a Docker-provided throwaway PostgreSQL 18 `panadan_ci`, using **synthetic
+accounts only**. The staging HTTP test imports a consistent synthetic
+SQLite backup, then uses real FastAPI request handlers with the PostgreSQL
+store, verifying session reuse, token authorization, permission revocation
+and preserved password hashes. The actual running production web remains
+SQLite and no production auth, OAuth, Docker, VPN or Odoo changes happen.
+
+**Not a production migration plan:** the staging selector intentionally
+cannot target database `panadan` (the real owned PG18 instance). Future
+work must define an independently reviewed production cutover with explicit
+backup/restore evidence, a freeze window, operator approval, least-privilege
+credentials, rollback without write divergence, and live MCP end-to-end
+security checks. Do not try to bypass the staging gate to enable live auth.
+
 ## Remaining blockers
 
 - **Not yet done:** SQLite->PostgreSQL production accounts import,

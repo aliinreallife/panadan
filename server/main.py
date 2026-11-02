@@ -27,9 +27,12 @@ from .transcript_ai import transcript_for_ai, MAX_TRANSCRIPT_CHARS
 from .mcp_tools import mcp
 from mcp.server.transport_security import TransportSecuritySettings
 from .oauth_mcp import OAuthConfig, OAuthVerifier
-from .security import Store, SESSION_SECONDS, CAPABILITIES, ROLE_GRANTS, permissions, has_capability, is_rate_limited, record_failure
+from .security import SESSION_SECONDS, CAPABILITIES, ROLE_GRANTS, permissions, has_capability, is_rate_limited, record_failure
+from .auth_store import create_auth_store
 
-store = Store(os.getenv('PANADAN_AUTH_DB', '/data/auth.sqlite'))
+# Default remains SQLite. A synthetic loopback PG18 test requires deliberate
+# staging-only flags; invalid settings refuse startup with no fallback.
+store = create_auth_store()
 oauth_config = OAuthConfig.from_env()
 oauth_verifier = OAuthVerifier(oauth_config) if oauth_config.mode == 'oauth' else None
 COOKIE_SECURE = os.getenv('PANADAN_COOKIE_SECURE', 'true').lower() == 'true'
@@ -114,7 +117,7 @@ async def audit_http_activity(request: Request, call_next):
                                   duration_ms=elapsed)
         except Exception:
             # Auditing failure must not turn an authorized read into a 500.
-            # Production monitoring should separately alert on SQLite failures.
+            # Production monitoring should separately alert on auth-store failures.
             pass
 
 
