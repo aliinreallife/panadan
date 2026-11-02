@@ -7,6 +7,9 @@ Never point at the active SQLite file: use a consistent offline backup copy.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+import hashlib
+import json
 import os
 from pathlib import Path
 import secrets
@@ -15,6 +18,8 @@ import sqlite3
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
+
+from .auth_store import validate_staging_dsn
 
 TABLE_COLUMNS = {
     "users": ("id","username","password_hash","role","grants","is_active","profile_id"),
@@ -81,13 +86,42 @@ def inspect_snapshot(path: Path) -> tuple[sqlite3.Connection, dict[str, int]]:
 
 
 def validate_disposable_target(dsn: str) -> None:
-    if not dsn:
-        raise ValueError("Set PANADAN_AUTH_MIGRATION_DSN for disposable PostgreSQL")
-    opts=conninfo_to_dict(dsn)
-    if (opts.get("dbname")!="panadan_ci"
-            or opts.get("host") not in ("127.0.0.1","localhost")
-            or os.environ.get("PANADAN_AUTH_MIGRATION_TEST_ALLOW_APPLY")!="YES"):
-        raise ValueError("Only explicit disposable 127.0.0.1 panadan_ci imports are enabled in this phase")
+    if os.environ.get("PANADAN_AUTH_MIGRATION_TEST_ALLOW_APPLY") != "YES":
+        raise ValueError("Only explicit disposable PostgreSQL imports are enabled")
+    # Reuse the STRICT staging backend allowlist. Do not permit libpq
+    # hostaddr/service/options redirection or production-owned databases.
+    validate_staging_dsn(dsn)
+
+
+def _row_fingerprint(values: tuple) -> bytes:
+    """Internal-only exact-value comparison; never print auth row contents."""
+    serialized=json.dumps(values,ensure_ascii=False,separators=(",",":"))
+    return hashlib.sha256(serialized.encode("utf-8")).digest()
+
+
+def _verify_table_parity(target, table: str,
+                         columns: tuple[str, ...], records: list[tuple]) -> None:
+    """Check every imported value and duplicate multiplicity before COMMIT.
+
+    Ordered equality is unsuitable for SQL tables; compare multisets of
+    full-row hashes instead. The source and target records stay in memory,
+    and mismatch diagnostics contain only a hard-coded auth TABLE name.
+    No passwords, token digests, usernames or hashes are logged.
+    """
+    if table not in TABLE_COLUMNS or columns != TABLE_COLUMNS[table]:
+        raise ValueError("Unexpected auth table/column shape for parity audit")
+    expected=Counter(_row_fingerprint(tuple(row)) for row in records)
+    observed=Counter()
+    # Named server-side cursor bounds the target-memory footprint.
+    with target.cursor(name=f"auth_parity_{table}") as cursor:
+        cursor.execute(
+            f"SELECT {','.join(columns)} FROM panadan_auth.{table}"
+        )
+        while batch := cursor.fetchmany(1000):
+            for row in batch:
+                observed[_row_fingerprint(tuple(row[col] for col in columns))] += 1
+    if observed != expected:
+        raise ValueError(f"PostgreSQL migrated field parity mismatch in {table}")
 
 
 def _read_rows(source: sqlite3.Connection,table: str) -> tuple[tuple[str,...],list[tuple]]:
@@ -138,6 +172,9 @@ def import_into_disposable(source: sqlite3.Connection, dsn: str, counts: dict[st
                 n=target.execute(f"SELECT COUNT(*) AS n FROM panadan_auth.{table}").fetchone()["n"]
                 if n!=counts[table]:
                     raise ValueError(f"PostgreSQL migrated count mismatch in {table}")
+                # Verify exact field values *inside* this transaction.
+                # A count match alone can conceal token/grant/owner drift.
+                _verify_table_parity(target,table,cols,records)
             for table in IDENTITY_TABLES:
                 target.execute(
                     f"SELECT setval(pg_get_serial_sequence('panadan_auth.{table}','id'),"
