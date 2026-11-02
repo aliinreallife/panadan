@@ -47,8 +47,12 @@ FROM ordered
 # This uses the query planner ONLY, not EXPLAIN ANALYZE (no row scan).
 PLAN_SQL = "EXPLAIN (FORMAT JSON) SELECT * FROM public.vw_danix_call_info_report"
 
+# Candidate *detection* only. A field's presence never authorizes a live
+# sync: write_at/write_date may reflect changes on the base call row while
+# missing updates to joined tables in this reporting view.
 UPDATE_CANDIDATES = (
-    'sync_updated_at', 'updated_at', 'write_date', 'modified_at', 'last_modified'
+    'sync_updated_at', 'updated_at', 'write_at', 'write_date',
+    'modified_at', 'last_modified'
 )
 DELETE_CANDIDATES = ('deleted_at', 'is_deleted', 'deleted', 'active')
 VALID_KINDS = {'v': 'view', 'm': 'materialized view', 'r': 'table',
