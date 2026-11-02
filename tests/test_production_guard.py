@@ -70,12 +70,39 @@ def auth_network(members=True):
     return [data]
 
 
+def private_networks():
+    return [
+        {"Name": "panadan-edge", "Driver": "bridge", "Internal": True,
+         "Containers": {
+             "1": {"Name": "plane-app-proxy-1"},
+             "2": {"Name": "panadan-edge-gateway-gateway-1"},
+         }},
+        {"Name": "panadan-ingress", "Driver": "bridge", "Internal": True,
+         "Containers": {
+             "1": {"Name": "panadan-edge-gateway-gateway-1"},
+             "2": {"Name": "panadan-vpn-1"},
+         }},
+    ]
+
+
+def test_private_network_refuses_public_bridge_or_wrong_members():
+    networks = private_networks()
+    networks[0]["Internal"] = False
+    with pytest.raises(guard.InvalidDeployment):
+        guard.validate_private_networks(networks)
+    networks = private_networks()
+    networks[1]["Containers"]["3"] = {"Name": "unexpected-public-service"}
+    with pytest.raises(guard.InvalidDeployment):
+        guard.validate_private_networks(networks)
+
+
 def test_valid_production_snapshots_and_operator_auth_overlay():
     guard.validate_panadan(panadan(), auth_enabled=False)
     guard.validate_panadan(panadan(True), auth_enabled=True)
     guard.validate_plane(plane())
     guard.validate_gateway(gateway())
     guard.validate_auth_network(auth_network())
+    guard.validate_private_networks(private_networks())
     guard.validate_caddy("plane.panafor.com {\n reverse_proxy plane:3000\n}\n"
                          "https://dan.panafor.com {\n reverse_proxy gateway:80\n}\n")
 
@@ -183,12 +210,23 @@ mode=os.environ.get("MOCK_AUTH_MODE","absent")
 if args[:2]==["network","ls"]:
     print("panadan-edge\npanadan-ingress"+("\npanadan-auth-db" if mode!="absent" else ""))
 elif args[:2]==["network","inspect"]:
-    data={"Name":"panadan-auth-db","Driver":"bridge","Internal":True,
-          "Containers":{"a":{"Name":"panadan-vpn-1"},
-                        "b":{"Name":"panadan-platform-db-1"}}}
-    if mode=="partial":
-        data["Containers"].pop("b")
-    print(json.dumps([data]))
+    if "panadan-auth-db" in args[2:]:
+        data={"Name":"panadan-auth-db","Driver":"bridge","Internal":True,
+              "Containers":{"a":{"Name":"panadan-vpn-1"},
+                            "b":{"Name":"panadan-platform-db-1"}}}
+        if mode=="partial":
+            data["Containers"].pop("b")
+        print(json.dumps([data]))
+    else:
+        data=[
+          {"Name":"panadan-edge","Driver":"bridge","Internal":True,
+           "Containers":{"a":{"Name":"plane-app-proxy-1"},
+                         "b":{"Name":"panadan-edge-gateway-gateway-1"}}},
+          {"Name":"panadan-ingress","Driver":"bridge","Internal":True,
+           "Containers":{"a":{"Name":"panadan-edge-gateway-gateway-1"},
+                         "b":{"Name":"panadan-vpn-1"}}}
+        ]
+        print(json.dumps(data))
 elif args[:1]==["inspect"]:
     def state(name):
         return {"Name":"/"+name,
