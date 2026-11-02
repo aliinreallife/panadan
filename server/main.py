@@ -33,6 +33,12 @@ from .auth_store import create_auth_store
 # Default remains SQLite. A synthetic loopback PG18 test requires deliberate
 # staging-only flags; invalid settings refuse startup with no fallback.
 store = create_auth_store()
+# Only the explicitly isolated PostgreSQL staging backend has persisted,
+# globally unique opaque profile IDs. Keep the production SQLite five-tool
+# surface unchanged until an independently approved auth migration.
+if os.getenv('PANADAN_AUTH_BACKEND', 'sqlite') == 'postgres-staging':
+    from .mcp_profile_staging import register_profile_tool
+    register_profile_tool(mcp)
 oauth_config = OAuthConfig.from_env()
 oauth_verifier = OAuthVerifier(oauth_config) if oauth_config.mode == 'oauth' else None
 COOKIE_SECURE = os.getenv('PANADAN_COOKIE_SECURE', 'true').lower() == 'true'
