@@ -3,9 +3,9 @@
 set -euo pipefail
 umask 077
 
-ROOT="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
-INGRESS="\${PANADAN_INGRESS_DIR:-$ROOT/data/ingress}"
-PLANE="\${PANADAN_PLANE_DIR:-$(dirname "$ROOT")/plane-selfhost/plane-app}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+INGRESS="${PANADAN_INGRESS_DIR:-$ROOT/data/ingress}"
+PLANE="${PANADAN_PLANE_DIR:-$(dirname "$ROOT")/plane-selfhost/plane-app}"
 ORIGIN="https://dan.panafor.com"
 AUTH_NETWORK_READY=0
 
@@ -60,7 +60,7 @@ panadan_compose() (
   if [[ "$AUTH_NETWORK_READY" == 1 ]]; then
     files+=(-f "$ROOT/deploy/compose.auth-network.panadan.yaml")
   fi
-  docker compose --env-file .env.app "\${files[@]}" "$@"
+  docker compose --env-file .env.app "${files[@]}" "$@"
 )
 plane_compose() (
   cd "$PLANE"
@@ -90,7 +90,7 @@ preflight() {
     auth_flag=(--auth)
   fi
   panadan_compose config --format json 2>/dev/null |
-    python3 "$ROOT/tools/validate_production_compose.py" panadan "\${auth_flag[@]}" ||
+    python3 "$ROOT/tools/validate_production_compose.py" panadan "${auth_flag[@]}" ||
       fail "Panadan production service invariants"
   plane_compose config --format json 2>/dev/null |
     python3 "$ROOT/tools/validate_production_compose.py" plane ||
@@ -117,8 +117,8 @@ check_endpoints() {
 # Before any proxy recreate require operator's independently saved original
 # intake HTML and separate original Caddy rollback configuration.
 verify_plane_recovery_material() {
-  local original="\${PANADAN_TRUSTED_INTAKE_FILE:-}"
-  local rollback="\${PANADAN_CADDY_ROLLBACK_FILE:-$INGRESS/rollback/Caddyfile.live}"
+  local original="${PANADAN_TRUSTED_INTAKE_FILE:-}"
+  local rollback="${PANADAN_CADDY_ROLLBACK_FILE:-$INGRESS/rollback/Caddyfile.live}"
   [[ -n "$original" && -s "$original" && -f "$original" && ! -L "$original" ]] ||
     fail "original Plane intake file required before proxy recreation"
   [[ -s "$rollback" && -f "$rollback" && ! -L "$rollback" ]] ||
@@ -127,7 +127,7 @@ verify_plane_recovery_material() {
     fail "Plane intake differs from original or is unavailable"
 }
 
-cmd="\${1:-help}"
+cmd="${1:-help}"
 case "$cmd" in
   plan)
     [[ $# -eq 1 ]] || fail "plan accepts no extra arguments"
@@ -147,7 +147,7 @@ case "$cmd" in
     gateway_compose ps gateway
     ;;
   deploy-web)
-    [[ $# -eq 2 && "\${2:-}" == "--apply" ]] ||
+    [[ $# -eq 2 && "${2:-}" == "--apply" ]] ||
       fail "deploy-web requires --apply"
     preflight
     panadan_compose --dry-run up -d --no-deps --no-build --pull never web
@@ -155,7 +155,7 @@ case "$cmd" in
     check_endpoints
     ;;
   deploy-proxy)
-    [[ $# -eq 3 && "\${2:-}" == "--apply" && "\${3:-}" == "--ack-plane-impact" ]] ||
+    [[ $# -eq 3 && "${2:-}" == "--apply" && "${3:-}" == "--ack-plane-impact" ]] ||
       fail "deploy-proxy requires --apply --ack-plane-impact"
     preflight
     verify_plane_recovery_material
