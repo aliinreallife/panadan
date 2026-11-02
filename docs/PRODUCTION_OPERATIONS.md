@@ -62,6 +62,67 @@ Caddy initially served a temporary HTTPS staging 503 page until the domain certi
   plane.env
 ```
 
+## Source-controlled hardened deployment preflight (not yet adopted on VPS)
+
+The reviewed repository controller `tools/prodctl-production.sh` now has a
+**read-only `plan` command**. It validates the effective Compose topology
+against security invariants using metadata-only JSON validation without
+printing interpolated environment values:
+
+```bash
+cd /home/panafor/panadan
+sudo bash tools/prodctl-production.sh plan     # no service/network mutation
+sudo bash tools/prodctl-production.sh check    # same plan + public HTTPS health
+sudo bash tools/prodctl-production.sh status   # metadata-only service state
+```
+
+Before replacing the VPS-local controller, compare private configuration and
+check the updated controller on a disposable host. It requires all existing
+`data/ingress` overlays, gateway Nginx config, Plane Compose and Caddyfile;
+none is automatically manufactured by this PR. Image names must use a
+reviewed commit-specific tag or digest, not `:main`/`:latest`. Existing local
+`panadan-web:cac4b36`-style tags are accepted for comparison but **a local
+tag is not cryptographically immutable**; verify it against the intended image
+ID/digest separately before deploy.
+
+The plan refuses absent/incorrect secure cookies and HTTPS origin, a web
+container outside the VPN network namespace, unexpected host-published
+gateway/Web ports, non-loopback VPN ports, missing persistent original Caddy
+volumes or read-only Caddyfile, and private `panadan-edge` /
+`panadan-ingress` bridges that are exposed or include unexpected members.
+It only verifies that both HTTPS site blocks exist in the private Caddyfile:
+**the exact gateway reverse_proxy target must still be compared to the
+authoritative backed-up Caddyfile** before approving a proxy change.
+
+If `panadan-auth-db` exists, the controller verifies the existing PG/VPN
+internal network topology, PostgreSQL DNS alias and Odoo `tun0` route and
+**automatically includes** `deploy/compose.auth-network.panadan.yaml` in
+all subsequent Panadan Compose invocations. A partial/malformed auth network
+causes refusal; it never silently omits the overlay. The separate owned
+PostgreSQL Compose project must still retain its own
+`deploy/compose.auth-network.platform.yaml` on a future DB recreate.
+
+Recreating the **shared Plane proxy** is even more restricted:
+
+```bash
+# Both paths must be independently saved/verified by the operator.
+# Never commit either private original into Git.
+export PANADAN_TRUSTED_INTAKE_FILE=/secure/original-intake.html
+export PANADAN_CADDY_ROLLBACK_FILE=/secure/original-Caddyfile
+
+# Changes the live proxy; ONLY after private review and maintenance approval.
+sudo --preserve-env=PANADAN_TRUSTED_INTAKE_FILE,PANADAN_CADDY_ROLLBACK_FILE \
+  bash tools/prodctl-production.sh deploy-proxy --apply --ack-plane-impact
+```
+
+The proxy command compares live `/intake.html` bytes to the trusted saved
+original before and after recreation, and refuses without a non-symlink
+Caddyfile rollback copy. These checks are necessary but not sufficient:
+they do not preserve Plane Web's in-container page during a future **web**
+rebuild (#62). Docker's dry run is not a full restore/rollback exercise.
+A real proxy recreation has **not** been authorized or performed by merging
+this code. Existing VPS-local `prodctl.sh` remains the deployed authority.
+
 Use the existing VPS-local `sudo ./prodctl.sh check` and `sudo ./prodctl.sh status` to inspect safely. The `web` and `proxy` subcommands **recreate** containers and must not be used as health checks. The in-repository `./panadan.sh up/down` does **not** replace the VPS-local production controller. As of merged PRs #67/#73, it **refuses bare up/down when hardened private HTTPS overlay files are detected**; that guard is not a substitute for the correct production Compose overlays and an approved controller. **Do not use bare commands to update this deployment.** Keep #56 open until a disposable fresh-host rehearsal proves the full topology. See #56 for migrating the configuration to reproducible, reviewed, secret-free files.
 
 Safe non-mutating checks:
