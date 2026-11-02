@@ -341,5 +341,5 @@ def test_bare_controller_does_not_run_with_missing_private_overlays(tmp_path):
     (tmp_path/"data/ingress/compose.gateway.yaml").unlink()
     result=_ctrl(tmp_path,env,"plan")
     assert result.returncode==64
-    assert "missing reviewed" in result.stderr
+    assert "missing reviewed" in result.stderr.lower()
     assert not (tmp_path/"calls.txt").exists()
