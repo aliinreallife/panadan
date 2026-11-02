@@ -142,6 +142,11 @@ cd /home/panafor/panadan && sudo ./prodctl.sh check && sudo ./prodctl.sh status
 - Never run broad `docker compose down`, `prune`, host reboot or system upgrades on the shared server as part of Panadan rollback.
 - Always check Caddy TLS `/data`, `/config`, current in-image/override Caddyfile, and source `intake.html` backup before proxy or Plane Web updates. Plane's `intake.html` currently resides in a container filesystem and is **not** made persistent merely by persisting Caddy: #62.
 
+
+### 2026-11-02 web-only release hardening
+
+See [controlled release and smoke test](WEB_RELEASE_2026-11-02.md). The new source-controlled `tools/smoke-production-web.sh` runs read-only HTTPS/VPN/auth checks. Routine web deployment now requires an exact, locally pre-pulled pinned image and explicit backup-restore acknowledgement; the controller verifies `web.image` in the resolved private overlays, baseline health and post-release smoke. The production Compose guard also refuses any accidental `postgres-staging` auth flags, missing persistent SQLite `/data` mount or premature OAuth mode. This is code and synthetic CI coverage, **not proof that the VPS-local controller or live stack has been upgraded**.
+
 ## SQLite auth backup evidence and limitations
 
 - SQLite Online Backup API produced `data/auth-backups/auth-20261101T114330Z.sqlite` (**86,016 bytes**). `PRAGMA integrity_check` returned `ok`; production service did not stop.
