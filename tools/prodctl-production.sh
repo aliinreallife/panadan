@@ -24,7 +24,8 @@ require_files() {
       "$ROOT/deploy/compose.auth-network.panadan.yaml" \
       "$ROOT/tools/validate_production_compose.py" \
       "$ROOT/tools/check_auth_db_network.py" \
-      "$ROOT/tools/check-plane-intake.sh"; do
+      "$ROOT/tools/check-plane-intake.sh" \
+      "$ROOT/tools/smoke-production-web.sh"; do
     [[ -f "$f" && ! -L "$f" ]] || fail "MISSING reviewed deployment component"
   done
   command -v python3 >/dev/null 2>&1 || fail "Python 3 required"
@@ -117,6 +118,23 @@ check_endpoints() {
   echo "PASS: Panadan, Plane, and intake HTTPS reachable"
 }
 
+# A web-only deployment may use only a reviewed, already downloaded,
+# commit-pinned web image. Never let a movable :main tag or private override
+# silently substitute another build. Only the *image name* is emitted here,
+# never the full effective Compose JSON with interpolated secrets.
+require_release_image() {
+  local expected="$1" configured
+  [[ "$expected" =~ ^(ghcr\.io/aliinreallife/panadan-web:sha-[a-f0-9]{40}|panadan-web:[a-f0-9]{7,40}|ghcr\.io/aliinreallife/panadan-web@sha256:[a-f0-9]{64})$ ]] ||
+    fail "web release needs a commit-pinned image (not main or latest)"
+  configured="$(panadan_compose config --format json 2>/dev/null |
+    python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["services"]["web"]["image"])')" ||
+    fail "cannot resolve current effective web image"
+  [[ "$configured" == "$expected" ]] ||
+    fail "effective web image differs from reviewed release; inspect private Compose override"
+  docker image inspect "$expected" >/dev/null 2>&1 ||
+    fail "reviewed image is not already pulled locally"
+}
+
 # Before any proxy recreate require operator's independently saved original
 # intake HTML and separate original Caddy rollback configuration.
 verify_plane_recovery_material() {
@@ -150,12 +168,20 @@ case "$cmd" in
     gateway_compose ps gateway
     ;;
   deploy-web)
-    [[ $# -eq 2 && "${2:-}" == "--apply" ]] ||
-      fail "deploy-web requires --apply"
+    [[ $# -eq 5 && "${2:-}" == "--apply" && "${3:-}" == "--expect-image" && "${5:-}" == "--ack-restored-backup" ]] ||
+      fail "deploy-web requires --apply --expect-image PINNED_IMAGE --ack-restored-backup"
     preflight
+    require_release_image "$4"
+    # Baseline must be healthy before modifying the single web service.
+    check_endpoints
+    bash "$ROOT/tools/smoke-production-web.sh" >/dev/null ||
+      fail "baseline smoke failed; no changes made"
+    echo "NOTICE: recreating Panadan web only, preserving Plane, VPN and owned PostgreSQL" >&2
     panadan_compose --dry-run up -d --no-deps --no-build --pull never web
     panadan_compose up -d --no-deps --no-build --pull never web
     check_endpoints
+    bash "$ROOT/tools/smoke-production-web.sh" --expected-image "$4" ||
+      fail "post-release smoke failed; stop and use reviewed previous image rollback"
     ;;
   deploy-proxy)
     [[ $# -eq 3 && "${2:-}" == "--apply" && "${3:-}" == "--ack-plane-impact" ]] ||
@@ -169,7 +195,7 @@ case "$cmd" in
     verify_plane_recovery_material
     ;;
   *)
-    echo "Usage: bash tools/prodctl-production.sh {plan|check|status|deploy-web --apply|deploy-proxy --apply --ack-plane-impact}"
+    echo "Usage: bash tools/prodctl-production.sh {plan|check|status|deploy-web --apply --expect-image PINNED_IMAGE --ack-restored-backup|deploy-proxy --apply --ack-plane-impact}"
     exit 2
     ;;
 esac

@@ -78,6 +78,29 @@ def validate_panadan(data: Mapping, *, auth_enabled: bool) -> None:
             "secure session cookie required")
     require((web.get("environment") or {}).get("PANADAN_PUBLIC_ORIGIN")
             == "https://dan.panafor.com", "HTTPS origin mismatch")
+
+    # Normal web releases MUST NOT activate the disposable PG18 auth backend,
+    # change the authoritative SQLite path, or silently enable unapproved
+    # live OAuth discovery. The PG18 auth cutover needs its own reviewed gate.
+    env = object_value(web.get("environment"), "web environment missing")
+    require(env.get("PANADAN_AUTH_DB") == "/data/auth.sqlite",
+            "live SQLite authority must retain its persistent /data path")
+    require(env.get("PANADAN_AUTH_BACKEND", "sqlite") in ("", "sqlite"),
+            "production web release must retain SQLite authentication")
+    for key in ("PANADAN_AUTH_STAGING_ENABLE", "PANADAN_AUTH_STAGING_ISOLATED",
+                "PANADAN_AUTH_STAGING_DSN"):
+        require(not env.get(key), "disposable staging credentials in live environment")
+    require(env.get("PANADAN_MCP_AUTH_MODE", "legacy") in ("", "legacy"),
+            "unapproved MCP OAuth mode on routine web release")
+    volumes = web.get("volumes") or []
+    require(isinstance(volumes, list), "web authentication volume declaration missing")
+    auth_mounts = [v for v in volumes if isinstance(v, dict) and v.get("target") == "/data"]
+    require(len(auth_mounts) == 1
+            and auth_mounts[0].get("type") == "volume"
+            and bool(auth_mounts[0].get("source"))
+            and not auth_mounts[0].get("read_only", False),
+            "web SQLite /data must be backed by a persistent writable named volume")
+
     pinned_image(web.get("image"), "web")
     pinned_image(vpn.get("image"), "vpn")
     private_port_bindings(vpn, "vpn")
