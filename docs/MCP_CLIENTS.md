@@ -32,6 +32,16 @@ and does not return email, phone, access tokens, role or raw account rows.
 
 Staging tests check unique identities, stable same-account IDs, OAuth subject
 mapping, legacy revocation, response safety and SDK registration metadata.
+The PostgreSQL 18 integration job also runs a **fresh-process real MCP
+Streamable HTTP** smoke test against the isolated, disposable `panadan_ci`
+database with synthetic accounts. It verifies HTTP 401 for absent, invalid
+and incorrectly scoped bearer tokens; protocol initialize, tool discovery,
+actual `get_profile` call, two-account ID separation, repeat stability,
+spoofed tool arguments, role-change/token revocation, and unaffected second
+account. The test refuses nonempty accounts and never points to the
+Panadan-owned production database. The separate process avoids reusing
+the MCP SDK's one-shot session-manager lifespan. This is an SDK/HTTP
+staging proof, **not** a ChatGPT/Claude remote OAuth compatibility claim.
 **These tests do not claim ChatGPT/Claude OAuth works in production.** The
 external IdP, production PostgreSQL cutover, refresh/reconnect interoperability
 and full client matrix are still required before the profile tool can safely
