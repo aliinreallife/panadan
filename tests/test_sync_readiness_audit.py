@@ -129,7 +129,10 @@ def test_write_at_is_detected_by_catalog_only_and_not_approved_for_sync(monkeypa
         {'name':'write_at','data_type':'timestamp without time zone','nullable':True}
     ]
     assert out['readiness']['can_detect_updates']=='unverified'
-    assert len(calls)==2
+    # Metadata-only audit performs two SELECTs, though the fake override
+    # intercepts COLUMN_SQL before the base mock records that call.
+    assert len(calls)==1
+    assert calls[0][0] == audit.KIND_SQL
     assert all(q.strip().upper().startswith('SELECT') for q,_ in calls)
 
     # Discovery of a candidate does NOT enable source polling via the
