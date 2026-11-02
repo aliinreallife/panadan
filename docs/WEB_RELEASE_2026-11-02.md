@@ -19,6 +19,14 @@ newer than the latest *published web image* because documentation/tests/ops
 changes do not trigger `.github/workflows/images.yml`. Image pulls require
 private GHCR `read:packages` access. Pulling does not deploy.
 
+**Offline recovery test:** The pre-release SQLite backup can be verified on
+a trusted independent WSL/Linux machine with
+`bash tools/verify-offsite-auth-restore.sh ENCRYPTED_AUTH_SQLITE.age
+OFFSITE_AGE_IDENTITY`. See
+[the SQLite recovery drill](BACKUP_AUTOMATION.md#independent-sqlite-auth-restore-verification-web-release-gate)
+for safe prerequisites, limitations and expected PASS results. Do not
+paste files, keys or customer/account data into GitHub or chat.
+
 **Hard preconditions before writing production:** Operator independently
 verified an encrypted, off-host SQLite auth backup **and performed a safe
 restore drill**; existing VPS-local `prodctl.sh` and private overlay behavior

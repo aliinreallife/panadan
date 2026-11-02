@@ -96,6 +96,51 @@ transient secure test location and use SQLite integrity/checks, never overwrite
 live `/data/auth.sqlite`. Compare source SHA-256 to decrypted SHA-256
 against the *same* snapshot if validating the original manual backup.
 
+## Independent SQLite auth restore verification (web release gate)
+
+The **2026-11-02 web-only production release** must not be treated as safe
+solely because `prodctl-production.sh plan/check` and HTTP smoke tests pass.
+The existing source auth database remains SQLite, and the operator's
+previously copied encrypted off-VPS backup has not yet been independently
+restored. Before acknowledging `--ack-restored-backup`, prove at least one
+recent **off-VPS** account backup can be decrypted with the escrowed private
+identity and restored in isolation.
+
+On a trusted **WSL/Linux recovery machine, not the VPS**, retrieve the
+already-copied encrypted SQLite auth snapshot and separately stored age
+private identity. Never send those files or their contents to GitHub, CI,
+chat, or the server. Run this from a checkout with the latest release checks:
+
+```bash
+cd ~/panadan
+git pull --ff-only
+bash tools/verify-offsite-auth-restore.sh \
+  '/actual/off-vps/path/auth-YYYYMMDDTHHMMSSZ.sqlite.age' \
+  '/actual/off-vps/path/private-age-identity.txt'
+```
+
+Substitute real local paths. This is **not** the PostgreSQL restore helper.
+The script requires `age`, `python3`, a writable memory-backed
+`/dev/shm`, and a real encrypted snapshot; it never creates new users,
+contacts the VPS, uses Docker, changes live accounts or reads customer
+records. It decrypts **only into tmpfs**, confirms SQLite integrity, core
+authentication tables and the presence of an active hashed administrator,
+copies the snapshot into another disposable SQLite database using SQLite's
+backup API, and verifies restored integrity/schema and equal row counts for
+all tables. A trap erases temporary decrypted and restored files on exit.
+It prints only PASS/FAIL and generic information, no credentials, usernames,
+token hashes, detailed errors or row contents.
+
+This verifies only the supplied artifact. **Before rolling out**, verify
+it is recent enough for your accepted account-data loss window; a stale
+Nov 1 snapshot may not reflect subsequent user/role/token changes. Ideally
+take another SQLite **Online Backup API** snapshot before release, encrypt it,
+copy it off-VPS and repeat this independent restore on the fresh artifact.
+Do not use `cp` directly against the live SQLite WAL file. The WSL restore
+drill does not verify successful login with the actual production password,
+ongoing automation/retention, full Plane/VPN/PG disaster recovery or escrow
+redundancy. No backup, restore or auth migration step is implied by a merge.
+
 ## Optional daily systemd schedule (only after successful manual restore drill)
 
 Install a service and timer explicitly during a maintenance review. Versioned
