@@ -94,10 +94,15 @@ PostgreSQL project, include the base Compose file **plus**
 hardened `data/ingress` files or invoke bare `panadan.sh up/down`.
 
 In the current server, `~/panadan/prodctl.sh` is an **untracked operator
-script**. Review/update that script's Compose invocation manually
-before using it for any future deployment; this PR **does not** overwrite
-it or recreate containers. A later deployment should run
-`setup-owned-auth-pg.sh verify` immediately after changes.
+script**. The source-controlled `tools/prodctl-production.sh` has since
+gained a fail-closed, **read-only** `plan` check: if `panadan-auth-db` is active
+and both PG and VPN are attached, it adds the reviewed Panadan auth-network
+Compose overlay to future deploys; it refuses an inconsistent partial
+network instead of accidentally disconnecting auth. Review/test the private
+production controller integration on a disposable host **before adopting it
+on VPS**. No repository merge overwrites the VPS-local controller or
+recreates containers. After an approved future deployment, also run
+`sudo bash ./panadan.sh owned-pg verify` immediately and check HTTPS/VPN.
 
 Docker Compose can recreate containers on config changes, which can
 briefly disrupt Panadan/Plane/Odoo routing. Network-only attachment here
