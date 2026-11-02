@@ -382,7 +382,8 @@ def test_disposable_pg_profile_real_mcp_streamable_http(disposable_db):
         "PANADAN_COOKIE_SECURE": "false",
     })
     result = subprocess.run(
-        [sys.executable, "tests/pg_mcp_profile_http_smoke.py"],
+        [sys.executable, "-c",
+         "import runpy; runpy.run_path('tests/pg_mcp_profile_http_smoke.py', run_name='__main__')"],
         env=env, text=True, capture_output=True, timeout=50, check=False,
     )
     assert result.returncode == 0, (
