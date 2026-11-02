@@ -27,7 +27,7 @@ def test_legacy_prod_commands_refuse_hardened_deployments(tmp_path, command, ove
 
 
 @pytest.mark.parametrize("script", [
-    "panadan.sh", "tools/prodctl-production.sh", "tools/backup-auth-offsite.sh",
+    "panadan.sh", "tools/prodctl-production.sh", "tools/smoke-production-web.sh", "tools/backup-auth-offsite.sh",
 ])
 def test_production_shell_syntax(script):
     result = subprocess.run(
