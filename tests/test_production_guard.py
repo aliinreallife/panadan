@@ -401,3 +401,53 @@ def test_web_deploy_refuses_image_not_present_in_effective_compose(tmp_path):
     assert result.returncode==64
     assert "differs from reviewed release" in result.stderr
     assert " up " not in (tmp_path/"calls.txt").read_text()
+
+
+@pytest.mark.parametrize("change, expected", [
+    (lambda d: d["services"]["web"]["environment"].update(PANADAN_AUTH_BACKEND="postgres-staging"),
+     "SQLite auth backend selector"),
+    (lambda d: d["services"]["web"]["environment"].update(PANADAN_AUTH_DB="/data/other.sqlite"),
+     "SQLite auth database path"),
+    (lambda d: d["services"]["web"]["volumes"][0].update(type="bind"),
+     "SQLite persistent named /data mount"),
+    (lambda d: d["services"]["web"]["environment"].update(PANADAN_MCP_AUTH_MODE="oauth"),
+     "MCP legacy authentication mode"),
+    (lambda d: d["services"]["web"].update(network_mode="host"),
+     "web VPN namespace"),
+])
+def test_safe_diagnostics_only_show_allowlisted_invariant(change, expected):
+    config = panadan()
+    config["services"]["web"]["environment"]["PROD_SECRET"] = "DO_NOT_PRINT_THIS"
+    change(config)
+    cmd = ["python3", str(SCRIPT), "panadan", "--explain-safe"]
+    result = subprocess.run(
+        cmd, input=json.dumps(config), text=True,
+        capture_output=True, timeout=8,
+    )
+    assert result.returncode == 1
+    assert "SAFE CHECK: " + expected in result.stderr
+    assert "DO_NOT_PRINT_THIS" not in (result.stdout + result.stderr)
+    assert "/data/other.sqlite" not in (result.stdout + result.stderr)
+    assert "postgres-staging" not in (result.stdout + result.stderr)
+
+
+def test_safe_diagnostics_never_echo_unknown_exception_text(monkeypatch):
+    config = panadan()
+    unsafe = "DB_PASSWORD=very_sensitive_testing_value"
+    def unexpected_problem(*args, **kwargs):
+        raise guard.InvalidDeployment(unsafe)
+    monkeypatch.setattr(guard, "validate_panadan", unexpected_problem)
+    # The mapping only yields fixed trusted labels; unexpected error text
+    # must be suppressed even in diagnostics mode.
+    assert guard.SAFE_PANADAN_CHECKS.get(unsafe, "unspecified invariant") == "unspecified invariant"
+
+
+def test_safe_diagnostics_rejects_duplicate_and_unknown_flags():
+    for flags in (["--explain-safe", "--explain-safe"], ["--explain-safe", "--debug"]):
+        result = subprocess.run(
+            ["python3", str(SCRIPT), "panadan", *flags],
+            input=json.dumps(panadan()), text=True,
+            capture_output=True, timeout=8,
+        )
+        assert result.returncode == 2
+        assert "invalid validator arguments" in result.stderr
