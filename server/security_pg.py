@@ -15,7 +15,7 @@ from psycopg.rows import dict_row
 from .security import (
     CAPABILITIES, ROLE_GRANTS, SESSION_SECONDS, LOGIN_THROTTLE_WINDOW,
     LOGIN_THROTTLE_THRESHOLD, LOGIN_THROTTLE_MAX_DELAY, _DUMMY_HASH,
-    digest, password_hash, password_check, permissions,
+    digest, password_hash, password_check, permissions, validate_user_grants,
 )
 
 
@@ -143,14 +143,7 @@ class PgStore:
             raise ValueError("Invalid username")
         if len(password)<14:
             raise ValueError("Password must be at least 14 characters")
-        if role not in ROLE_GRANTS:
-            raise ValueError("Unknown role")
-        if caps is not None and (
-            set(caps)-set(CAPABILITIES)
-            or ("users:manage" in caps and role!="admin")
-            or ("tokens:manage" in caps and role!="admin")
-        ):
-            raise ValueError("Invalid user privileges")
+        validate_user_grants(role, caps)
         grants=json.dumps(sorted(set(caps))) if caps is not None and role!="admin" else None
         with self.db() as con:
             return int(con.execute(
@@ -163,14 +156,7 @@ class PgStore:
 
     def update_user(self, user_id: int, role: str, caps: list[str] | None,
                     active: bool, actor_id: int):
-        if role not in ROLE_GRANTS:
-            raise ValueError("Unknown role")
-        if caps is not None and (
-            set(caps)-set(CAPABILITIES)
-            or ("users:manage" in caps and role!="admin")
-            or ("tokens:manage" in caps and role!="admin")
-        ):
-            raise ValueError("Invalid user privileges")
+        validate_user_grants(role, caps)
         if int(user_id)==actor_id and (not active or role!="admin"):
             raise ValueError("Cannot deactivate or demote your own admin account")
         grants=json.dumps(sorted(set(caps))) if caps is not None and role!="admin" else None
