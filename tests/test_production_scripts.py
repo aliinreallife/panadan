@@ -1,4 +1,5 @@
 """Safe CLI regression tests: no Docker, production data, OAuth or network."""
+import os
 from pathlib import Path
 import shutil
 import subprocess
