@@ -345,7 +345,7 @@ def test_staged_pg_http_runtime_preserves_imported_identity_and_revocation(
         assert client.get("/api/v1/states", headers=headers).status_code == 200
         # Direct HTTP revocation proves no stale client-side permission cache.
         store.update_user(analyst_id, "reader", ["calls:read"], True, admin_id)
-        assert client.get("/dashboard").status_code == 303
+        assert client.get("/dashboard", follow_redirects=False).status_code == 303
         assert client.get("/api/v1/states", headers=headers).status_code == 401
         assert store.session(imported_session) is None
         assert store.verify_token(token, "mcp:read") is False
