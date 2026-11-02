@@ -74,6 +74,20 @@ def auth_network(members=True):
     return [data]
 
 
+def caddy_routes():
+    # Same structural shape as Caddy's adapted JSON (not raw Caddyfile).
+    # Plane is intentionally nested inside a subroute; the VPS input
+    # demonstrated it can be absent from literal top-level site blocks.
+    return {"apps": {"http": {"servers": {"srv0": {"routes": [
+        {"match": [{"host": ["dan.panafor.com"]}],
+         "handle": [{"handler": "static_response", "body": "synthetic"}]},
+        {"handle": [{"handler": "subroute", "routes": [
+            {"match": [{"host": ["plane.panafor.com"]}],
+             "handle": [{"handler": "static_response", "body": "synthetic"}]}
+        ]}]}
+    ]}}}}}
+
+
 def private_networks():
     return [
         {"Name": "panadan-edge", "Driver": "bridge", "Internal": True,
@@ -107,8 +121,7 @@ def test_valid_production_snapshots_and_operator_auth_overlay():
     guard.validate_gateway(gateway())
     guard.validate_auth_network(auth_network())
     guard.validate_private_networks(private_networks())
-    guard.validate_caddy("plane.panafor.com {\n reverse_proxy plane:3000\n}\n"
-                         "https://dan.panafor.com {\n reverse_proxy gateway:80\n}\n")
+    guard.validate_caddy_adapted(caddy_routes())
 
 
 @pytest.mark.parametrize("image", [
@@ -250,6 +263,21 @@ elif args[:1]==["inspect"]:
     print(json.dumps([cs[n] for n in args[1:]]))
 elif args[:3]==["exec","panadan-vpn-1","ip"]:
     print("192.168.3.9 via 10.8.0.1 dev tun0 src 10.8.0.2")
+elif args[:3]==["exec","plane-app-proxy-1","cat"]:
+    if os.environ.get("MOCK_CADDY_MOUNT_MISMATCH")=="YES":
+        sys.stdout.write("unexpected different Caddyfile bytes")
+    else:
+        with open(os.environ["PANADAN_INGRESS_DIR"]+"/Caddyfile","rb") as fd:
+            sys.stdout.buffer.write(fd.read())
+elif args[:3]==["exec","plane-app-proxy-1","caddy"]:
+    site=os.environ.get("MOCK_CADDY_ROUTES","both")
+    sites=["dan.panafor.com"]
+    if site=="both":sites.append("plane.panafor.com")
+    print(json.dumps({"apps":{"http":{"servers":{"srv0":{"routes":[
+        {"handle":[{"handler":"subroute","routes":[
+            {"match":[{"host":[host]}]} for host in sites
+        ]}]}
+    ]}}}}}))
 elif args[:1]==["compose"]:
     if "config" in args:
         if "--quiet" in args:sys.exit(0)
@@ -451,3 +479,56 @@ def test_safe_diagnostics_rejects_duplicate_and_unknown_flags():
         )
         assert result.returncode == 2
         assert "invalid validator arguments" in result.stderr
+
+
+def test_caddy_adapter_accepts_nested_explicit_hosts_not_plaintext_site_blocks():
+    # The real host Caddyfile has an explicit dan site but Plane can enter
+    # via environment-expanded/imported routes. Validate the adapter output.
+    guard.validate_caddy_adapted(caddy_routes())
+
+
+def test_caddy_adapter_rejects_missing_plane_and_incidental_host_strings():
+    data=caddy_routes()
+    data["apps"]["http"]["servers"]["srv0"]["routes"][1]["handle"][0]["routes"] = []
+    data["example"]="plane.panafor.com"
+    with pytest.raises(guard.InvalidDeployment, match="explicit Caddy host matchers"):
+        guard.validate_caddy_adapted(data)
+
+
+def test_caddy_adapter_rejects_hostless_and_wildcard_only_routes():
+    for hosts in (["dan.panafor.com","*.panafor.com"],
+                  ["dan.panafor.com"]):
+        data={"apps":{"http":{"servers":{"srv0":{"routes":[
+            {"match":[{"host":hosts}]}]}}}}}
+        with pytest.raises(guard.InvalidDeployment):
+            guard.validate_caddy_adapted(data)
+
+
+def test_caddy_adapter_rejects_invalid_or_missing_http_server_structure():
+    for data in ({}, {"apps":{"http":{"servers":{}}}},
+                 {"apps":{"http":{"servers":{"srv0":{"routes":[{"match":"bad"}]}}}}}):
+        with pytest.raises(guard.InvalidDeployment):
+            guard.validate_caddy_adapted(data)
+
+
+def test_plan_rejects_mismatched_proxy_mount_without_docker_changes(tmp_path):
+    env=_sandbox(tmp_path)
+    env["MOCK_CADDY_MOUNT_MISMATCH"]="YES"
+    result=_ctrl(tmp_path,env,"plan")
+    assert result.returncode==64
+    assert "reviewed Caddyfile differs" in result.stderr
+    calls=(tmp_path/"calls.txt").read_text()
+    assert "exec plane-app-proxy-1 cat /etc/caddy/Caddyfile" in calls
+    assert "exec plane-app-proxy-1 caddy adapt" not in calls
+    assert " up " not in calls
+
+
+def test_plan_rejects_missing_caddy_host_after_real_adapter(tmp_path):
+    env=_sandbox(tmp_path)
+    env["MOCK_CADDY_ROUTES"]="missing-plane"
+    result=_ctrl(tmp_path,env,"plan")
+    assert result.returncode==64
+    assert "caddy-adapted production topology" in result.stderr
+    calls=(tmp_path/"calls.txt").read_text()
+    assert "exec plane-app-proxy-1 caddy adapt" in calls
+    assert " up " not in calls
