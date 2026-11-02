@@ -278,6 +278,8 @@ elif args[:3]==["exec","plane-app-proxy-1","caddy"]:
             {"match":[{"host":[host]}]} for host in sites
         ]}]}
     ]}}}}}))
+elif args[:2]==["image","inspect"]:
+    sys.exit(0)
 elif args[:1]==["compose"]:
     if "config" in args:
         if "--quiet" in args:sys.exit(0)
@@ -307,17 +309,48 @@ elif args[:1]==["compose"]:
                                    "target":"/data"}]}}}
         print(json.dumps(result))
     elif "ps" in args:print("synthetic containers running")
-    elif "up" in args:sys.exit(0)
+    elif "up" in args:
+        if "--dry-run" not in args:
+            open(os.environ["MOCK_UP_MARKER"],"w").write("web-only")
+        sys.exit(0)
     else:sys.exit(5)
 else:sys.exit(6)
 ''')
     docker.chmod(0o700)
+    curl=tmp_path / "bin/curl"
+    curl.write_text(r'''#!/usr/bin/env python3
+import os,sys
+args=sys.argv[1:]
+url=args[-1]
+with open(os.environ["MOCK_LOG"],"a") as fd:
+    fd.write("curl " + url + "\\n")
+status="200"
+if url.endswith("/healthz"):
+    if os.path.exists(os.environ["MOCK_UP_MARKER"]):
+        counter=os.environ["MOCK_CURL_COUNTER"]
+        n=int(open(counter).read()) if os.path.exists(counter) else 0
+        n+=1
+        open(counter,"w").write(str(n))
+        status="200" if n>=int(os.environ.get("MOCK_RECOVER_AT","3")) else "502"
+    else:
+        status=os.environ.get("MOCK_BASELINE_HTTP","200")
+if "--write-out" in args:
+    print(status,end="")
+if status!="200" and "--fail" in args:
+    sys.exit(22)
+''')
+    curl.chmod(0o700)
+    sleep=tmp_path / "bin/sleep"
+    sleep.write_text('#!/bin/sh\necho "sleep $*" >> "$MOCK_LOG"\n')
+    sleep.chmod(0o700)
     env=os.environ.copy()
     env.update(
         PATH=str(tmp_path/"bin")+os.pathsep+env["PATH"],
         PANADAN_INGRESS_DIR=str(tmp_path/"data/ingress"),
         PANADAN_PLANE_DIR=str(tmp_path/"plane"),
         MOCK_LOG=str(tmp_path/"calls.txt"),
+        MOCK_UP_MARKER=str(tmp_path/"web-recreated.marker"),
+        MOCK_CURL_COUNTER=str(tmp_path/"curl-count.txt"),
     )
     return env
 
@@ -532,3 +565,90 @@ def test_plan_rejects_missing_caddy_host_after_real_adapter(tmp_path):
     calls=(tmp_path/"calls.txt").read_text()
     assert "exec plane-app-proxy-1 caddy adapt" in calls
     assert " up " not in calls
+
+
+def _release_sandbox(tmp_path, *, baseline="200", recover_at="3"):
+    env=_sandbox(tmp_path)
+    env["MOCK_BASELINE_HTTP"]=baseline
+    env["MOCK_RECOVER_AT"]=recover_at
+    # The full authenticated smoke has separate integration and curl tests.
+    # These controller tests exercise the call ordering and readiness gate.
+    smoke=tmp_path/"tools/smoke-production-web.sh"
+    smoke.write_text(
+        '#!/bin/sh\necho "smoke $*" >> "$MOCK_LOG"\n'
+        'echo "PASS: Synthetic post-deploy smoke"\n'
+    )
+    return env
+
+
+def test_deploy_web_retries_transient_502_before_post_release_smoke(tmp_path):
+    env=_release_sandbox(tmp_path, recover_at="3")
+    result=_ctrl(tmp_path,env,"deploy-web","--apply","--expect-image",
+                 "panadan-web:cac4b36","--ack-restored-backup")
+    assert result.returncode==0, result.stdout+result.stderr
+    assert "ready (attempt 3/12)" in result.stdout
+    calls=(tmp_path/"calls.txt").read_text()
+    assert calls.count("curl https://dan.panafor.com/healthz")>=4
+    assert calls.count("sleep 5")==2
+    assert "smoke --expected-image panadan-web:cac4b36" in calls
+    assert " up -d --no-deps --no-build --pull never web" in calls
+    assert " down " not in calls
+    assert "restart vpn" not in calls
+
+
+def test_deploy_web_stops_after_bounded_readiness_timeout(tmp_path):
+    env=_release_sandbox(tmp_path, recover_at="99")
+    result=_ctrl(tmp_path,env,"deploy-web","--apply","--expect-image",
+                 "panadan-web:cac4b36","--ack-restored-backup")
+    assert result.returncode==64
+    assert "bounded readiness window" in result.stderr
+    calls=(tmp_path/"calls.txt").read_text()
+    assert calls.count("sleep 5")==11
+    assert "smoke --expected-image" not in calls
+    assert " down " not in calls
+
+
+def test_rollback_web_succeeds_with_unhealthy_panadan_baseline(tmp_path):
+    env=_release_sandbox(tmp_path, baseline="502", recover_at="2")
+    result=_ctrl(tmp_path,env,"rollback-web","--apply","--expect-image",
+                 "panadan-web:cac4b36","--ack-restored-backup")
+    assert result.returncode==0, result.stdout+result.stderr
+    assert "recovering Panadan Web only" in result.stderr
+    assert "ready (attempt 2/12)" in result.stdout
+    calls=(tmp_path/"calls.txt").read_text()
+    assert "smoke --expected-image panadan-web:cac4b36" in calls
+    assert " up -d --no-deps --no-build --pull never web" in calls
+    assert " down " not in calls
+    assert "restart " not in calls
+
+
+def test_deploy_web_refuses_unhealthy_baseline_without_up(tmp_path):
+    env=_release_sandbox(tmp_path, baseline="502")
+    result=_ctrl(tmp_path,env,"deploy-web","--apply","--expect-image",
+                 "panadan-web:cac4b36","--ack-restored-backup")
+    assert result.returncode==64
+    assert "Panadan HTTPS health failed" in result.stderr
+    calls=(tmp_path/"calls.txt").read_text()
+    assert " up -d " not in calls
+
+
+def test_rollback_web_refuses_unpinned_or_unselected_image(tmp_path):
+    env=_release_sandbox(tmp_path, baseline="502")
+    for image in ("panadan-web:main","ghcr.io/aliinreallife/panadan-web:sha-"+"a"*40):
+        result=_ctrl(tmp_path,env,"rollback-web","--apply","--expect-image",
+                     image,"--ack-restored-backup")
+        assert result.returncode==64
+    calls=(tmp_path/"calls.txt").read_text()
+    assert " up -d " not in calls
+
+
+def test_rollback_web_refuses_missing_backup_ack_and_wrong_network(tmp_path):
+    env=_release_sandbox(tmp_path, baseline="502")
+    no_ack=_ctrl(tmp_path,env,"rollback-web","--apply","--expect-image",
+                 "panadan-web:cac4b36")
+    assert no_ack.returncode==64
+    env["MOCK_AUTH_MODE"]="partial"
+    bad_network=_ctrl(tmp_path,env,"rollback-web","--apply","--expect-image",
+                      "panadan-web:cac4b36","--ack-restored-backup")
+    assert bad_network.returncode==64
+    assert " up -d " not in (tmp_path/"calls.txt").read_text()
