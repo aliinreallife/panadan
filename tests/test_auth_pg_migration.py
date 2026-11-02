@@ -287,3 +287,70 @@ def test_pg_store_throttle_reporting_and_operator_metadata(disposable_db):
     assert len(report["recent"])==2
     assert store.activity_report(days=7,errors_only=True)["total"]==1
     assert store.activity_report(days=7,surface="auth")["total"]==1
+
+
+def test_staged_pg_http_runtime_preserves_imported_identity_and_revocation(
+    snapshot, disposable_db, monkeypatch, tmp_path
+):
+    """HTTP routes use a single imported PostgreSQL authority, no Odoo/SQLite writes.
+
+    This runs only against the disposable loopback panadan_ci service in CI.
+    """
+    import importlib
+    import re
+    from contextlib import asynccontextmanager
+
+    from fastapi.testclient import TestClient
+    from server.auth_store import create_auth_store
+
+    source_path, sqlite_store, admin_id, analyst_id, imported_session, csrf, token = snapshot
+    monkeypatch.setenv("PANADAN_AUTH_MIGRATION_TEST_ALLOW_APPLY", "YES")
+    source, counts = inspect_snapshot(source_path)
+    try:
+        assert import_into_disposable(source, disposable_db, counts) == counts
+    finally:
+        source.close()
+
+    # The request handler sees PostgreSQL ONLY. The source SQLite backup is
+    # immutable and never accessed by requests.
+    monkeypatch.setenv("PANADAN_AUTH_BACKEND", "postgres-staging")
+    monkeypatch.setenv("PANADAN_AUTH_STAGING_ENABLE", "YES")
+    monkeypatch.setenv("PANADAN_AUTH_STAGING_ISOLATED", "YES")
+    monkeypatch.setenv("PANADAN_AUTH_STAGING_DSN", disposable_db)
+    store = create_auth_store()
+    assert store.session(imported_session)["user_id"] == analyst_id
+    assert store.verify_login("synthetic_admin", "synthetic-test-admin-password-very-long") == admin_id
+    assert store.verify_token(token, "mcp:read")
+
+    # Main's import-time singleton is replaced only under pytest monkeypatch.
+    # Do not invoke the real SDK session manager twice in one pytest process.
+    monkeypatch.setenv("PANADAN_AUTH_BACKEND", "sqlite")
+    monkeypatch.setenv("PANADAN_AUTH_DB", str(tmp_path / "unrelated.sqlite"))
+    import server.main as main
+    monkeypatch.setattr(main, "store", store)
+    monkeypatch.setattr(main.database, "statuses", lambda: ["SyntheticOnly"])
+
+    @asynccontextmanager
+    async def isolated_http_lifespan(_app):
+        store.bootstrap("ignored", None)  # imported data must not be reset
+        yield
+
+    monkeypatch.setattr(main.app.router, "lifespan_context", isolated_http_lifespan)
+    with TestClient(main.app, base_url="http://localhost:8508") as client:
+        # Migrated identity, password and existing bearer remain valid.
+        client.cookies.set("panadan_session", imported_session)
+        assert client.get("/dashboard").status_code == 200
+        api_id, api_token = store.create_token("synthetic API", "api:read", 7, analyst_id)
+        headers = {"authorization": "Bearer " + api_token}
+        assert client.get("/api/v1/states", headers=headers).status_code == 200
+        # Direct HTTP revocation proves no stale client-side permission cache.
+        store.update_user(analyst_id, "reader", ["calls:read"], True, admin_id)
+        assert client.get("/dashboard").status_code == 303
+        assert client.get("/api/v1/states", headers=headers).status_code == 401
+        assert store.session(imported_session) is None
+        assert store.verify_token(token, "mcp:read") is False
+        assert store.mcp_profile(legacy_token=token) is None
+    assert store.activity_report(days=1)["total"] >= 1
+    # No writes to source SQLite backup or source reporting database.
+    with sqlite3.connect(f"file:{source_path}?mode=ro", uri=True) as original:
+        assert original.execute("SELECT COUNT(*) FROM users").fetchone()[0] == counts["users"]
