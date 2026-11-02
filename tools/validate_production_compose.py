@@ -210,17 +210,51 @@ def validate_private_networks(data: object) -> None:
         require(observed == members, "private production network membership differs")
 
 
-def validate_caddy(source: str) -> None:
-    # This is only a public-site-name guard. Detailed private Caddy routing
-    # and upstream must be reviewed against the actual operator backup.
-    sites = re.findall(r"(?m)^[ \t]*(?:https://)?([a-z0-9.-]+)[ \t]*\{", source)
-    require("plane.panafor.com" in sites and "dan.panafor.com" in sites,
-            "both Plane and Panadan HTTPS site blocks must be preserved")
+def validate_caddy_adapted(data: Mapping) -> None:
+    """Inspect Caddy's adapted HTTP host matchers, not raw Caddyfile syntax.
+
+    Plain-text site-block regexes miss valid Caddy routes defined through
+    imports, environment expansion, and alternative site address forms.
+    Adaptation must happen on the reviewed mounted Caddyfile; this function
+    never accepts arbitrary JSON fields as proof of a routed hostname.
+    """
+    apps = object_value(data.get("apps"), "Caddy apps missing")
+    http = object_value(apps.get("http"), "Caddy HTTP app missing")
+    servers = object_value(http.get("servers"), "Caddy HTTP servers missing")
+    require(bool(servers), "no Caddy HTTP servers")
+    hosts: set[str] = set()
+
+    def visit_routes(routes: object, depth: int = 0) -> None:
+        require(depth < 32, "Caddy nested route limit exceeded")
+        require(isinstance(routes, list), "invalid Caddy routes")
+        for route_raw in routes:
+            route = object_value(route_raw, "invalid Caddy route")
+            matchers = route.get("match", [])
+            require(isinstance(matchers, list), "invalid Caddy route match")
+            for matcher_raw in matchers:
+                matcher = object_value(matcher_raw, "invalid Caddy matcher")
+                match_hosts = matcher.get("host", [])
+                require(isinstance(match_hosts, list), "invalid Caddy host matcher")
+                for host in match_hosts:
+                    if isinstance(host, str):
+                        hosts.add(host)
+            handlers = route.get("handle", [])
+            require(isinstance(handlers, list), "invalid Caddy handlers")
+            for handler_raw in handlers:
+                handler = object_value(handler_raw, "invalid Caddy handler")
+                if handler.get("handler") == "subroute":
+                    visit_routes(handler.get("routes", []), depth + 1)
+
+    for server_raw in servers.values():
+        server = object_value(server_raw, "invalid Caddy HTTP server")
+        visit_routes(server.get("routes", []))
+    require({"plane.panafor.com", "dan.panafor.com"} <= hosts,
+            "both Plane and Panadan explicit Caddy host matchers required")
 
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print("Usage: validate_production_compose.py panadan|plane|gateway|auth-network|private-networks|caddy [--auth] [--explain-safe]", file=sys.stderr)
+        print("Usage: validate_production_compose.py panadan|plane|gateway|auth-network|private-networks|caddy-adapted [--auth] [--explain-safe]", file=sys.stderr)
         return 2
     part = sys.argv[1]
     flags = sys.argv[2:]
@@ -232,10 +266,10 @@ def main() -> int:
         print("REFUSED: invalid validator arguments", file=sys.stderr)
         return 2
     try:
-        if part == "caddy":
-            validate_caddy(sys.stdin.read())
+        data = json.load(sys.stdin)
+        if part == "caddy-adapted":
+            validate_caddy_adapted(object_value(data, "invalid Caddy JSON"))
         else:
-            data = json.load(sys.stdin)
             if part == "panadan":
                 validate_panadan(object_value(data, "invalid Compose file"),
                                  auth_enabled="--auth" in flags)
