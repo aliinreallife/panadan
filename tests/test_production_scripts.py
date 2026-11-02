@@ -129,7 +129,7 @@ def test_readonly_web_release_smoke_passes_without_mutating_command(tmp_path, mo
     result, calls = _run_smoke(tmp_path, monkeypatch)
     assert result.returncode == 0, result.stderr
     assert "PASS: Production web" in result.stdout
-    assert "running web container references the reviewed image" in result.stdout
+    assert "Running web container references the reviewed image" in result.stdout
     assert "docker exec panadan-vpn-1 ip -4 route get" in calls
     assert "curl https://plane.panafor.com/intake.html" in calls
     assert "curl https://dan.panafor.com/mcp/" in calls
