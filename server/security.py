@@ -23,6 +23,23 @@ ROLE_GRANTS = {
     'metrics': ('metrics:read',),
 }
 
+MCP_PREREQUISITES = frozenset(('calls:read', 'metrics:read'))
+
+
+def validate_user_grants(role: str, caps: list[str] | None) -> None:
+    """Reject contradictory MCP grants; never silently grant prerequisites."""
+    if role not in ROLE_GRANTS:
+        raise ValueError('Unknown role')
+    if caps is None:
+        return
+    selected = set(caps)
+    if (selected - set(CAPABILITIES)
+            or (role != 'admin' and selected & {'users:manage', 'tokens:manage'})):
+        raise ValueError('Invalid user privileges')
+    if role != 'admin' and 'mcp:use' in selected and not MCP_PREREQUISITES <= selected:
+        raise ValueError('MCP requires calls and metrics permissions')
+
+
 
 def digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
@@ -48,7 +65,12 @@ def permissions(role: str, overrides: str | None = None) -> set[str]:
     try:
         if overrides is not None:
             parsed = json.loads(overrides)
-            return set(parsed) & set(CAPABILITIES) - {'users:manage'}
+            granted = set(parsed) & set(CAPABILITIES) - {'users:manage'}
+            # Existing inconsistent rows cannot advertise effective MCP
+            # permission until explicitly fixed by an administrator.
+            if 'mcp:use' in granted and not MCP_PREREQUISITES <= granted:
+                granted.discard('mcp:use')
+            return granted
     except (ValueError, TypeError):
         pass
     return set(ROLE_GRANTS.get(role, ()))
@@ -282,9 +304,7 @@ class Store:
         if not username or len(username) > 80 or not username.replace('_','').replace('-','').isalnum():
             raise ValueError('Invalid username')
         if len(password) < 14: raise ValueError('Password must be at least 14 characters')
-        if role not in ROLE_GRANTS: raise ValueError('Unknown role')
-        if caps is not None and (set(caps) - set(CAPABILITIES) or ('users:manage' in caps and role != 'admin') or ('tokens:manage' in caps and role != 'admin')):
-            raise ValueError('Invalid user privileges')
+        validate_user_grants(role, caps)
         grants = json.dumps(sorted(set(caps))) if caps is not None and role != 'admin' else None
         with self.db() as c:
             cur = c.execute('INSERT INTO users(username,password_hash,role,grants) VALUES(?,?,?,?)',
@@ -292,9 +312,7 @@ class Store:
             return cur.lastrowid
 
     def update_user(self, user_id: int, role: str, caps: list[str] | None, active: bool, actor_id: int):
-        if role not in ROLE_GRANTS: raise ValueError('Unknown role')
-        if caps is not None and (set(caps) - set(CAPABILITIES) or ('users:manage' in caps and role != 'admin') or ('tokens:manage' in caps and role != 'admin')):
-            raise ValueError('Invalid user privileges')
+        validate_user_grants(role, caps)
         if int(user_id) == actor_id and (not active or role != 'admin'):
             raise ValueError('Cannot deactivate or demote your own admin account')
         grants = json.dumps(sorted(set(caps))) if caps is not None and role != 'admin' else None
