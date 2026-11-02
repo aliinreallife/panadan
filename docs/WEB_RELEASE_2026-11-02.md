@@ -111,6 +111,47 @@ metadata *without dumping environment variables*. A still-functional
 service is not sufficient evidence for relaxing or overriding
 security checks.
 
+## November 2 Caddy preflight follow-up (no proxy change)
+
+The operator corrected only the reviewed **Compose image selectors**, with
+a tag pointing to the **same running VPN image ID**, and cached the private
+GHCR web release through a temporary authenticated root Docker session.
+The new Panadan, Plane and gateway topology guards **all passed**, but the
+original Caddy **text-site-block regex** rejected the actual Caddyfile.
+A read-only inspection showed a literal `dan.panafor.com` block while
+`plane.panafor.com` was not present as a top-level literal block.
+Inside the existing proxy, `caddy adapt --config /etc/caddy/Caddyfile
+--adapter caddyfile` returned successfully, and the adapted JSON
+contained **explicit host matchers for BOTH domains** (one server; nested
+routes). This is a valid configuration form that the textual check missed.
+
+The updated repo preflight now:
+- Compares SHA-256 of the **operator-reviewed host Caddyfile** with the
+  file mounted inside the running Plane Caddy container, reporting only
+  pass/fail and never file contents or hashes;
+- Executes `caddy adapt` against that existing mounted file **without
+  reloading or restarting Caddy** and validates explicit Plane and Panadan
+  host matchers, including nested subroutes;
+- Refuses on mismatch, missing routes, invalid adapted JSON or missing
+  proxy access. The separate HTTPS health and Plane intake checks remain.
+- Does not claim the adapted file is identical to the server's **currently
+  loaded runtime configuration**, nor validate all private upstream routing.
+
+**Next read-only VPS checks after this PR is merged:**
+
+```bash
+cd /home/panafor/panadan
+git pull --ff-only
+sudo bash tools/prodctl-production.sh plan
+sudo bash tools/prodctl-production.sh check
+sudo bash tools/smoke-production-web.sh
+sudo docker inspect panadan-web-1 --format '{{.Config.Image}}'
+```
+
+Do **not** deploy until the independent encrypted off-VPS **SQLite auth
+restore drill** is confirmed and the existing VPS-local
+`prodctl.sh`/private overlay behavior has been reconciled.
+
 ## 2. Operator-controlled application image update
 
 **Only after** the above passes, an independent SQLite backup/restore drill
