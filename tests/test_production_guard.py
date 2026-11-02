@@ -187,7 +187,7 @@ def _sandbox(tmp_path):
     (tmp_path / "plane").mkdir()
     shutil.copy2(CTRL, tmp_path / "tools/prodctl-production.sh")
     for name in ("validate_production_compose.py", "check_auth_db_network.py",
-                 "check-plane-intake.sh"):
+                 "check-plane-intake.sh", "smoke-production-web.sh"):
         shutil.copy2(ROOT / "tools" / name, tmp_path / "tools" / name)
     shutil.copy2(ROOT / "deploy/compose.auth-network.panadan.yaml",
                  tmp_path / "deploy/compose.auth-network.panadan.yaml")
@@ -272,7 +272,11 @@ elif args[:1]==["compose"]:
                        "ports":[{"host_ip":"127.0.0.1"}],"networks":networks},
                 "web":{"image":"panadan-web:cac4b36","network_mode":"service:vpn",
                        "environment":{"PANADAN_COOKIE_SECURE":"true",
-                                      "PANADAN_PUBLIC_ORIGIN":"https://dan.panafor.com"}}}}
+                                      "PANADAN_PUBLIC_ORIGIN":"https://dan.panafor.com",
+                                      "PANADAN_AUTH_DB":"/data/auth.sqlite",
+                                      "PANADAN_MCP_AUTH_MODE":"legacy"},
+                       "volumes":[{"type":"volume","source":"panadan_auth_data",
+                                   "target":"/data"}]}}}
         print(json.dumps(result))
     elif "ps" in args:print("synthetic containers running")
     elif "up" in args:sys.exit(0)
@@ -374,3 +378,25 @@ def test_empty_auth_backend_defaults_to_sqlite():
     guard.validate_panadan(data, auth_enabled=False)
     data["services"]["web"]["environment"]["PANADAN_AUTH_BACKEND"] = "sqlite"
     guard.validate_panadan(data, auth_enabled=False)
+
+
+def test_web_deploy_requires_exact_image_and_explicit_backup_ack(tmp_path):
+    env=_sandbox(tmp_path)
+    for args in (("deploy-web","--apply"), ("deploy-web","--apply","--expect-image","panadan-web:cac4b36"),
+                 ("deploy-web","--apply","--expect-image","panadan-web:main","--ack-restored-backup")):
+        result=_ctrl(tmp_path,env,*args)
+        assert result.returncode==64
+        assert "REFUSED" in result.stderr
+    # Every rejected invocation leaves all containers untouched.
+    if (tmp_path/"calls.txt").exists():
+        assert " up " not in (tmp_path/"calls.txt").read_text()
+
+
+def test_web_deploy_refuses_image_not_present_in_effective_compose(tmp_path):
+    env=_sandbox(tmp_path)
+    result=_ctrl(tmp_path,env,"deploy-web","--apply","--expect-image",
+                 "ghcr.io/aliinreallife/panadan-web:sha-"+"a"*40,
+                 "--ack-restored-backup")
+    assert result.returncode==64
+    assert "differs from reviewed release" in result.stderr
+    assert " up " not in (tmp_path/"calls.txt").read_text()
