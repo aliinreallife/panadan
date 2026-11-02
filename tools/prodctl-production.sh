@@ -94,7 +94,7 @@ preflight() {
     auth_flag=(--auth)
   fi
   panadan_compose config --format json 2>/dev/null |
-    python3 "$ROOT/tools/validate_production_compose.py" panadan "${auth_flag[@]}" ||
+    python3 "$ROOT/tools/validate_production_compose.py" panadan "${auth_flag[@]}" --explain-safe ||
       fail "Panadan production service invariants"
   plane_compose config --format json 2>/dev/null |
     python3 "$ROOT/tools/validate_production_compose.py" plane ||
