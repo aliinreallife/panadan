@@ -24,6 +24,25 @@ if [[ "$cmd" == "up" || "$cmd" == "down" ]]; then
       exit 64
     fi
   done
+  # File-presence checks alone can be bypassed if operator-local overlays
+  # are moved or lost while the hardened Docker topology is still running.
+  # Read Docker network NAMES only; do not inspect secret environment values,
+  # modify networks, or touch the source VPN.
+  command -v docker >/dev/null 2>&1 || {
+    echo 'REFUSED: Cannot verify Docker networks for production up/down.' >&2
+    exit 64
+  }
+  existing_networks="$(docker network ls --format '{{.Name}}' 2>/dev/null)" || {
+    echo 'REFUSED: Docker network inspection failed; bare up/down is unsafe.' >&2
+    exit 64
+  }
+  for protected in panadan-edge panadan-ingress panadan-auth-db; do
+    if grep -Fxq -- "$protected" <<< "$existing_networks"; then
+      echo 'REFUSED: Hardened Panadan/Plane network exists; bare up/down would omit private overlays.' >&2
+      echo 'Use the reviewed production controller and all required private Compose overlays.' >&2
+      exit 64
+    fi
+  done
 fi
 # Local quality verification never even reads existing source credentials.
 if [[ "$cmd" == "verify" ]]; then
