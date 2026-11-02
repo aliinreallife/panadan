@@ -106,3 +106,33 @@ def test_error_message_does_not_leak_sensitive_exception(monkeypatch,capsys):
     stderr=capsys.readouterr().err
     assert 'password' not in stderr and '0912' not in stderr
     assert 'RuntimeError SQLSTATE=unknown' in stderr
+
+
+def test_write_at_is_detected_by_catalog_only_and_not_approved_for_sync(monkeypatch):
+    class WriteAtConnection(Connection):
+        def execute(self, sql, params=None):
+            if sql == audit.COLUMN_SQL:
+                return Cursor(rows=[
+                    {'column_name':'id', 'data_type':'bigint', 'is_nullable':'NO'},
+                    {'column_name':'write_at',
+                     'data_type':'timestamp without time zone', 'is_nullable':'YES'},
+                ])
+            return super().execute(sql, params)
+    calls=[]
+    @contextmanager
+    def conn():
+        yield WriteAtConnection(calls)
+    monkeypatch.setattr(audit.database,'connect',conn)
+    out=audit.inspect(sample=0,explain=False)
+    assert out['update_marker_candidates']==['write_at']
+    assert out['update_marker_details']==[
+        {'name':'write_at','data_type':'timestamp without time zone','nullable':True}
+    ]
+    assert out['readiness']['can_detect_updates']=='unverified'
+    assert len(calls)==2
+    assert all(q.strip().upper().startswith('SELECT') for q,_ in calls)
+
+    # Discovery of a candidate does NOT enable source polling via the
+    # adapter: only verified updated_at or sync_updated_at is allowed.
+    from server import odoo_sync_adapter
+    assert 'write_at' not in odoo_sync_adapter.UPDATE_COLUMNS
