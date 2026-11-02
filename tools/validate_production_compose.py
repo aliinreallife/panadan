@@ -7,7 +7,6 @@ file paths or network details on failure.
 """
 from __future__ import annotations
 
-import ipaddress
 import json
 import re
 import sys
@@ -131,16 +130,14 @@ def validate_auth_network(data: object) -> None:
     names = {v.get("Name") for v in containers.values() if isinstance(v, dict)}
     require(names == {"panadan-vpn-1", "panadan-platform-db-1"},
             "owned auth network requires exactly VPN and owned PostgreSQL")
-    db = next(v for v in containers.values()
-              if isinstance(v, dict) and v.get("Name") == "panadan-platform-db-1")
-    require("panadan-auth-postgres" in (db.get("Aliases") or []),
-            "owned PostgreSQL DNS alias missing")
+    # Network inspect does not reliably expose DNS aliases. The separate
+    # existing check_auth_db_network.py queries each container for aliases.
 
 
 def validate_caddy(source: str) -> None:
     # This is only a public-site-name guard. Detailed private Caddy routing
     # and upstream must be reviewed against the actual operator backup.
-    sites = re.findall(r"(?m)^[ \t]*([a-z0-9.-]+)[ \t]*\{", source)
+    sites = re.findall(r"(?m)^[ \t]*(?:https://)?([a-z0-9.-]+)[ \t]*\{", source)
     require("plane.panafor.com" in sites and "dan.panafor.com" in sites,
             "both Plane and Panadan HTTPS site blocks must be preserved")
 
