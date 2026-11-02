@@ -1,110 +1,172 @@
 #!/usr/bin/env bash
-# Production controller for the hardened Panadan ingress. Run with bash;
-# never use ./panadan.sh up/down on this installation.
+# Guarded production controller: no bare up/down on hardened Plane/Panadan.
 set -euo pipefail
 umask 077
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-INGRESS="${PANADAN_INGRESS_DIR:-$ROOT/data/ingress}"
-PLANE="${PANADAN_PLANE_DIR:-$(dirname "$ROOT")/plane-selfhost/plane-app}"
-ORIGIN="${PANADAN_EXPECTED_ORIGIN:-https://dan.panafor.com}"
+ROOT="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
+INGRESS="\${PANADAN_INGRESS_DIR:-$ROOT/data/ingress}"
+PLANE="\${PANADAN_PLANE_DIR:-$(dirname "$ROOT")/plane-selfhost/plane-app}"
+ORIGIN="https://dan.panafor.com"
+AUTH_NETWORK_READY=0
+
+fail() {
+  echo "REFUSED: production safety preflight failed ($1)" >&2
+  exit 64
+}
 
 require_files() {
   local f
   for f in "$ROOT/.env.app" "$ROOT/.env.db" "$ROOT/compose.prod.yaml" \
       "$INGRESS/compose.panadan.yaml" "$INGRESS/compose.web.release.yaml" \
-      "$INGRESS/compose.web.https.yaml" "$INGRESS/compose.plane.yaml" \
-      "$INGRESS/Caddyfile" "$PLANE/docker-compose.yaml" "$PLANE/plane.env"; do
-    if [[ ! -f "$f" ]]; then
-      printf 'MISSING required private production file: %s\n' "$f" >&2
-      return 1
-    fi
+      "$INGRESS/compose.web.https.yaml" "$INGRESS/compose.gateway.yaml" \
+      "$INGRESS/compose.plane.yaml" "$INGRESS/Caddyfile" \
+      "$INGRESS/nginx.conf" "$PLANE/docker-compose.yaml" "$PLANE/plane.env" \
+      "$ROOT/deploy/compose.auth-network.panadan.yaml" \
+      "$ROOT/tools/validate_production_compose.py" \
+      "$ROOT/tools/check_auth_db_network.py" \
+      "$ROOT/tools/check-plane-intake.sh"; do
+    [[ -f "$f" && ! -L "$f" ]] || fail "missing reviewed deployment component"
   done
+  command -v python3 >/dev/null 2>&1 || fail "Python 3 required"
+  command -v docker >/dev/null 2>&1 || fail "Docker required"
+}
+
+# The private auth network may have been manually attached while running.
+# When present, future VPN-related Compose renders MUST retain it.
+inspect_auth_network() {
+  local names
+  names="$(docker network ls --format '{{.Name}}' 2>/dev/null)" ||
+    fail "cannot inspect existing Docker networks"
+  if grep -Fxq panadan-auth-db <<< "$names"; then
+    docker network inspect panadan-auth-db 2>/dev/null |
+      python3 "$ROOT/tools/validate_production_compose.py" auth-network >/dev/null ||
+        fail "owned auth bridge topology mismatch"
+    python3 "$ROOT/tools/check_auth_db_network.py" --stage after >/dev/null ||
+      fail "owned PostgreSQL auth alias or source VPN route mismatch"
+    AUTH_NETWORK_READY=1
+  else
+    AUTH_NETWORK_READY=0
+  fi
 }
 
 panadan_compose() (
   cd "$ROOT"
-  docker compose --env-file .env.app \
-    -f compose.prod.yaml \
-    -f "$INGRESS/compose.panadan.yaml" \
-    -f "$INGRESS/compose.web.release.yaml" \
-    -f "$INGRESS/compose.web.https.yaml" "$@"
+  local -a files=(
+    -f compose.prod.yaml
+    -f "$INGRESS/compose.panadan.yaml"
+    -f "$INGRESS/compose.web.release.yaml"
+    -f "$INGRESS/compose.web.https.yaml"
+  )
+  if [[ "$AUTH_NETWORK_READY" == 1 ]]; then
+    files+=(-f "$ROOT/deploy/compose.auth-network.panadan.yaml")
+  fi
+  docker compose --env-file .env.app "\${files[@]}" "$@"
 )
 plane_compose() (
   cd "$PLANE"
   docker compose --env-file plane.env \
     -f docker-compose.yaml -f "$INGRESS/compose.plane.yaml" "$@"
 )
+gateway_compose() (
+  cd "$ROOT"
+  docker compose --env-file .env.app \
+    -f "$INGRESS/compose.gateway.yaml" "$@"
+)
 
+# Plan/check only inspect config, networks, and HTTPS endpoints. Compose
+# output can include secrets and must NEVER be printed to a shared log.
 preflight() {
   require_files
-  panadan_compose config --quiet
-  plane_compose config --quiet
-  # Parse the effective merged config without printing .env values or credentials.
-  panadan_compose config --format json | \
-    PANADAN_EXPECTED_ORIGIN="$ORIGIN" python3 -c '
-import json, os, sys
-c=json.load(sys.stdin)
-web=c["services"]["web"]
-env=web.get("environment") or {}
-assert str(env.get("PANADAN_COOKIE_SECURE","")).lower()=="true", "insecure cookies"
-assert env.get("PANADAN_PUBLIC_ORIGIN")==os.environ["PANADAN_EXPECTED_ORIGIN"], "origin mismatch"
-assert web.get("network_mode")=="service:vpn", "unexpected web network"
-image=web.get("image","")
-assert image and ":" in image and not image.endswith((":main",":latest")), "mutable or missing web image tag"
-print("PASS: Hardened Panadan config (cookie/origin/network/image)")
-'
-  plane_compose config --format json | python3 -c '
-import json,sys
-c=json.load(sys.stdin)
-p=c["services"]["proxy"]
-assert "edge" in p.get("networks", {}), "private edge network missing"
-vols=p.get("volumes",[])
-mounts={v.get("target"):v for v in vols}
-for target in ("/data","/config","/etc/caddy/Caddyfile"):
-    assert target in mounts, f"proxy mount missing: {target}"
-assert mounts["/etc/caddy/Caddyfile"]["type"]=="bind", "Caddyfile must be bind-mounted"
-assert mounts["/etc/caddy/Caddyfile"].get("read_only") is True, "Caddyfile must be read-only"
-print("PASS: Plane proxy ingress / Caddy TLS volumes")
-'
+  inspect_auth_network
+  panadan_compose config --quiet >/dev/null 2>&1 ||
+    fail "invalid Panadan overlay stack"
+  plane_compose config --quiet >/dev/null 2>&1 ||
+    fail "invalid Plane overlay stack"
+  gateway_compose config --quiet >/dev/null 2>&1 ||
+    fail "invalid gateway Compose project"
+
+  local -a auth_flag=()
+  if [[ "$AUTH_NETWORK_READY" == 1 ]]; then
+    auth_flag=(--auth)
+  fi
+  panadan_compose config --format json 2>/dev/null |
+    python3 "$ROOT/tools/validate_production_compose.py" panadan "\${auth_flag[@]}" ||
+      fail "Panadan production service invariants"
+  plane_compose config --format json 2>/dev/null |
+    python3 "$ROOT/tools/validate_production_compose.py" plane ||
+      fail "Plane proxy volume/network invariants"
+  gateway_compose config --format json 2>/dev/null |
+    python3 "$ROOT/tools/validate_production_compose.py" gateway ||
+      fail "gateway must remain unpublished and isolated"
+  python3 "$ROOT/tools/validate_production_compose.py" caddy \
+    < "$INGRESS/Caddyfile" ||
+      fail "both Plane and Panadan HTTPS site blocks required"
+  echo "PASS: Read-only hardened production plan; no containers or networks changed"
 }
 
 check_endpoints() {
-  curl --fail --silent --show-error --max-time 10 "$ORIGIN/healthz" >/dev/null
-  curl --fail --silent --show-error --max-time 10 https://plane.panafor.com/intake.html >/dev/null
-  echo "PASS: HTTPS Panadan and Plane intake"
+  curl --fail --silent --show-error --max-time 10 "$ORIGIN/healthz" >/dev/null ||
+    fail "Panadan HTTPS health failed"
+  curl --fail --silent --show-error --max-time 10 https://plane.panafor.com/ >/dev/null ||
+    fail "Plane HTTPS health failed"
+  curl --fail --silent --show-error --max-time 10 https://plane.panafor.com/intake.html >/dev/null ||
+    fail "Plane intake HTTPS failed"
+  echo "PASS: Panadan, Plane, and intake HTTPS reachable"
 }
 
-cmd="${1:-help}"
+# Before any proxy recreate require operator's independently saved original
+# intake HTML and separate original Caddy rollback configuration.
+verify_plane_recovery_material() {
+  local original="\${PANADAN_TRUSTED_INTAKE_FILE:-}"
+  local rollback="\${PANADAN_CADDY_ROLLBACK_FILE:-$INGRESS/rollback/Caddyfile.live}"
+  [[ -n "$original" && -s "$original" && -f "$original" && ! -L "$original" ]] ||
+    fail "original Plane intake file required before proxy recreation"
+  [[ -s "$rollback" && -f "$rollback" && ! -L "$rollback" ]] ||
+    fail "original Caddy rollback copy required before proxy recreation"
+  bash "$ROOT/tools/check-plane-intake.sh" verify "$original" >/dev/null ||
+    fail "Plane intake differs from original or is unavailable"
+}
+
+cmd="\${1:-help}"
 case "$cmd" in
+  plan)
+    [[ $# -eq 1 ]] || fail "plan accepts no extra arguments"
+    preflight
+    ;;
   check)
+    [[ $# -eq 1 ]] || fail "check accepts no extra arguments"
     preflight
     check_endpoints
     ;;
   status)
+    [[ $# -eq 1 ]] || fail "status accepts no extra arguments"
     require_files
+    inspect_auth_network
     panadan_compose ps
     plane_compose ps proxy
-    docker ps --filter name=panadan-edge-gateway
+    gateway_compose ps gateway
     ;;
-  deploy-web|deploy-proxy)
-    if [[ "${2:-}" != "--apply" || "$#" -ne 2 ]]; then
-      echo "REFUSED: $cmd requires an explicit --apply (and a reviewed maintenance window for proxy)" >&2
-      exit 64
-    fi
+  deploy-web)
+    [[ $# -eq 2 && "\${2:-}" == "--apply" ]] ||
+      fail "deploy-web requires --apply"
     preflight
-    if [[ "$cmd" == "deploy-web" ]]; then
-      panadan_compose --dry-run up -d --no-deps --no-build --pull never web
-      panadan_compose up -d --no-deps --no-build --pull never web
-    else
-      echo "NOTICE: proxy recreation may briefly interrupt Plane and Panadan HTTPS." >&2
-      plane_compose --dry-run up -d --no-deps --no-build --pull never proxy
-      plane_compose up -d --no-deps --no-build --pull never proxy
-    fi
+    panadan_compose --dry-run up -d --no-deps --no-build --pull never web
+    panadan_compose up -d --no-deps --no-build --pull never web
     check_endpoints
     ;;
+  deploy-proxy)
+    [[ $# -eq 3 && "\${2:-}" == "--apply" && "\${3:-}" == "--ack-plane-impact" ]] ||
+      fail "deploy-proxy requires --apply --ack-plane-impact"
+    preflight
+    verify_plane_recovery_material
+    echo "NOTICE: shared proxy recreation affects Plane and Panadan HTTPS" >&2
+    plane_compose --dry-run up -d --no-deps --no-build --pull never proxy
+    plane_compose up -d --no-deps --no-build --pull never proxy
+    check_endpoints
+    verify_plane_recovery_material
+    ;;
   *)
-    echo "Usage: bash tools/prodctl-production.sh {check|status|deploy-web --apply|deploy-proxy --apply}"
+    echo "Usage: bash tools/prodctl-production.sh {plan|check|status|deploy-web --apply|deploy-proxy --apply --ack-plane-impact}"
     exit 2
     ;;
 esac
