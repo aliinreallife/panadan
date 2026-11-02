@@ -67,6 +67,50 @@ retrieves a transcript, or logs bearer headers. A 200 on intake does not
 prove exact original content: if you have an independently backed-up trusted
 intake HTML, supply `PANADAN_TRUSTED_INTAKE_FILE` to check its bytes too.
 
+## November 2 VPS preflight incident: do not force rollout
+
+The operator's first run on the live VPS confirmed the old
+`panadan-web:cac4b36` image is still serving, and the read-only
+`smoke-production-web.sh` passed. The release was **NOT deployed**:
+
+- `plan` / `check` refused at the **Panadan production service
+  invariants** check. This can mean a difference between the actual
+  private effective Compose and the new stricter repo guard. It does
+  **not** prove any specific failing field yet. The new diagnostic
+  now reports only a fixed allowlisted `SAFE CHECK:` category. Run
+  `sudo bash tools/prodctl-production.sh plan` after updating the repo,
+  and inspect only that category; **never paste the raw rendered
+  `docker compose config` or private `.env` contents**.
+- `sudo docker pull` failed `unauthorized` because the published
+  image is private GHCR and the **root Docker client** lacked usable
+  package-read credentials. Git SSH access to the repository does not
+  itself authenticate Docker. Use a GitHub account authorized for the
+  package and a scoped credential with `read:packages`; authenticate
+  using `docker login ghcr.io -u ACCOUNT` and its interactive token
+  prompt, not a token printed to the shell/issue. Prefer a temporary,
+  root-owned `DOCKER_CONFIG` and log out after the pull. Pulling alone
+  does not alter running containers.
+- `sudoedit .env.app` failed by design because sudoedit refuses to
+  edit files inside an unsafe user-writable directory. Do **not**
+  disable sudoedit safety settings or change directory permissions
+  to bypass the check. First confirm file owner and mode using
+  `stat -c '%U:%G %a' .env.app` (only metadata). If owned by
+  your account, open with your non-root editor; if root-owned,
+  edit a *staged copy in a root-only, non-user-writable directory*
+  using `sudoedit`, verify it, then explicitly install it back
+  while retaining the original owner and mode. Avoid exposing
+  `.env.app` in terminal output or Git.
+- The final smoke `--expected-image` failure is expected: the
+  running image was still the old one. **Do not rerun the apply
+  command or mark restored-backup acknowledgment until the preflight
+  and independent recovery drill pass.**
+
+When `SAFE CHECK:` identifies a discrepancy, compare the intended
+security property against privately held overlays and inspect Docker
+metadata *without dumping environment variables*. A still-functional
+service is not sufficient evidence for relaxing or overriding
+security checks.
+
 ## 2. Operator-controlled application image update
 
 **Only after** the above passes, an independent SQLite backup/restore drill
