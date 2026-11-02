@@ -391,3 +391,78 @@ def test_disposable_pg_profile_real_mcp_streamable_http(disposable_db):
         + result.stdout[-1500:] + result.stderr[-3000:]
     )
     assert "PASS: isolated PostgreSQL MCP HTTP profile" in result.stdout
+
+
+@pytest.mark.parametrize("dsn", [
+    "postgresql://panadan_ci:synthetic@127.0.0.1:5432/panadan_ci?hostaddr=192.168.3.9",
+    "postgresql://panadan_ci:synthetic@127.0.0.1:5432/panadan_ci?service=prod",
+    "postgresql://panadan_ci:synthetic@127.0.0.1:5432/panadan_ci?options=-c%20search_path%3Dpublic",
+    "postgresql://panadan_ci:synthetic@localhost:5432/panadan_ci",
+    "postgresql://panadan_owner:synthetic@127.0.0.1:5432/panadan",
+    "postgresql://panadan_ci:synthetic@127.0.0.1:5432/panadan_ci?passfile=/tmp/secret",
+    "postgresql://panadan_ci:synthetic@127.0.0.1:5432/panadan_ci?host=localhost",
+])
+def test_importer_rejects_disguised_production_or_redirected_dsn(dsn, monkeypatch):
+    monkeypatch.setenv("PANADAN_AUTH_MIGRATION_TEST_ALLOW_APPLY", "YES")
+    with pytest.raises(ValueError):
+        validate_disposable_target(dsn)
+
+
+def test_postgres_import_detects_single_field_drift_with_identical_counts(
+    snapshot, disposable_db, monkeypatch
+):
+    """Every field, not just counts, is verified on disposable PG18."""
+    from psycopg.rows import dict_row
+    from server.auth_pg_migration import _read_rows, _verify_table_parity
+
+    monkeypatch.setenv("PANADAN_AUTH_MIGRATION_TEST_ALLOW_APPLY", "YES")
+    path, *_ = snapshot
+    source, counts = inspect_snapshot(path)
+    try:
+        columns, rows = _read_rows(source, "access_tokens")
+        assert import_into_disposable(source, disposable_db, counts) == counts
+        with psycopg.connect(disposable_db, row_factory=dict_row) as target:
+            _verify_table_parity(target, "access_tokens", columns, rows)
+            assert target.execute(
+                "SELECT COUNT(*) AS n FROM panadan_auth.access_tokens"
+            ).fetchone()["n"] == 1
+            target.execute(
+                "UPDATE panadan_auth.access_tokens SET scope='api:read'"
+            )
+            assert target.execute(
+                "SELECT COUNT(*) AS n FROM panadan_auth.access_tokens"
+            ).fetchone()["n"] == 1
+            # A changed token permission must not silently pass a count check.
+            with pytest.raises(ValueError, match="field parity mismatch"):
+                _verify_table_parity(target, "access_tokens", columns, rows)
+    finally:
+        source.close()
+
+
+def test_parity_error_rolls_back_all_imported_auth_tables(
+    snapshot, disposable_db, monkeypatch
+):
+    """Even a late, schema-valid mismatch aborts the entire 8-table import."""
+    import server.auth_pg_migration as migration
+
+    monkeypatch.setenv("PANADAN_AUTH_MIGRATION_TEST_ALLOW_APPLY", "YES")
+    actual = migration._verify_table_parity
+
+    def simulate_detected_late_mismatch(target, table, columns, records):
+        actual(target, table, columns, records)
+        if table == "activity_events":
+            raise ValueError("PostgreSQL migrated field parity mismatch in activity_events")
+
+    monkeypatch.setattr(migration, "_verify_table_parity", simulate_detected_late_mismatch)
+    path, *_ = snapshot
+    source, counts = inspect_snapshot(path)
+    try:
+        with pytest.raises(ValueError, match="field parity mismatch"):
+            import_into_disposable(source, disposable_db, counts)
+    finally:
+        source.close()
+    with psycopg.connect(disposable_db) as target:
+        for table in migration.TABLE_COLUMNS:
+            assert target.execute(
+                f"SELECT COUNT(*) FROM panadan_auth.{table}"
+            ).fetchone()[0] == 0
