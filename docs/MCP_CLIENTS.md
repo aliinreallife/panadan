@@ -11,6 +11,32 @@
   - `legacy` (production default unless explicitly overridden): manual, revocable MCP bearer tokens; OAuth discovery deliberately not advertised.
   - `oauth`: strict RS256/JWKS resource-server verification with exact issuer, audience, timestamps, required scope, and locally bound immutable `sub`. Requires a separate identity provider; the Panadan FastAPI server does **not** implement OAuth grant/consent/token issuance.
 
+## Disposable PostgreSQL staging: authenticated profile tool (#59, partial)
+
+The separate `server/mcp_profile_staging.py` registers an **opt-in**
+`get_profile` tool *only when* the explicit
+`PANADAN_AUTH_BACKEND=postgres-staging` selector has passed the
+loopback `panadan_ci` safeguards described in
+`docs/ONE_COMMAND_OWNED_PG_SETUP.md`. The live production SQLite MCP
+server continues advertising its original **five tools**.
+
+The profile tool has `_meta["openai/profile"]=true`, a structured
+response containing the persistent opaque `prf_...` ID (and an optional
+display name), no arbitrary account-selector arguments, and MCP read-only
+annotations. The tool gets the bearer credential from the SDK's authenticated
+request context, verifies OAuth JWTs through the configured verifier in OAuth
+mode (or restricts to an authorized local MCP bearer in legacy staging mode),
+then rechecks the actual account/permissions in PostgreSQL. It never trusts
+request `_meta`, user supplied IDs, or display names as identity,
+and does not return email, phone, access tokens, role or raw account rows.
+
+Staging tests check unique identities, stable same-account IDs, OAuth subject
+mapping, legacy revocation, response safety and SDK registration metadata.
+**These tests do not claim ChatGPT/Claude OAuth works in production.** The
+external IdP, production PostgreSQL cutover, refresh/reconnect interoperability
+and full client matrix are still required before the profile tool can safely
+be enabled in the live MCP service.
+
 ## Why hosted ChatGPT OAuth discovery currently fails
 
 Observed message: `Couldn't discover OAuth settings. Check the server URL or enter settings manually`.
