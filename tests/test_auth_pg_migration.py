@@ -354,3 +354,39 @@ def test_staged_pg_http_runtime_preserves_imported_identity_and_revocation(
     # No writes to source SQLite backup or source reporting database.
     with sqlite3.connect(f"file:{source_path}?mode=ro", uri=True) as original:
         assert original.execute("SELECT COUNT(*) FROM users").fetchone()[0] == counts["users"]
+
+
+def test_disposable_pg_profile_real_mcp_streamable_http(disposable_db):
+    """Fresh process avoids restarting the one-shot MCP SDK singleton.
+
+    This fixture resets only the CI panadan_ci schema, and the subprocess
+    refuses production databases before importing the FastAPI application.
+    """
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    for variable in (
+        "PGHOST", "PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE",
+        "PGOPTIONS", "PGDATABASE", "PGUSER", "PGPORT",
+    ):
+        env.pop(variable, None)
+    env.update({
+        "PANADAN_AUTH_BACKEND": "postgres-staging",
+        "PANADAN_AUTH_STAGING_ENABLE": "YES",
+        "PANADAN_AUTH_STAGING_ISOLATED": "YES",
+        "PANADAN_AUTH_STAGING_DSN": disposable_db,
+        "PANADAN_ADMIN_USER": "synthetic_admin",
+        "PANADAN_ADMIN_PASSWORD": "synthetic-integration-admin-password-long",
+        "PANADAN_MCP_AUTH_MODE": "legacy",
+        "PANADAN_COOKIE_SECURE": "false",
+    })
+    result = subprocess.run(
+        [sys.executable, "tests/pg_mcp_profile_http_smoke.py"],
+        env=env, text=True, capture_output=True, timeout=50, check=False,
+    )
+    assert result.returncode == 0, (
+        "Disposable PG MCP HTTP smoke failed (synthetic test output only): "
+        + result.stdout[-1500:] + result.stderr[-3000:]
+    )
+    assert "PASS: isolated PostgreSQL MCP HTTP profile" in result.stdout
