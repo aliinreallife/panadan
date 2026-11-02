@@ -30,6 +30,7 @@ require_files() {
   done
   command -v python3 >/dev/null 2>&1 || fail "Python 3 required"
   command -v docker >/dev/null 2>&1 || fail "Docker required"
+  command -v sha256sum >/dev/null 2>&1 || fail "SHA-256 utility required"
 }
 
 # The private auth network may have been manually attached while running.
@@ -102,9 +103,24 @@ preflight() {
   gateway_compose config --format json 2>/dev/null |
     python3 "$ROOT/tools/validate_production_compose.py" gateway ||
       fail "gateway must remain unpublished and isolated"
-  python3 "$ROOT/tools/validate_production_compose.py" caddy \
-    < "$INGRESS/Caddyfile" ||
-      fail "both Plane and Panadan HTTPS site blocks required"
+  # Match the operator-reviewed host Caddyfile to the actual read-only
+  # file inside Plane's existing proxy; do not print either file or its
+  # adapted JSON (both can contain private routing details).
+  local host_caddy_hash mounted_caddy_hash
+  host_caddy_hash="$(sha256sum < "$INGRESS/Caddyfile")" ||
+    fail "cannot fingerprint reviewed Caddyfile"
+  mounted_caddy_hash="$(docker exec plane-app-proxy-1 cat /etc/caddy/Caddyfile 2>/dev/null | sha256sum)" ||
+    fail "cannot fingerprint proxy-mounted Caddyfile"
+  [[ "${host_caddy_hash%% *}" == "${mounted_caddy_hash%% *}" ]] ||
+    fail "reviewed Caddyfile differs from proxy-mounted file"
+
+  # Use Caddy's own adapter, including imported sites and env substitution.
+  # Unlike a regex on the source file, this validates the effective host
+  # matchers without requiring Plane to have a literal top-level site block.
+  docker exec plane-app-proxy-1 caddy adapt \
+      --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null |
+    python3 "$ROOT/tools/validate_production_compose.py" caddy-adapted ||
+      fail "both Plane and Panadan Caddy host routes required"
   echo "PASS: Read-only hardened production plan; no containers or networks changed"
 }
 
