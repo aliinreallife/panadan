@@ -22,6 +22,37 @@ DIGEST = re.compile(r"^[a-zA-Z0-9._/-]+@sha256:[a-f0-9]{64}$")
 class InvalidDeployment(ValueError):
     pass
 
+# These labels are ONLY static, developer-reviewed invariant identifiers.
+# Never print an exception message or anything derived from Compose values.
+# The explicit map prevents a future dynamic ValueError from leaking a secret.
+SAFE_PANADAN_CHECKS = {
+    "missing services": "service inventory",
+    "missing web service": "web service declaration",
+    "missing vpn service": "VPN service declaration",
+    "web must retain VPN network namespace": "web VPN namespace",
+    "web must not publish host ports": "web public ports",
+    "web cannot attach separate networks": "web network isolation",
+    "secure session cookie required": "web secure-cookie flag",
+    "HTTPS origin mismatch": "web canonical HTTPS origin",
+    "web environment missing": "web environment structure",
+    "live SQLite authority must retain its persistent /data path": "SQLite auth database path",
+    "production web release must retain SQLite authentication": "SQLite auth backend selector",
+    "disposable staging credentials in live environment": "forbidden staging-auth settings",
+    "unapproved MCP OAuth mode on routine web release": "MCP legacy authentication mode",
+    "web authentication volume declaration missing": "web auth volume structure",
+    "web SQLite /data must be backed by a persistent writable named volume": "SQLite persistent named /data mount",
+    "web must use a reviewed digest or commit-specific image tag": "pinned web image",
+    "vpn must use a reviewed digest or commit-specific image tag": "pinned VPN image",
+    "invalid vpn port declaration": "VPN port schema",
+    "vpn ports must use explicit host-IP mappings": "VPN port binding type",
+    "vpn cannot publish ports beyond host loopback": "VPN loopback-only port publishing",
+    "invalid service network declaration": "VPN network structure",
+    "VPN original default network missing": "VPN default network",
+    "VPN private ingress network missing": "VPN private ingress",
+    "owned auth network omitted from effective VPN Compose configuration": "owned-auth bridge attachment",
+}
+
+
 
 def require(condition: bool, reason: str) -> None:
     if not condition:
@@ -188,22 +219,27 @@ def validate_caddy(source: str) -> None:
 
 
 def main() -> int:
-    if len(sys.argv) not in (2, 3):
-        print("Usage: validate_production_compose.py panadan|plane|gateway|auth-network|private-networks|caddy [--auth]", file=sys.stderr)
+    if len(sys.argv) < 2:
+        print("Usage: validate_production_compose.py panadan|plane|gateway|auth-network|private-networks|caddy [--auth] [--explain-safe]", file=sys.stderr)
         return 2
     part = sys.argv[1]
+    flags = sys.argv[2:]
+    if part == "panadan":
+        if len(flags) != len(set(flags)) or any(f not in ("--auth", "--explain-safe") for f in flags):
+            print("REFUSED: invalid validator arguments", file=sys.stderr)
+            return 2
+    elif flags:
+        print("REFUSED: invalid validator arguments", file=sys.stderr)
+        return 2
     try:
         if part == "caddy":
-            require(len(sys.argv) == 2, "unexpected arguments")
             validate_caddy(sys.stdin.read())
         else:
             data = json.load(sys.stdin)
             if part == "panadan":
-                require(len(sys.argv) == 2 or sys.argv[2] == "--auth", "unexpected arguments")
                 validate_panadan(object_value(data, "invalid Compose file"),
-                                 auth_enabled=len(sys.argv) == 3)
+                                 auth_enabled="--auth" in flags)
             else:
-                require(len(sys.argv) == 2, "unexpected arguments")
                 if part == "plane":
                     validate_plane(object_value(data, "invalid Compose file"))
                 elif part == "gateway":
@@ -214,10 +250,13 @@ def main() -> int:
                     validate_private_networks(data)
                 else:
                     raise InvalidDeployment("unknown component")
-    except (ValueError, KeyError, TypeError, StopIteration):
-        # Even the exception reason can inadvertently contain service labels
-        # or operator-controlled input: do not print it to shared CI/VPS logs.
+    except (ValueError, KeyError, TypeError, StopIteration) as exc:
+        # Never print raw exception text, JSON, interpolated environment,
+        # container metadata, sensitive mount paths or operator configuration.
         print(f"REFUSED: {part} production topology did not pass safety checks", file=sys.stderr)
+        if part == "panadan" and "--explain-safe" in flags:
+            reason = SAFE_PANADAN_CHECKS.get(str(exc), "unspecified invariant")
+            print(f"SAFE CHECK: {reason}", file=sys.stderr)
         return 1
     print(f"PASS: {part} production topology safety checks")
     return 0
