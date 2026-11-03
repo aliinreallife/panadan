@@ -99,8 +99,12 @@ Use the reviewed production release controller and maintenance approval.
    bind mount; **it is not applied by the current production controller**
    and must never be applied via ad-hoc Compose recreation. The private
    file contains a *single* libpq DSN for
-   `panadan_ingest_writer@panadan-auth-postgres:5432/panadan`
-   (private credentials, 0600; do not paste into chats, logs, shell history,
+   `panadan_ingest_writer@panadan-auth-postgres:5432/panadan` with
+   **explicit `sslmode=prefer`** (or `require`/`verify-full` when the
+   owned private PG18 server actually supports TLS), to override the Odoo
+   source's inherited `PGSSLMODE=require`. The target connection stays on
+   Panadan's dedicated private Docker bridge, not the public network.
+   (Private credentials, 0600; do not paste into chats, logs, shell history,
    command arguments, or issues). Set `PANADAN_SYNC_OWNED_DSN_FILE` to its
    **in-container absolute path only**. Do not mount privileged credentials,
    Odoo configuration files or Docker sockets. Test the file is private.
