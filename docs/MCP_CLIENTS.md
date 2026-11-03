@@ -77,6 +77,78 @@ To connect Claude's hosted remote connector, the server needs to be reachable fr
 
 To connect ChatGPT, add the remote MCP URL in the supported connection interface. Choose OAuth only after the external IdP and discovery metadata are live; register the **exact callback and client metadata values shown by the current ChatGPT connection UI** with the IdP. Do not invent callback IDs or assume static redirect URIs for all configurations.
 
+## Staging OAuth provider selection and read-only preflight (2026-11-03)
+
+**Do not switch production to OAuth for an early discovery test.** The production
+controller explicitly rejects an unapproved OAuth-mode Web release and the
+current live MCP bearer tokens would stop working after a mode change.
+
+**Preferred initial evaluation:** Stytch Connected Apps with CIMD, or an Auth0
+development tenant configured for MCP (including its Resource Parameter
+Compatibility Profile and appropriate JWT API audience). These are *candidates*;
+no provider is configured, connected to Panadan, or approved as of this update.
+Use a distinct staging issuer, nonproduction test users and an independent
+public HTTPS staging MCP URL. Do not use existing production SQLite user records,
+Odoo credentials, or the shared Plane/Caddy routing to validate a candidate.
+
+**First, create a provider development tenant** via its own control panel, enable
+MCP resource/scope `panadan:mcp:read`, authorization code + PKCE S256, CIMD
+(preferred) or DCR (fallback), consent, refresh, and RS256-signed **access**
+JWTs. Its exact issuer string, signing JWKS URL and its token `iss` must match.
+The AS must propagate `resource` from authorization AND token requests to the
+access JWT's `aud` using the **exact** staging resource URL, including `/mcp/`.
+
+Run the no-credentials public metadata/JWKS preflight **before any Web change**:
+
+```bash
+cd ~/panadan
+uv run --locked python -m tools.check_mcp_oauth --issuer "https://YOUR-IDP-ISSUER"
+```
+
+Expected: `PASS: Public issuer metadata, PKCE S256, registration and RS256 JWKS
+preflight`. This diagnostic only GETs public HTTPS discovery and JWKS; it does
+not authenticate users, issue tokens, run Odoo queries or enable OAuth. It
+rejects an issuer mismatch, insecure endpoints, PKCE incompatibility, absent
+Panadan scope in advertised scope list, incompatible CIMD/DCR token endpoint
+methods and missing RSA signing keys. It reports if manual client registration
+or callback-specific redirect configuration is still needed.
+
+**Important limitations:** This is necessary but NOT sufficient. Public JWKS
+availability does not establish that the provider actually issues short-lived
+RS256 *access* tokens with `iss`, `aud`, `sub`, `iat`, `exp` and scope expected
+by Panadan's `OAuthVerifier`. A provider issuing only opaque tokens, or an
+issuer that cannot map RFC 8707 `resource` to the JWT audience, is not yet
+compatible. **Never paste access/refresh tokens, passwords, private certs or
+IdP secrets into logs, GitHub issues or chat.**
+
+The later staging-only order:
+
+1. Deploy a disposable HTTPS staging MCP service with a separately
+   reviewed/sanitized `PANADAN_MCP_AUTH_MODE=oauth`, `PANADAN_OAUTH_ISSUER`,
+   `PANADAN_OAUTH_JWKS_URL`, `PANADAN_OAUTH_RESOURCE` (exact staging
+   `https://.../mcp/`) and `PANADAN_OAUTH_SCOPE=panadan:mcp:read`.
+   **Never** toggle these on the production Web container to experiment.
+2. Configure trusted test accounts. In Panadan's admin OAuth identity UI,
+   explicitly bind the provider `iss + sub` to a test user already possessing
+   `mcp:use`, `calls:read` and `metrics:read` (and only separately grant
+   `calls:transcript:read` if needed). Do not trust client-supplied user IDs.
+3. Run `uv run --locked python -m tools.check_mcp_oauth
+   https://YOUR-STAGING-HTTPS-DOMAIN/mcp/` for resource metadata,
+   IdP discovery and unauthenticated MCP `401` challenge.
+4. With an actual **test account**, connect MCP Inspector first, then ChatGPT
+   and Claude independently. Confirm user consent, callbacks, resource
+   propagation and access JWT audience; tool discovery/calls, zero unexpected
+   data, expired/revoked token, removed local binding, wrong issuer/audience
+   and transcript access all fail closed.
+5. Preserve rollback, backup and a separate production approval. Only after
+   these gates pass should #57/#58/#23/#64 move toward closure.
+
+Provider docs:
+- https://stytch.com/connected-apps
+- https://developers.openai.com/plugins/build/auth
+- https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp
+- https://support.auth0.com/center/s/article/mcp-audience-error-with-auth0
+
 ## Non-secret diagnostic commands
 
 The following output may indicate discovery status without exposing credentials:
