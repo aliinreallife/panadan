@@ -452,3 +452,97 @@ def test_odoo_update_poll_requires_seed_and_known_source_contract(pg):
         'SELECT COUNT(*) AS n FROM panadan_ingest.raw_revisions WHERE source_key=%s',
         ('odoo_unready',)).fetchone()['n']
     assert before==after
+
+
+
+def test_odoo_write_date_end_to_end_local_pg_backfill_then_old_row_update(pg):
+    """Real disposable PostgreSQL ingestion; synthetic in-memory Odoo only."""
+    from datetime import datetime, date, timedelta, timezone
+    from server import odoo_sync_adapter as adapter
+    from server import odoo_sync_coordinator as sync
+
+    base = datetime(2026, 11, 3, 10, tzinfo=timezone.utc)
+    marker = "write_date"
+    key = "odoo_write_date_synthetic"
+    _enable(pg, key, kind="database")
+
+    def item(i, time, status):
+        return {
+            "id": i, "CALLDATE": date(2026, 11, 3),
+            "tellstate": "FollowUp", "tellside": "IntoOut",
+            "aicallinfostate": status, "voice_length": 125,
+            "possibility_of_sale_ai": 50, "deal_value": 0,
+            marker: time.replace(tzinfo=None),
+        }
+
+    class Cursor:
+        def __init__(self, rows=None, row=None):
+            self.rows, self.row = rows or [], row
+        def fetchall(self): return self.rows
+        def fetchone(self): return self.row
+
+    class Source:
+        def __init__(self):
+            self.now = base
+            self.records = {
+                i: item(i, base-timedelta(hours=1), "Unchecked")
+                for i in range(1, 4)
+            }
+        def execute(self, sql, params=None):
+            if sql == adapter.SCHEMA_SQL:
+                return Cursor(rows=[
+                    {"column_name": name,
+                     "data_type": "integer" if name == "id"
+                        else "timestamp without time zone" if name == marker
+                        else "text"}
+                    for name in adapter.DATA_COLUMNS + (marker,)
+                ])
+            if sql == adapter.SOURCE_CLOCK_SQL:
+                return Cursor(row={"source_now": self.now})
+            if sql == adapter.ID_SQL_BY_MARKER[marker]:
+                after, limit = params
+                return Cursor(rows=sorted(
+                    (r for i,r in self.records.items() if i > after),
+                    key=lambda r:r["id"])[:limit])
+            if sql == adapter.CHANGE_SQL_BY_MARKER[marker]:
+                lo, hi, last_time, last_id, limit = params
+                return Cursor(rows=sorted(
+                    (r for r in self.records.values()
+                     if lo <= r[marker] <= hi and
+                     (r[marker],r["id"]) > (last_time,last_id)),
+                    key=lambda r:(r[marker],r["id"]))[:limit])
+            raise AssertionError("Unexpected SQL: source must stay read-only")
+
+    source = Source()
+    seed = sync.seed_update_stream(source, pg, mode="utc_naive", source_key=key)
+    assert seed["marker"] == "write_date"
+    assert sync.poll_id_page(source, pg, mode="utc_naive", source_key=key,
+                             limit=2).examined == 2
+    assert sync.poll_id_page(source, pg, mode="utc_naive", source_key=key,
+                             limit=2).examined == 1
+    from server.odoo_sync_pilot import verify_sample
+    assert verify_sample(source, pg, mode="utc_naive",
+                         source_key=key)["matched"] == 3
+    source.now = base + timedelta(minutes=7)
+    source.records[1] = item(1, base + timedelta(minutes=2), "SoldOut")
+    source.records[4] = item(4, base + timedelta(minutes=2), "Unchecked")
+    before_sync = verify_sample(source, pg, mode="utc_naive", source_key=key)
+    assert before_sync["different"] == 1 and before_sync["missing"] == 1
+    update = sync.poll_update_page(source, pg, mode="utc_naive",
+                                   source_key=key, limit=2)
+    assert update.examined == 2
+    assert update.changed == 2
+    assert sync.poll_update_page(source, pg, mode="utc_naive",
+                                 source_key=key, limit=2).examined == 0
+    assert sync.poll_id_page(source, pg, mode="utc_naive",
+                             source_key=key, limit=2).skipped == 1
+    assert pg.execute(
+        "SELECT count(*) AS n FROM panadan_ingest.source_records WHERE source_key=%s",
+        (key,)
+    ).fetchone()["n"] == 4
+    assert pg.execute(
+        "SELECT count(*) AS n FROM panadan_ingest.raw_revisions WHERE source_key=%s",
+        (key,)
+    ).fetchone()["n"] == 5
+    after_sync = verify_sample(source, pg, mode="utc_naive", source_key=key)
+    assert after_sync["all_match"] and after_sync["matched"] == 4

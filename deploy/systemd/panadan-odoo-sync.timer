@@ -1,0 +1,13 @@
+# TEMPLATE ONLY — do not enable before data owner approval and pilot parity.
+[Unit]
+Description=Schedule approved Panadan Odoo incremental sync every five minutes
+Documentation=https://github.com/aliinreallife/panadan/blob/main/docs/ODOO_WRITE_DATE_PILOT.md
+
+[Timer]
+OnCalendar=*-*-* *:0/5:00
+RandomizedDelaySec=15
+Persistent=false
+Unit=panadan-odoo-sync.service
+
+[Install]
+WantedBy=timers.target

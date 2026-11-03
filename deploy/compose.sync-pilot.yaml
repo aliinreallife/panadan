@@ -1,0 +1,13 @@
+# OPTIONAL / DISABLED: compose overlay to mount a restricted Panadan-owned PG18
+# ingest-writer DSN file into a deliberately approved staging/pilot Web service.
+# DO NOT add this overlay to any live production controller automatically.
+# The mounted secret is never stored in the Docker image, source code, or env.
+# Operator must create a regular 0600 file readable by Web uid 10001.
+# Set PANADAN_SYNC_DSN_HOST_PATH as an absolute host path at Compose render time.
+services:
+  web:
+    volumes:
+      - type: bind
+        source: ${PANADAN_SYNC_DSN_HOST_PATH:?Approval and private host secret file required}
+        target: /run/secrets/panadan_sync_owned_dsn
+        read_only: true

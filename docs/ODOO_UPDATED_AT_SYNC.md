@@ -1,11 +1,26 @@
 # Odoo sync: initial backfill + new rows + existing-row updates
 
-**Implementation status:** read-only adapter + page coordinator + synthetic
-PostgreSQL integration tests. **No live connector, cron, background worker,
-Odoo migration, customer-data copy or dashboard cutover is enabled.**
+> **2026-11-03 update:** Production catalog inspection confirmed
+> `write_date timestamp without time zone`, and 300 sampled records across
+> three ID offsets had non-null dates/unique IDs within each sample.
+> The source owner reports that `write_date` advances with edits; controlled
+> verification of joined-table updates, UTC-naive semantics and global stable
+> IDs is still required. The adapter now allows fixed `write_date` marker
+> selection **for supervised, explicitly approved pilot runs only**.
+> See [ODOO_WRITE_DATE_PILOT.md](ODOO_WRITE_DATE_PILOT.md) for the complete
+> no-secrets procedure. No source data has been copied and production
+> dashboard/API/MCP still query Odoo directly.
+>
 
-Panadan may proceed using **only** a reliable `updated_at` (or
-`sync_updated_at`) field and a stable integer `id`. A delete feed is
+**Implementation status:** read-only adapter, page coordinator, guarded and
+operator-invoked `server.odoo_sync_pilot` CLI, and synthetic PostgreSQL
+integration tests. **No automatic cron, customer-data copy, production
+worker, Odoo migration or dashboard cutover is enabled.**
+
+Panadan may consider a reliable `sync_updated_at`, `updated_at`, or verified
+`write_date` field and a stable integer `id`. The adapter implements fixed
+allowlisted names; use `write_date` only under the separate supervised pilot
+approval gates. A delete feed is
 *optional for a best-effort pilot*, but its absence means no real-time
 detection of deleted/disappeared records.
 
@@ -14,8 +29,8 @@ detection of deleted/disappeared records.
 1. Keep `id` stable, globally unique and monotonically increasing for new
    calls. Historical duplicates or backfilled older IDs require
    reconciliation outside the append-only ID poller.
-2. Add **either** `updated_at` **or** `sync_updated_at` to
-   `public.vw_danix_call_info_report` as a PostgreSQL timestamp. The
+2. Expose one approved `sync_updated_at`, `updated_at` or `write_date`
+   on `public.vw_danix_call_info_report` as a PostgreSQL timestamp. The
    marker must become newer whenever **any field returned by the view
    changes** (including joined tables), including edits to *old* calls.
    This cannot be proved by column presence alone.
@@ -79,7 +94,7 @@ source view. Plan to benchmark and agree on a poll interval (for example
 `server/odoo_sync_adapter.py` provides:
 
 - `validate_schema` — read-only catalog validation, accepts only the
-  two fixed timestamp column names, no dynamic untrusted SQL.
+  three fixed timestamp column names, no dynamic untrusted SQL.
 - `read_id_page` — keyset query for both history and new IDs.
 - `read_change_page` — keyset query for updates in a source-time window,
   including ID tie-breaks.
@@ -99,10 +114,11 @@ on a **different** Panadan-owned PostgreSQL connection. All source SQL
 is SELECT-only, parameterized, and uses the same read-only connection
 conventions as `server/database.py`.
 
-The coordinator **is not exposed through CLI, REST or MCP** and does
-not create or enable a source by itself. The existing platform source
-registry defaults to disabled. This deliberately prevents accidental
-real data ingestion before approval.
+The coordinator is callable only by the explicitly guarded, operator-run
+`server.odoo_sync_pilot` CLI (not by REST or MCP). The CLI requires source
+contract, retention and copy acknowledgments and a restricted private owned
+PG18 writer. It neither creates nor enables the source registry, which
+defaults disabled, nor schedules work. See ODOO_WRITE_DATE_PILOT.md.
 
 ## 2026-11-02 operator report: possible `write_at` / `write_date`
 
@@ -121,11 +137,11 @@ cd ~/panadan
 ./panadan.sh audit-sync --sample 0 --no-explain
 ```
 
-**This is only discovery**, not approval. The incremental adapter deliberately
-still accepts just `sync_updated_at` and `updated_at`. Never redirect it to
-`write_at` or `write_date` until the DBA documents whether the marker
-changes on **joined-field edits as well as call-row edits**, stable ID and
-timezone semantics, complete/non-null coverage and late commits. A base
+**This is only discovery**, not approval. Previously, the incremental adapter accepted only `sync_updated_at` and
+`updated_at`. It now also allows exactly `write_date` for guarded pilot
+runs, but **do not activate a real import** until the DBA documents whether
+the marker changes on joined-field edits as well as call-row edits, stable
+ID and timezone semantics, complete/non-null coverage and late commits. A base
 Odoo `write_date` timestamp alone usually cannot prove joined-field
 coverage. Source edits to verify it must be made by the authorized Odoo
 operator in a test environment, never by Panadan.
