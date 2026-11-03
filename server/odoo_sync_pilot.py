@@ -57,8 +57,11 @@ def validate_owned_dsn(dsn: str) -> None:
             or opts.get("user") != TARGET_ROLE
             or not opts.get("password")):
         raise ValueError("Target must be Panadan PG18 with its restricted ingest writer")
-    if opts.get("sslmode", "prefer") not in ("prefer", "require", "verify-full"):
-        raise ValueError("Target SSL setting is not supported")
+    # Compose sets PGSSLMODE=require for *source* Odoo. A local PG18 server
+    # on the private auth bridge may not have TLS configured. Require the
+    # owned target DSN to override that inherited source setting explicitly.
+    if opts.get("sslmode") not in ("prefer", "require", "verify-full"):
+        raise ValueError("Target DSN must explicitly set a supported SSL mode")
     for name in ("PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE", "PGOPTIONS",
                  "PGPASSFILE"):
         if os.environ.get(name):
