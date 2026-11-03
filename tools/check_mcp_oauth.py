@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import json
+
+from jwt.algorithms import RSAAlgorithm
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -169,15 +171,23 @@ def check_provider(issuer: str) -> None:
     require_https(jwks_url)
     jwks = fetch_json(jwks_url)
     keys = jwks.get("keys")
-    if not isinstance(keys, list) or not any(
-        isinstance(key, dict)
-        and key.get("kty") == "RSA"
-        and isinstance(key.get("kid"), str) and bool(key["kid"])
-        and key.get("alg", "RS256") == "RS256"
-        and key.get("use", "sig") == "sig"
-        for key in keys
-    ):
-        raise ValueError("Provider JWKS has no RSA signature key usable for RS256")
+    def usable_rs256_public_key(key) -> bool:
+        if (not isinstance(key, dict)
+                or key.get("kty") != "RSA"
+                or not isinstance(key.get("kid"), str) or not key["kid"]
+                or key.get("alg", "RS256") != "RS256"
+                or key.get("use", "sig") != "sig"
+                or any(secret in key for secret in ("d", "p", "q", "dp", "dq", "qi", "oth"))):
+            return False
+        try:
+            # Validate n/e cryptographically rather than trusting kty=RSA alone.
+            public = RSAAlgorithm.from_jwk(json.dumps(key))
+            return public.key_size >= 2048
+        except (ValueError, TypeError, KeyError):
+            return False
+
+    if not isinstance(keys, list) or not any(usable_rs256_public_key(key) for key in keys):
+        raise ValueError("Provider JWKS has no valid public RSA signing key usable for RS256")
     print("PASS: Public issuer metadata, PKCE S256, registration and RS256 JWKS preflight")
     print("Issuer:", issuer)
     print("JWKS URI:", jwks_url)
