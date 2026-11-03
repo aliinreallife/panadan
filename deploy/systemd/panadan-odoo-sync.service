@@ -1,0 +1,23 @@
+# TEMPLATE ONLY — NOT installed or enabled by repository changes.
+# Install after source semantics, retention, backups, 100-record pilot and
+# full history have been validated and an authorized operator approves.
+# The private in-container DSN file must be provisioned separately.
+[Unit]
+Description=Panadan approved Odoo incremental reporting sync
+Documentation=https://github.com/aliinreallife/panadan/blob/main/docs/ODOO_WRITE_DATE_PILOT.md
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+ConditionPathExists=/etc/panadan/odoo-sync-approved
+
+[Service]
+Type=oneshot
+User=root
+# DO NOT add set -x, credentials or any Odoo/customer payload to this unit.
+# docker exec introduces only a safe DSN FILE PATH as environment value.
+ExecStart=/usr/bin/docker exec -e PANADAN_SYNC_OWNED_DSN_FILE=/run/secrets/panadan_sync_owned_dsn panadan-web-1 python -m server.odoo_sync_pilot sync-once --mode utc_naive --batch-size 100 --max-pages 2 --ack-source-contract --ack-retention --ack-copy
+TimeoutStartSec=120
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=panadan-odoo-sync
+NoNewPrivileges=true
