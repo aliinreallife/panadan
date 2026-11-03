@@ -238,3 +238,43 @@ def test_app_does_not_silently_enable_any_schedule():
     assert "APScheduler" not in script and "cron" not in script.lower()
     assert "enabled = TRUE" not in script
     assert "DELETE FROM" not in script
+
+
+
+def test_read_only_parity_reports_only_counts_not_ids_or_payloads():
+    from server.platform_ingest import _validate_events
+
+    source = Source([sample(11), sample(12)])
+    entries = a.read_id_page(source, after_id=0, mode="utc_naive", marker=MARKER)
+    known = {event.external_id: digest
+             for event, digest in _validate_events([row[2] for row in entries])}
+
+    class Owned:
+        def __init__(self, values):
+            self.values = values
+        def execute(self, sql, params):
+            assert sql.strip().startswith("SELECT external_id, current_digest")
+            assert params[0] == "odoo_calls"
+            assert len(params[1]) <= 100
+            return Result(rows=[
+                {"external_id": key, "current_digest": value}
+                for key, value in self.values.items()
+                if key in params[1]
+            ])
+
+    assert pilot.verify_sample(source, Owned({}), mode="utc_naive") == {
+        "examined": 2, "matched": 0, "missing": 2,
+        "different": 0, "all_match": False,
+    }
+    assert pilot.verify_sample(source, Owned(known), mode="utc_naive") == {
+        "examined": 2, "matched": 2, "missing": 0,
+        "different": 0, "all_match": True,
+    }
+    corrupted = {**known, "11": "0" * 64}
+    failed = pilot.verify_sample(source, Owned(corrupted), mode="utc_naive")
+    assert failed["different"] == 1 and failed["matched"] == 1
+    assert "11" not in str(failed) and "12" not in str(failed)
+    with pytest.raises(ValueError):
+        pilot.verify_sample(source, Owned(known), mode="utc_naive", limit=201)
+    with pytest.raises(ValueError):
+        pilot.verify_sample(source, Owned(known), mode="utc_naive", after_id=-1)
