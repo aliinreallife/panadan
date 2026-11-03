@@ -1,5 +1,17 @@
 # Panadan local reporting store: migration and synchronization plan
 
+> **2026-11-03 update:** Production catalog inspection confirmed
+> `write_date timestamp without time zone`, and 300 sampled records across
+> three ID offsets had non-null dates/unique IDs within each sample.
+> The source owner reports that `write_date` advances with edits; controlled
+> verification of joined-table updates, UTC-naive semantics and global stable
+> IDs is still required. The adapter now allows fixed `write_date` marker
+> selection **for supervised, explicitly approved pilot runs only**.
+> See [ODOO_WRITE_DATE_PILOT.md](ODOO_WRITE_DATE_PILOT.md) for the complete
+> no-secrets procedure. No source data has been copied and production
+> dashboard/API/MCP still query Odoo directly.
+>
+
 **Status:** proposed architecture, **not deployed**. The authorized source
 is `public.vw_danix_call_info_report`, accessible through the private
 read-only VPN relay. Do **not** treat existing local SQLite user/auth storage
