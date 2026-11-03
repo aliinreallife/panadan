@@ -149,11 +149,19 @@ def status(target) -> dict:
         "WHERE source_key=%s",
         (sync.ODOO_SOURCE_KEY,),
     ).fetchone()
+    runs = target.execute(
+        "SELECT COUNT(*) AS runs, "
+        "EXTRACT(EPOCH FROM (clock_timestamp()-MAX(finished_at))) AS age "
+        "FROM panadan_ingest.sync_runs WHERE source_key=%s",
+        (sync.ODOO_SOURCE_KEY,),
+    ).fetchone()
     return {
         "source_registered": src is not None,
         "source_enabled": bool(src and src["enabled"]),
         "local_records": records["n"],
         "local_revisions": changes["n"],
+        "committed_pages": runs["runs"],
+        "seconds_since_last_commit": int(runs["age"]) if runs["age"] is not None else None,
         "update_cursor_seeded": checkpoint(
             target, source_key=sync.ODOO_SOURCE_KEY,
             stream=sync.UPDATES_STREAM) is not None,
