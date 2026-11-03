@@ -68,13 +68,38 @@ def validate_authorization_server(document: dict, issuer: str) -> str:
     if not isinstance(pkce, list) or "S256" not in pkce:
         raise ValueError("Authorization server does not advertise PKCE S256")
     methods = document.get("token_endpoint_auth_methods_supported")
-    if not isinstance(methods, list) or not methods:
-        raise ValueError("Authorization server omitted token endpoint authentication methods")
+    if (not isinstance(methods, list) or not methods
+            or not all(isinstance(m, str) for m in methods)):
+        raise ValueError("Authorization server omitted valid token endpoint authentication methods")
+    grant_types = document.get("grant_types_supported")
+    if grant_types is not None and (
+        not isinstance(grant_types, list) or "authorization_code" not in grant_types
+    ):
+        raise ValueError("Authorization server does not support authorization_code")
+    response_types = document.get("response_types_supported")
+    if response_types is not None and (
+        not isinstance(response_types, list) or "code" not in response_types
+    ):
+        raise ValueError("Authorization server does not support code response type")
+    scopes = document.get("scopes_supported")
+    if scopes is not None and (
+        not isinstance(scopes, list) or "panadan:mcp:read" not in scopes
+    ):
+        raise ValueError("Authorization server does not advertise the Panadan MCP scope")
+    jwks = document.get("jwks_uri")
+    if jwks is not None:
+        if not isinstance(jwks, str):
+            raise ValueError("Authorization server has invalid jwks_uri")
+        require_https(jwks)
     if document.get("client_id_metadata_document_supported") is True:
+        if not {"none", "private_key_jwt"} & set(methods):
+            raise ValueError("CIMD has no ChatGPT-compatible token endpoint authentication method")
         return "CIMD"
     registration = document.get("registration_endpoint")
     if isinstance(registration, str):
         require_https(registration)
+        if not {"none", "private_key_jwt", "client_secret_basic", "client_secret_post"} & set(methods):
+            raise ValueError("DCR has no supported token endpoint authentication method")
         return "DCR"
     return "pre-registered OAuth client (manual client setup required)"
 
@@ -120,6 +145,52 @@ def fetch_json(url: str) -> dict:
     return result
 
 
+def discover_authorization_server(issuer: str) -> dict:
+    """Fetch only public metadata; never attempt authorization or token exchange."""
+    for candidate in authorization_server_urls(issuer):
+        try:
+            return fetch_json(candidate)
+        except ValueError as exc:
+            # A real 404 can fall back from RFC 8414 to OIDC discovery.
+            # Do not downgrade or mask invalid issuer/TLS/metadata failures.
+            if "HTTP 404" not in str(exc):
+                raise
+    raise ValueError("Issuer exposes neither RFC 8414 nor OIDC discovery")
+
+
+def check_provider(issuer: str) -> None:
+    """Preflight a candidate IdP BEFORE enabling Panadan OAuth or touching prod."""
+    issuer = require_https(issuer)
+    metadata = discover_authorization_server(issuer)
+    registration = validate_authorization_server(metadata, issuer)
+    jwks_url = metadata.get("jwks_uri")
+    if not isinstance(jwks_url, str):
+        raise ValueError("Provider does not advertise JWKS URI required for Panadan RS256 verification")
+    require_https(jwks_url)
+    jwks = fetch_json(jwks_url)
+    keys = jwks.get("keys")
+    if not isinstance(keys, list) or not any(
+        isinstance(key, dict)
+        and key.get("kty") == "RSA"
+        and isinstance(key.get("kid"), str) and bool(key["kid"])
+        and key.get("alg", "RS256") == "RS256"
+        and key.get("use", "sig") == "sig"
+        for key in keys
+    ):
+        raise ValueError("Provider JWKS has no RSA signature key usable for RS256")
+    print("PASS: Public issuer metadata, PKCE S256, registration and RS256 JWKS preflight")
+    print("Issuer:", issuer)
+    print("JWKS URI:", jwks_url)
+    print("Client identification:", registration)
+    if registration.startswith("pre-registered"):
+        print("ACTION: Provision compatible ChatGPT and Claude client identities manually")
+    if metadata.get("authorization_response_iss_parameter_supported") is not True:
+        print("ACTION: Use the client-specific callback URL shown by each client")
+    print("UNVERIFIED: authorization/consent, resource -> aud, scope in access JWT,")
+    print("            stable subject, account binding, refresh, revocation and real MCP tool calls")
+    print("SAFETY: Production must remain on legacy bearer mode until staged acceptance")
+
+
 def run(resource: str) -> None:
     resource = require_https(resource)
     metadata = protected_resource_url(resource)
@@ -135,17 +206,7 @@ def run(resource: str) -> None:
                               "/.well-known/oauth-protected-resource/mcp")
     if fetch_json(suffix).get("resource") != resource:
         raise ValueError("Path-specific protected resource metadata disagrees")
-    doc = None
-    for candidate in authorization_server_urls(issuer):
-        try:
-            doc = fetch_json(candidate)
-            break
-        except ValueError as exc:
-            # Only a real not-found should select the alternate discovery route.
-            if "HTTP 404" not in str(exc):
-                raise
-    if doc is None:
-        raise ValueError("Issuer exposes neither RFC 8414 nor OIDC discovery")
+    doc = discover_authorization_server(issuer)
     method = validate_authorization_server(doc, issuer)
     code, headers, _ = request(resource)
     if code != 401:
@@ -167,9 +228,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url", nargs="?", default="https://dan.panafor.com/mcp/",
                         help="Canonical HTTPS MCP resource URL ending with /mcp/")
+    parser.add_argument("--issuer",
+                        help="Preflight an IdP's PUBLIC HTTPS discovery/JWKS only, "
+                             "without enabling OAuth or contacting production Panadan")
     args = parser.parse_args()
     try:
-        run(args.url)
+        if args.issuer:
+            check_provider(args.issuer)
+        else:
+            run(args.url)
         return 0
     except (ValueError, HTTPError, URLError, TimeoutError) as exc:
         print(f"FAIL: {exc}")
