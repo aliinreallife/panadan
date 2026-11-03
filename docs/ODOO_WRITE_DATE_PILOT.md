@@ -92,7 +92,13 @@ Use the reviewed production release controller and maintenance approval.
    as the target DSN.
 4. Using the **reviewed production deployment controller**, deliberately
    mount a new separate file readable only inside the authorized pilot
-   runtime, containing a *single* libpq DSN for
+   runtime. The Web image runs as Linux UID **10001**, so the regular
+   DSN file must be owned by UID 10001 and have mode **0600** (or use a
+   separately reviewed secure secret-injection mechanism). The optional
+   `deploy/compose.sync-pilot.yaml` overlay provides the read-only
+   bind mount; **it is not applied by the current production controller**
+   and must never be applied via ad-hoc Compose recreation. The private
+   file contains a *single* libpq DSN for
    `panadan_ingest_writer@panadan-auth-postgres:5432/panadan`
    (private credentials, 0600; do not paste into chats, logs, shell history,
    command arguments, or issues). Set `PANADAN_SYNC_OWNED_DSN_FILE` to its
@@ -154,6 +160,26 @@ until approved. Log only summarized counts/health, not payloads or credentials.
 Compare source count by approved, timeout-bounded aggregates and local
 counts. Alert on sync lag, failed runs, timestamp drift, schema changes,
 VPN downtime and sample parity mismatch.
+
+## Optional future timer — disabled until full approval
+
+Two source-controlled, **not installed/enabled** unit templates are available
+under `deploy/systemd/panadan-odoo-sync.service` and `.timer`.
+The service requires the explicit host-side marker
+`/etc/panadan/odoo-sync-approved` and a separately mounted secret path
+`/run/secrets/panadan_sync_owned_dsn` inside Web, alongside all existing
+source registry/approval checks. It does not change or restart any Docker
+services; when activated it invokes one serial bounded `sync-once` every
+five minutes. The systemd unit itself does not import, migrate or modify
+the PostgreSQL schema.
+
+Do **not** install or activate those units yet. After QA, a responsible
+operator must check the reviewed production controller preserves *all*
+existing Plane, ingress and Panadan auth-network overlays before attaching
+the optional secret mount, verify local parity and source limits, and separately
+authorize creation of the approval marker and enabling the timer. A fresh
+deployment/recreation of the Web container may interrupt HTTPS reporting;
+it is a distinct maintenance step with rollback.
 
 ## Not yet done: dashboard cutover
 
