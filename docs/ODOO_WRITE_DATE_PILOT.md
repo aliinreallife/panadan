@@ -135,6 +135,14 @@ python -m server.odoo_sync_pilot backfill --mode utc_naive \
 
 python -m server.odoo_sync_pilot status
 
+# READ-ONLY parity check of up to 100 records from the beginning of the
+# source ID stream. No approval flags are required because it only reads:
+python -m server.odoo_sync_pilot verify --mode utc_naive \
+  --batch-size 100 --after-id 0
+# Expected: PARITY: {'examined': 100, 'matched': 100, 'missing': 0,
+#                     'different': 0, 'all_match': True}
+# If any values are missing/different, STOP and investigate before importing more.
+
 # Only after the first 100 records match the original with approved checks:
 # Up to 5 x 100 ID rows per invocation (resumes from last ID).
 python -m server.odoo_sync_pilot backfill --mode utc_naive \
@@ -147,7 +155,12 @@ python -m server.odoo_sync_pilot sync-once --mode utc_naive \
   --ack-source-contract --ack-retention --ack-copy
 ```
 
-Each output is counts only: `examined`, `changed`, `unchanged`, `more`.
+Each write output is counts only: `examined`, `changed`, `unchanged`, `more`.
+The read-only `verify` command reports only counts of locally matched, missing
+and different digests; it does not print source IDs, customer fields or digests.
+You can change `--after-id` to check a later bounded ID partition. This is a
+sample parity test, not a proof of whole-history correctness, and volatile
+source updates may create legitimate temporary mismatches until sync runs.
 `more=true` means another bounded invocation may be needed. A failed or
 interrupted page does NOT advance its local cursor. Ingest repeats with the
 same digest do not create duplicate revisions. Never manually reset a
