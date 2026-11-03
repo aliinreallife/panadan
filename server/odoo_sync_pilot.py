@@ -177,32 +177,35 @@ def apply(args) -> list[dict]:
                     seed = sync.seed_update_stream(source, target, mode=args.mode)
                     return [{"operation": "seed", "marker": seed["marker"],
                              "cursor_stored": True}]
+                streams = (("backfill", "updates") if args.command == "sync-once"
+                           else (args.command,))
                 rows = []
-                for page in range(args.max_pages):
-                    if args.command == "backfill":
-                        result = sync.poll_id_page(
-                            source, target, mode=args.mode, limit=args.batch_size)
-                    elif args.command == "updates":
-                        result = sync.poll_update_page(
-                            source, target, mode=args.mode, limit=args.batch_size)
-                    else:
-                        raise ValueError("Unsupported write operation")
-                    rows.append({
-                        "page": page + 1,
-                        "operation": args.command,
-                        "examined": result.examined,
-                        "changed": result.changed,
-                        "unchanged": result.skipped,
-                        "more": result.has_more,
-                    })
-                    if not result.has_more:
-                        break
+                for stream in streams:
+                    for page in range(args.max_pages):
+                        if stream == "backfill":
+                            result = sync.poll_id_page(
+                                source, target, mode=args.mode, limit=args.batch_size)
+                        elif stream == "updates":
+                            result = sync.poll_update_page(
+                                source, target, mode=args.mode, limit=args.batch_size)
+                        else:
+                            raise ValueError("Unsupported write operation")
+                        rows.append({
+                            "page": page + 1,
+                            "operation": stream,
+                            "examined": result.examined,
+                            "changed": result.changed,
+                            "unchanged": result.skipped,
+                            "more": result.has_more,
+                        })
+                        if not result.has_more:
+                            break
                 return rows
 
 
 def parse(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("command", choices=("preview", "status", "seed", "backfill", "updates"))
+    p.add_argument("command", choices=("preview", "status", "seed", "backfill", "updates", "sync-once"))
     p.add_argument("--mode", choices=("utc_naive", "timestamptz"),
                    default="utc_naive", help="Must match the source owner timestamp contract")
     p.add_argument("--batch-size", type=int, default=100)
