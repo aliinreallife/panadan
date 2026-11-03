@@ -175,3 +175,66 @@ def test_no_apply_before_approval_even_when_connections_are_available(monkeypatc
     opts.ack_copy = False
     with pytest.raises(ValueError, match="Write blocked"):
         pilot.apply(opts)
+
+
+
+def test_combined_cycle_serially_polls_both_streams(monkeypatch):
+    """No real database; combined cycle never executes streams concurrently."""
+    from contextlib import contextmanager
+
+    phases = []
+
+    @contextmanager
+    def target():
+        phases.append("target")
+        yield object()
+
+    @contextmanager
+    def lock(_):
+        phases.append("lock")
+        yield
+
+    @contextmanager
+    def source():
+        phases.append("source")
+        yield object()
+
+    monkeypatch.setattr(pilot, "owned_connection", target)
+    monkeypatch.setattr(pilot, "exclusive_pilot", lock)
+    monkeypatch.setattr(pilot.database, "connect", source)
+    monkeypatch.setattr(pilot.adapter, "validate_schema",
+                        lambda src, *, mode: MARKER)
+
+    def backfill(*args, **kwargs):
+        phases.append("backfill")
+        return SimpleNamespace(examined=2, changed=2, skipped=0, has_more=False)
+
+    def changes(*args, **kwargs):
+        phases.append("updates")
+        return SimpleNamespace(examined=1, changed=1, skipped=0, has_more=False)
+
+    monkeypatch.setattr(pilot.sync, "poll_id_page", backfill)
+    monkeypatch.setattr(pilot.sync, "poll_update_page", changes)
+    out = pilot.apply(approved("sync-once"))
+    assert phases == ["target", "lock", "source", "backfill", "updates"]
+    assert [row["operation"] for row in out] == ["backfill", "updates"]
+    assert [row["changed"] for row in out] == [2, 1]
+
+
+def test_session_lock_rejects_concurrent_worker():
+    class Busy:
+        def execute(self, sql, params):
+            assert "pg_try_advisory_lock" in sql
+            assert params == pilot.LOCK_KEYS
+            return Result(row={"ok": False})
+    with pytest.raises(ValueError, match="already active"):
+        with pilot.exclusive_pilot(Busy()):
+            pytest.fail("Should not enter critical section")
+
+
+def test_app_does_not_silently_enable_any_schedule():
+    from pathlib import Path
+    script = Path("server/odoo_sync_pilot.py").read_text()
+    assert "APScheduler" not in script and "cron" not in script.lower()
+    assert "enabled = TRUE" not in script
+    assert "DELETE FROM" not in script
