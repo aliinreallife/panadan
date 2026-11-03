@@ -520,9 +520,14 @@ def test_odoo_write_date_end_to_end_local_pg_backfill_then_old_row_update(pg):
                              limit=2).examined == 2
     assert sync.poll_id_page(source, pg, mode="utc_naive", source_key=key,
                              limit=2).examined == 1
+    from server.odoo_sync_pilot import verify_sample
+    assert verify_sample(source, pg, mode="utc_naive",
+                         source_key=key)["matched"] == 3
     source.now = base + timedelta(minutes=7)
     source.records[1] = item(1, base + timedelta(minutes=2), "SoldOut")
     source.records[4] = item(4, base + timedelta(minutes=2), "Unchecked")
+    before_sync = verify_sample(source, pg, mode="utc_naive", source_key=key)
+    assert before_sync["different"] == 1 and before_sync["missing"] == 1
     update = sync.poll_update_page(source, pg, mode="utc_naive",
                                    source_key=key, limit=2)
     assert update.examined == 2
@@ -539,3 +544,5 @@ def test_odoo_write_date_end_to_end_local_pg_backfill_then_old_row_update(pg):
         "SELECT count(*) AS n FROM panadan_ingest.raw_revisions WHERE source_key=%s",
         (key,)
     ).fetchone()["n"] == 5
+    after_sync = verify_sample(source, pg, mode="utc_naive", source_key=key)
+    assert after_sync["all_match"] and after_sync["matched"] == 4
