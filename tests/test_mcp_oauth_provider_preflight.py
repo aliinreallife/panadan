@@ -2,6 +2,8 @@
 import copy
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
+from jwt.algorithms import RSAAlgorithm
 
 from tools import check_mcp_oauth as check
 
@@ -20,7 +22,10 @@ DOC = {
     "authorization_response_iss_parameter_supported": True,
     "jwks_uri": JWKS,
 }
-KEYS = {"keys": [{"kty": "RSA", "kid": "rsa-key-1", "alg": "RS256", "use": "sig"}]}
+# Generate public-only test key material in memory; never commit private keys.
+_TEST_PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_PUBLIC_JWK = RSAAlgorithm.to_jwk(_TEST_PRIVATE_KEY.public_key(), as_dict=True)
+KEYS = {"keys": [{**_PUBLIC_JWK, "kid": "rsa-key-1", "alg": "RS256", "use": "sig"}]}
 
 
 def stub_fetch(monkeypatch, *, doc=None, keys=None):
@@ -70,10 +75,11 @@ def test_invalid_provider_metadata_is_rejected(monkeypatch, field, invalid):
     {"keys": [{"kty": "RSA", "kid": "key-1", "alg": "HS256"}]},
     {"keys": [{"kty": "RSA", "alg": "RS256"}]},
     {"keys": [{"kty": "RSA", "kid": "key-1", "use": "enc"}]},
+    {"keys": [{"kty": "RSA", "kid": "key-1", "alg": "RS256"}]},
 ])
 def test_non_rs256_signature_jwks_rejected(monkeypatch, keyset):
     stub_fetch(monkeypatch, keys=keyset)
-    with pytest.raises(ValueError, match="RSA signature key"):
+    with pytest.raises(ValueError, match="RSA signing key"):
         check.check_provider(ISSUER)
 
 
