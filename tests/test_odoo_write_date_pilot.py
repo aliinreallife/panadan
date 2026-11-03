@@ -134,7 +134,7 @@ def test_wrong_target_credentials_identity_and_redirection_rejected(monkeypatch,
 
 
 def test_private_target_dsn_file_permissions_and_no_dsn_logging(tmp_path, monkeypatch, capsys):
-    dsn = "postgresql://panadan_ingest_writer:TOP_SECRET@panadan-auth-postgres:5432/panadan"
+    dsn = "postgresql://panadan_ingest_writer:TOP_SECRET@panadan-auth-postgres:5432/panadan?sslmode=prefer"
     file = tmp_path / "owned.pguri"
     file.write_text(dsn)
     file.chmod(0o644)
