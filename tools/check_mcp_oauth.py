@@ -10,6 +10,7 @@ import argparse
 import json
 
 from jwt.algorithms import RSAAlgorithm
+from jwt.exceptions import InvalidKeyError
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -183,7 +184,7 @@ def check_provider(issuer: str) -> None:
             # Validate n/e cryptographically rather than trusting kty=RSA alone.
             public = RSAAlgorithm.from_jwk(json.dumps(key))
             return public.key_size >= 2048
-        except (ValueError, TypeError, KeyError):
+        except (InvalidKeyError, ValueError, TypeError, KeyError):
             return False
 
     if not isinstance(keys, list) or not any(usable_rs256_public_key(key) for key in keys):
