@@ -3,7 +3,7 @@
 Three logical flows share two safe queries:
 - initial backfill by id, in bounded keyset pages
 - new rows by id (same cursor, polled after backfill)
-- changed existing rows by (updated_at, id) in time-bounded windows
+- changed existing rows by (verified timestamp marker, id) in bounded windows
 
 No connection credentials, scheduling, source writes or live data migration.
 Source model owners must confirm stable IDs, update coverage and timestamp
@@ -20,8 +20,11 @@ from . import database
 from .platform_ingest import SourceEvent
 
 VIEW = database.VIEW  # fixed SQL identifier, never taken from user input
-UPDATE_COLUMN = 'sync_updated_at'  # preferred; 'updated_at' is also accepted
-UPDATE_COLUMNS = ('sync_updated_at', 'updated_at')
+UPDATE_COLUMN = 'sync_updated_at'  # backwards-compatible default for existing tests/cursors
+# Source-owned whole-view markers take precedence. Real Odoo view currently
+# exposes write_date (UTC-naive), subject to operator verification of edits.
+# Never dynamically interpolate untrusted SQL or silently switch a saved cursor.
+UPDATE_COLUMNS = ('sync_updated_at', 'updated_at', 'write_date')
 DATA_COLUMNS = (
     'id', 'CALLDATE', 'tellstate', 'tellside', 'aicallinfostate',
     'voice_length', 'possibility_of_sale_ai', 'deal_value',
