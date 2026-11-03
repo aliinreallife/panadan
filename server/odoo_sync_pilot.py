@@ -174,6 +174,46 @@ def status(target) -> dict:
     }
 
 
+def verify_sample(source, target, *, mode: str, after_id: int = 0,
+                  limit: int = 100, source_key: str = sync.ODOO_SOURCE_KEY) -> dict:
+    """Compare approved source payload digests with local current revisions.
+
+    Reads at most 100 source records. Prints counts only; no customer values,
+    IDs, private row digests or timestamp values leave the process.
+    This is a sample check, not a full-history integrity guarantee.
+    """
+    if (type(after_id) is not int or after_id < 0
+            or type(limit) is not int or not 1 <= limit <= 100):
+        raise ValueError("Invalid bounded parity-check parameters")
+    from .platform_ingest import _validate_events
+
+    marker = adapter.validate_schema(source, mode=mode)
+    rows = adapter.read_id_page(source, after_id=after_id, limit=limit,
+                                mode=mode, marker=marker)
+    ids = [str(identifier) for identifier, _, _ in rows]
+    if not ids:
+        return {"examined": 0, "matched": 0, "missing": 0,
+                "different": 0, "all_match": True}
+    expected = {
+        str(identifier): digest for (identifier, _, event), (_, digest)
+        in zip(rows, _validate_events([e for _, _, e in rows]), strict=True)
+    }
+    local = target.execute(
+        "SELECT external_id, current_digest FROM panadan_ingest.source_records "
+        "WHERE source_key = %s AND external_id = ANY(%s) AND is_deleted=FALSE",
+        (source_key, ids),
+    ).fetchall()
+    present = {row["external_id"]: row["current_digest"] for row in local}
+    missing = sum(identifier not in present for identifier in ids)
+    different = sum(identifier in present and present[identifier] != expected[identifier]
+                    for identifier in ids)
+    matched = len(ids) - missing - different
+    return {
+        "examined": len(ids), "matched": matched, "missing": missing,
+        "different": different, "all_match": not missing and not different,
+    }
+
+
 def apply(args) -> list[dict]:
     require_approval(args)
     with owned_connection() as target:
@@ -216,11 +256,13 @@ def apply(args) -> list[dict]:
 
 def parse(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("command", choices=("preview", "status", "seed", "backfill", "updates", "sync-once"))
+    p.add_argument("command", choices=("preview", "status", "verify", "seed", "backfill", "updates", "sync-once"))
     p.add_argument("--mode", choices=("utc_naive", "timestamptz"),
                    default="utc_naive", help="Must match the source owner timestamp contract")
     p.add_argument("--batch-size", type=int, default=100)
     p.add_argument("--max-pages", type=int, default=1)
+    p.add_argument("--after-id", type=int, default=0,
+                   help="Read-only parity sample starts after this source ID")
     for option in REQUIRED_ACKS:
         p.add_argument("--" + option.replace("_", "-"), action="store_true")
     return p.parse_args(argv)
@@ -235,6 +277,12 @@ def main(argv=None) -> int:
         elif args.command == "status":
             with owned_connection() as target:
                 print("STATUS:", status(target))
+        elif args.command == "verify":
+            with owned_connection() as target:
+                with database.connect() as source:
+                    print("PARITY:", verify_sample(
+                        source, target, mode=args.mode,
+                        after_id=args.after_id, limit=min(args.batch_size, 100)))
         else:
             for line in apply(args):
                 print("PILOT:", line)
