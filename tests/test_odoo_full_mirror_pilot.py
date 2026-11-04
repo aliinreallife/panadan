@@ -208,3 +208,44 @@ def test_no_scheduler_or_deletion_or_implicit_registration():
     assert 'UPDATE panadan_ingest.sources' not in script
     assert 'register_source(' not in script
     assert pilot.SOURCE_KEY != 'odoo_calls'
+
+
+
+def test_mirror_projection_omits_conflicting_ai_scores():
+    from server.platform_processing import public_call_facts
+
+    one = fake_row(42)
+    one.update(tellside='IntoOut', tellstate='FirstToch',
+               aicallinfostate='SoldOut', voice_length=120.0,
+               possibility_of_sale_ai=20,
+               customername='SECRET-NAME',
+               transcription='SECRET-TRANSCRIPT')
+    two = dict(one, possibility_of_sale_ai=80,
+               tell_state_desc='conflicting analysis')
+    event = full.read_snapshot_page(FakeRecords([one, two]),
+                                    after_id=0, limit=100)[0][0]
+    facts = public_call_facts(event.payload)
+    assert facts['call_direction'] == {'code': 'IntoOut', 'meaning': 'outgoing'}
+    assert facts['recording_duration'] == {'seconds': 120.0}
+    assert 'ai_sales_estimate' not in facts
+    assert 'SECRET-NAME' not in json.dumps(facts)
+    assert 'SECRET-TRANSCRIPT' not in json.dumps(facts)
+
+    # When there is no ambiguity, the legacy safe scoring fact is supported.
+    single = full.read_snapshot_page(FakeRecords([one]),
+                                     after_id=0)[0][0]
+    assert public_call_facts(single.payload)['ai_sales_estimate'] == {
+        'score_0_100': 20, 'is_confirmed_sale': False}
+
+
+@pytest.mark.parametrize('payload', [
+    {'id': 1, 'source_schema': 'odoo_view_37_v1', 'source_rows': []},
+    {'id': 1, 'source_schema': 'odoo_view_37_v1',
+     'source_rows': [{'id': 2, 'transcription': 'PRIVATE'}]},
+    {'id': 1, 'source_schema': 'odoo_view_37_v1',
+     'source_rows': ['PRIVATE']},
+])
+def test_mirror_projection_rejects_invalid_envelopes(payload):
+    from server.platform_processing import public_call_facts
+    with pytest.raises(ValueError, match='Invalid full mirror'):
+        public_call_facts(payload)
