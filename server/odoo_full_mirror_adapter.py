@@ -221,3 +221,73 @@ def plan_change_window(cursor, source_now):
 
 def change_next_cursor(cursor, window, rows, limit):
     return existing.change_next_cursor(cursor, window, rows, limit)
+
+
+
+def read_snapshot_page(source_conn, *, after_id: int, limit: int = 100):
+    """Return complete, deterministic groups of view rows keyed by call ID.
+
+    This is a *bounded page*, NOT an Odoo transactional whole-view snapshot.
+    Read one look-ahead row so a duplicate ID never straddles a committed
+    checkpoint. If a single ID needs >limit rows, fail closed rather than
+    discard a variant. One SourceEvent holds every raw view row for one call.
+    """
+    existing._limit(limit)
+    if type(after_id) is not int or after_id < 0:
+        raise ValueError('Invalid snapshot checkpoint')
+    fetched = source_conn.execute(ID_SQL, (after_id, limit + 1)).fetchall()
+    if len(fetched) > limit + 1:
+        raise ValueError('Unbounded source page')
+    if not fetched:
+        return [], False, 0
+
+    ids = [row['id'] for row in fetched]
+    if any(type(value) is not int or value <= after_id for value in ids):
+        raise ValueError('Invalid source identity')
+    if ids != sorted(ids):
+        raise ValueError('Unordered source identities')
+
+    more = len(fetched) > limit
+    included = fetched[:limit]
+    if more and ids[limit] == included[-1]['id']:
+        # The last ID group is incomplete. Re-read it from the next page;
+        # it is NOT included in the checkpoint committed for this page.
+        boundary_id = included[-1]['id']
+        while included and included[-1]['id'] == boundary_id:
+            included.pop()
+    if not included:
+        raise ValueError('Too many view rows for a single call; refusing to skip')
+
+    events = []
+    current_id = None
+    variants = []
+
+    def finish_group():
+        if current_id is None:
+            return
+        # Sort canonical JSON, not SQL tie order, for replay-stable digests.
+        # Preserve *every* occurrence, including byte-identical duplicates.
+        variants.sort(key=lambda obj: json.dumps(
+            obj, sort_keys=True, ensure_ascii=False, allow_nan=False,
+            separators=(',', ':')))
+        anchors = {(v['call_id'], v['create_date']) for v in variants}
+        if len(anchors) != 1:
+            raise ValueError('Conflicting call identity anchors in view rows')
+        events.append(SourceEvent(
+            str(current_id), 'upsert', {
+                'id': current_id,
+                'source_schema': 'odoo_view_37_v1',
+                'source_rows': list(variants),
+            }))
+
+    for row in included:
+        identity, _, event = normalized(row)
+        if identity != current_id:
+            finish_group()
+            current_id = identity
+            variants = []
+        variants.append(event.payload)
+    finish_group()
+    if len(events) > limit:
+        raise ValueError('Snapshot page event bound exceeded')
+    return events, more, len(included)
