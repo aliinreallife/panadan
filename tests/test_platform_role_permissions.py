@@ -615,3 +615,180 @@ def test_sensitive_full_mirror_detail_is_audited_and_strictly_scoped(protected_d
         with pytest.raises(__import__('sqlite3').OperationalError):
             detail.get_sensitive_call_for_session(
                 conn, store, session_token=allowed_session, call_id=701)
+
+
+
+def test_staging_local_mirror_http_enforces_scoped_tokens_and_audited_detail(
+        protected_db, tmp_path):
+    """Exercise real FastAPI router -> SQLite auth -> restricted PG18 views.
+
+    No live Odoo, production API handler, production auth DB or public port.
+    """
+    from contextlib import contextmanager
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from server.odoo_staging_api import create_router
+    from server.odoo_full_mirror_adapter import COLUMN_TYPES
+    from server import odoo_local_reporting as local
+    from server.security import Store
+
+    cfg, owner = protected_db
+    register_source(owner, source_key=local.SOURCE_KEY, kind="database",
+                    label="Synthetic HTTP staging mirror")
+    owner.execute(
+        "UPDATE panadan_ingest.sources SET enabled=TRUE WHERE source_key=%s",
+        (local.SOURCE_KEY,),
+    )
+
+    def variant(cid, operator, score):
+        row = {}
+        for name, kind in COLUMN_TYPES:
+            row[name] = (
+                1 if kind == 'integer' else
+                2.5 if kind == 'double precision' else
+                '2026-11-04' if kind == 'date' else
+                '2026-11-04T12:00:00.000000'
+                if kind == 'timestamp without time zone' else
+                {'en_US': 'Synthetic'} if kind == 'jsonb' else
+                'SYNTHETIC ONLY'
+            )
+        row.update(
+            id=cid, vw_danix_base_info_users=operator,
+            customername='SECRET HTTP CUSTOMER',
+            customertell='SECRET HTTP PHONE',
+            transcription='SECRET HTTP TRANSCRIPT',
+            possibility_of_sale_ai=score,
+            call_id='synthetic-http-fixture',
+        )
+        return row
+
+    with _as_role(cfg, "panadan_ingest_writer", WRITER_PASSWORD) as writer:
+        events = [
+            SourceEvent('901', 'upsert', {
+                'id': 901, 'source_schema': 'odoo_view_37_v1',
+                'source_rows': [variant(901, 401, 20),
+                                variant(901, 401, 85)],
+            }),
+            SourceEvent('902', 'upsert', {
+                'id': 902, 'source_schema': 'odoo_view_37_v1',
+                'source_rows': [variant(902, 402, 30)],
+            }),
+            SourceEvent('903', 'upsert', {
+                'id': 903, 'source_schema': 'odoo_view_37_v1',
+                'source_rows': [variant(903, 401, 30),
+                                variant(903, 402, 70)],
+            }),
+        ]
+        assert ingest_batch(
+            writer, source_key=local.SOURCE_KEY,
+            stream="http_fixture", events=events,
+            expected_cursor=None, next_cursor={'pass': 1, 'last_id': 903},
+        ).upserted == 3
+
+    store = Store(str(tmp_path / 'http-staging-auth.sqlite'))
+    store.bootstrap('root', 'example-very-long-bootstrap-password')
+    admin = store.verify_login('root', 'example-very-long-bootstrap-password')
+    a_caps = ['calls:read', 'calls:sensitive', 'calls:transcript:read']
+    a = store.create_user(
+        'http_alice', 'a-long-test-password-1111', 'reader', a_caps)
+    b = store.create_user(
+        'http_bob', 'a-long-test-password-2222', 'reader')
+    store.authorize_operator_scope(
+        admin_id=admin, user_id=a, operator_id=401,
+        source_identity_verified=True)
+    store.authorize_operator_scope(
+        admin_id=admin, user_id=b, operator_id=402,
+        source_identity_verified=True)
+    _, a_read_token = store.create_token(
+        'a-read', 'api:read', 7, owner_id=a)
+    _, a_sensitive_token = store.create_token(
+        'a-sensitive', 'api:sensitive', 7, owner_id=a)
+    _, b_read_token = store.create_token(
+        'b-read', 'api:read', 7, owner_id=b)
+
+    opened = {'report': 0, 'sensitive': 0}
+
+    @contextmanager
+    def open_report():
+        opened['report'] += 1
+        with _as_role(cfg, 'panadan_report_reader', READER_PASSWORD) as c:
+            yield c
+
+    @contextmanager
+    def open_sensitive():
+        opened['sensitive'] += 1
+        with _as_role(cfg, 'panadan_mirror_sensitive_reader', SENSITIVE_PASSWORD) as c:
+            yield c
+
+    app = FastAPI()
+    app.include_router(create_router(
+        store, open_reporting=open_report, open_sensitive=open_sensitive,
+    ))
+    client = TestClient(app)
+    base = '/api/v1/local-mirror'
+    header_a = {'Authorization': 'Bearer ' + a_read_token}
+    header_s = {'Authorization': 'Bearer ' + a_sensitive_token}
+    header_b = {'Authorization': 'Bearer ' + b_read_token}
+
+    # Reject invalid requests before opening either DB connection.
+    for headers in ({}, {'Authorization': 'Basic ignored'},
+                    {'Authorization': 'Bearer invalid'}):
+        response = client.get(base + '/calls', headers=headers)
+        assert response.status_code == 401
+    assert opened == {'report': 0, 'sensitive': 0}
+
+    result = client.get(base + '/calls', headers=header_a)
+    assert result.status_code == 200
+    assert result.headers['cache-control'] == 'no-store'
+    assert [r['call_id'] for r in result.json()['items']] == [901]
+    assert result.json()['items'][0]['ai_sales_score'] is None
+    assert 'SECRET HTTP' not in result.text
+    assert client.get(base + '/count', headers=header_a).json() == {'count': 1}
+    assert client.get(base + '/calls/901', headers=header_a).status_code == 200
+    assert client.get(base + '/calls/902', headers=header_a).status_code == 404
+    assert client.get(base + '/calls/903', headers=header_a).status_code == 404
+
+    assert [r['call_id'] for r in client.get(
+        base + '/calls', headers=header_b).json()['items']] == [902]
+    assert client.get(base + '/calls/901', headers=header_b).status_code == 404
+    assert client.get(base + '/calls', headers=header_b,
+                      params={'limit': 101}).status_code == 422
+    assert client.get(base + '/calls/0', headers=header_a).status_code == 404
+
+    # Only approved sensitive token can return a full 37-field envelope.
+    assert client.get(base + '/sensitive/calls/901',
+                      headers=header_a).status_code == 401
+    assert client.get(base + '/sensitive/calls/901',
+                      headers=header_b).status_code == 401
+    assert opened['sensitive'] == 0
+    full = client.get(base + '/sensitive/calls/901', headers=header_s)
+    assert full.status_code == 200
+    assert full.headers['cache-control'] == 'no-store'
+    variants = full.json()['source_rows']
+    assert len(variants) == 2
+    assert all(len(row) == 37 for row in variants)
+    assert all(row['transcription'] == 'SECRET HTTP TRANSCRIPT' for row in variants)
+    assert {row['possibility_of_sale_ai'] for row in variants} == {20, 85}
+    assert client.get(base + '/sensitive/calls/902',
+                      headers=header_s).status_code == 404
+    assert client.get(base + '/sensitive/calls/903',
+                      headers=header_s).status_code == 404
+
+    with store.db() as audit:
+        logged = audit.execute(
+            'SELECT call_id,surface FROM sensitive_mirror_access_audit '
+            'ORDER BY event_id'
+        ).fetchall()
+    assert [(row['call_id'], row['surface']) for row in logged] == [
+        (901, 'api'), (902, 'api'), (903, 'api')]
+    assert opened['sensitive'] == 3
+
+    store.revoke_operator_scope(
+        admin_id=admin, user_id=a, operator_id=401)
+    assert client.get(base + '/calls', headers=header_a).json() == {'items': []}
+    assert client.get(base + '/sensitive/calls/901',
+                      headers=header_s).status_code == 403
+
+    # No customer values are exposed in failed responses.
+    assert 'SECRET HTTP' not in client.get(
+        base + '/calls/902', headers=header_a).text
