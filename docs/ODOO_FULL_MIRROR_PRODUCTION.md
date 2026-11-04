@@ -227,3 +227,54 @@ The `status` command additionally reports **counts only**: committed pages,
 last commit age, pending/failed processing jobs and completed scan passes.
 It does not reveal source IDs, names or payloads. This is an operator
 diagnostic, not an automatic alerting or scheduling system.
+
+
+## Verified local Panadan account -> Odoo operator grants (draft)
+
+**Implemented, not yet exposed as a UI/API and not enabled for live cutover.**
+Production Panadan currently authenticates browser sessions and service
+tokens in SQLite. The source Odoo view exposes a candidate stable **numeric
+operator ID** (`vw_danix_base_info_users`), but its authoritative meaning
+still requires **source-owner confirmation**. Display-name directory filters
+must **never** be interpreted as an access grant.
+
+The local SQLite `Store` adds a `user_operator_scopes` table:
+- **Default deny for everyone, even administrators**: empty grants return
+  no local calls; there is no implicit all-operators wildcard.
+- A new grant requires an **active administrator**, an **active target with
+  calls:read**, a strictly positive bounded **numeric source operator ID**
+  and an explicit `source_identity_verified=True` administrative
+  assertion. This assertion records a **human process**, not independent
+  proof in software. An organization/source owner must validate IDs before
+  granting any real users. No HTTP handler exists to self-assign scopes.
+- Revocation applies on the very next request. Any `update_user` role,
+  capability, or active-status change deletes all previously approved
+  numeric IDs and requires new review. Grant, explicit revoke and reset are
+  recorded in an **append-only local audit table** containing only actor
+  ID, account ID, operator ID, action and time.
+- No automatic matching by username, display name, team, destination,
+  historical login, OAuth subject or AI inference.
+
+`server/odoo_local_reporting.py` adds session-bound and token-bound
+listing, count and by-ID lookup. They **authenticate an existing valid,
+active browser session** or verify a service token's *scope + calls:read
+capability + active owner* before loading approved IDs. They then delegate
+to the exact same restricted PG18 reader/view; caller filters are not
+authorization. Both list and count are restricted; by-ID direct lookup
+cannot cross operator boundaries. A missing/unverified user grants no rows,
+and revoked/expired credentials fail closed. Only the default SQLite auth
+backend currently implements the new grant persistence; isolated PG auth
+backend adaptation requires a separate review before any auth migration.
+
+Synthetic unit + disposable PG18 integration tests cover default denial,
+non-admin grant rejection, invalid IDs, role-change revocation, audit trail,
+two separate browser sessions, API tokens, cross-operator by-ID denial,
+revoked tokens/scopes and no raw customer text in the returned projection.
+
+**Still not authorized to deploy or cut over:** source-owner validation of
+operator IDs, a reviewed administrative approval workflow, consistent
+enforcement for *all* current dashboard/API/remote-MCP/WebMCP surfaces,
+audited sensitive/full-field detail reader, privacy/retention and verified
+staging real-copy/backups. These wrappers are library code, **not yet wired
+to any public HTTP endpoint**. Never copy customer data or merge on the
+strength of test fixtures alone.
