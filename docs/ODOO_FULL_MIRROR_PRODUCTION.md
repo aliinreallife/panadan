@@ -278,3 +278,63 @@ audited sensitive/full-field detail reader, privacy/retention and verified
 staging real-copy/backups. These wrappers are library code, **not yet wired
 to any public HTTP endpoint**. Never copy customer data or merge on the
 strength of test fixtures alone.
+
+
+## Separately privileged, audited full-field detail (draft)
+
+The draft branch now has **library-only** sensitive detail access, separated
+from the sanitized operator listing. **Not deployed, not enabled on any
+dashboard/API/MCP/WebMCP endpoint, no live Odoo data imported.**
+
+- `database/permissions/004_full_mirror_sensitive_detail.sql` is an
+  owner-run, additive PG18 migration requiring the existing 001/002/003
+  migrations and a deliberately provisioned unprivileged login role named
+  `panadan_mirror_sensitive_reader`. It grants that role SELECT only on
+  `sensitive_mirror_call_detail_v1`. The original
+  `panadan_report_reader`, ingestion writer, and PUBLIC cannot SELECT the
+  sensitive view. The detail role has no direct raw revisions, source
+  records, normal listing, CREATE, or database administration privileges.
+- The view returns only the **current full-mirror revision**, only for calls
+  passing the existing unambiguous operator/ID/date guard in
+  `safe_mirror_call_listing_v1`. It preserves *all* 37-field joined
+  variants, including conflicting AI analyses; it never chooses one.
+- `server/odoo_sensitive_detail.py` **requires** a dedicated PG18 reader
+  connection, an *active* SQLite Panadan browser session **or** an
+  `api:sensitive` token whose owner is active, all three capabilities
+  (`calls:read`, `calls:sensitive`,
+  `calls:transcript:read`), and an explicit previously verified numeric
+  operator scope. It derives scopes exclusively from the trusted SQLite
+  account store and performs a bounded, parameterized current-record lookup.
+  No external operator ID list is accepted.
+- `Store.authorize_sensitive_mirror_attempt` rechecks the active user's
+  capabilities and source operator grants and **commits a separate SQLite
+  audit row before** any PG SELECT. The row contains the local user ID,
+  source call ID, surface and timestamp; no transcript, phone, name or token.
+  If the audit fails, no sensitive read occurs. An authorized read attempt
+  is logged even if the call does not exist or is assigned to another
+  operator. This is an **attempt log**, not a proven response/delivery log.
+- To fail closed on malformed source data, the library checks the returned
+  identity/operator/count, exactly **37 recognized field names per row**,
+  correct variant IDs, operator consistency, at most 100 variants, and
+  a 2 MB detail response bound. Sensitive fields are returned only by this
+  explicit sensitive path; the normal reporting view stays sanitized.
+- MCP full-field detail is **not supported** yet; neither are public HTTP
+  routes, a DSN/secret manager for the new role, a reviewed administrator
+  grant UX, or PostgreSQL-auth-backend equivalent auditing.
+
+**Important boundary:** a DB login role authorized to query a SQL VIEW can
+query the entire view if its credentials are compromised; the per-user
+source-operator authorization is enforced by the library, not by a
+PostgreSQL per-user RLS policy. Secure distribution, storage and rotation
+of this dedicated credential, audit retention/protection and trust-boundary
+review are mandatory before deploying any sensitive read surface. Do not
+distribute the role password to ordinary users, clients or MCP connections.
+
+Synthetic PG18 role/RBAC tests include two distinct principals and operators,
+37-field parity with two conflicting joined analyses, unauthorized cross-ID
+reads, normal reader/writer/raw-table denial, revoked source grants,
+invalid sessions, a read-only API token, and audit-storage failure.
+The source-owner/operator-ID confirmation, copy/retention/legal approvals,
+staging restore/backup and a reviewed complete product-surface cutover are
+still outstanding. **Never run the migration against Odoo or deploy the
+sensitive view to production simply because CI passes.**
