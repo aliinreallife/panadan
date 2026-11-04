@@ -923,3 +923,47 @@ def test_staging_browser_dashboard_uses_session_scopes_and_sensitive_audit(
         assert c.get("/local/dashboard").status_code == 200
         assert "1101" not in c.get("/local/dashboard").text
         assert c.get("/local/sensitive/calls/1101").status_code == 403
+
+
+
+def test_full_mirror_staging_target_uses_real_restricted_pg18_writer(
+        protected_db, tmp_path, monkeypatch):
+    """An independent PG18 writer target is selected without Odoo or prod."""
+    from server import odoo_mirror_target
+
+    cfg, owner = protected_db
+    file = tmp_path / "isolated-staging-writer.dsn"
+    file.write_text(
+        f"host=127.0.0.1 port={cfg.get('port', '5432')} "
+        "dbname=panadan_ci user=panadan_ingest_writer "
+        "password=synthetic_writer_test_password_only sslmode=prefer",
+        encoding="utf-8",
+    )
+    file.chmod(0o600)
+    monkeypatch.setenv(
+        odoo_mirror_target.MODE_ENV,
+        odoo_mirror_target.STAGING_MODE)
+    monkeypatch.setenv(odoo_mirror_target.STAGING_ACK, "YES")
+    monkeypatch.setenv(odoo_mirror_target.STAGING_DSN_FILE, str(file))
+    for key in odoo_mirror_target._DSN_REDIRECT_ENV:
+        monkeypatch.delenv(key, raising=False)
+    with odoo_mirror_target.owned_connection() as target:
+        identity = target.execute(
+            "SELECT current_database() AS db, current_user AS role"
+        ).fetchone()
+        assert identity == {
+            "db": "panadan_ci", "role": "panadan_ingest_writer",
+        }
+        assert target.execute(
+            "SELECT enabled FROM panadan_ingest.sources "
+            "WHERE source_key='roles_synthetic'"
+        ).fetchone()["enabled"]
+        with pytest.raises(InsufficientPrivilege):
+            target.execute(
+                "UPDATE panadan_ingest.sources SET enabled=FALSE "
+                "WHERE source_key='roles_synthetic'"
+            )
+    assert owner.execute(
+        "SELECT enabled FROM panadan_ingest.sources "
+        "WHERE source_key='roles_synthetic'"
+    ).fetchone()["enabled"]
