@@ -105,6 +105,9 @@ def test_staging_launcher_drops_remote_peers_before_any_auth_or_pg_query():
             assert result.status_code == 403
             assert result.json() == {"detail": "Local staging only"}
 
+        # MCP SDK v2 session_manager.run() has a single lifespan per instance.
+        # Separate TestClient lifespans require a fresh application instance.
+        app = create_staging_app(env)
         with TestClient(app, client=("127.0.0.1", 4567)) as private:
             result = private.get("/api/v1/local-mirror/calls")
             assert result.status_code == 401
