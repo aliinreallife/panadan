@@ -162,3 +162,10 @@ python -m server.odoo_full_mirror_pilot snapshot --batch-size 100 \
 **Open gates:** Run disposable-PG18 integration tests, ensure per-user RBAC and sensitive storage/recovery, verify stable call IDs over time, assess source load and full-pass rate, handle exceptionally large fan-out and payloads, add robust monitoring of failed/unfinished passes, and obtain explicit authorization for production data copying. View-only access limits certainty: it cannot reveal an upstream authoritative analysis, intermediate edits between passes, or deletions that should trigger erasure.
 
 **No VPS commands or production writes are authorized by this section.**
+
+
+## Safe facts from ambiguous source rows (draft)
+
+The full mirror's `source_rows` envelope is **not** equivalent to the legacy flat eight-field format. The v1 platform facts processor now recognizes the explicit `source_schema=odoo_view_37_v1` envelope and derives only the existing allowlisted **non-sensitive** fields for which every row variant agrees: `tellside`, `tellstate`, `aicallinfostate`, `voice_length`, and `possibility_of_sale_ai`. If two analyses produce conflicting scores, the safe `ai_sales_estimate` fact is **omitted**, not selected arbitrarily or averaged. Private names, phones, summaries, free-text AI descriptions and transcripts remain restricted to raw revisions. Invalid mirror envelopes fail closed. A synthetic PG18 permission test verifies that `panadan_report_reader` cannot directly SELECT the raw revision payload or obtain contradictory scores through `safe_call_facts_v1`.
+
+This restricted v1 facts view is **not** a complete 37-field authorized local dashboard replacement. Additional operator-scoped sensitive projections, policy checks, traceability, and audit logging are required before any dashboard/API/MCP cutover. No source scheduler, owner enablement, or production import was added.
