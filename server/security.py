@@ -185,6 +185,18 @@ class Store:
             )""")
             c.execute('CREATE INDEX IF NOT EXISTS user_operator_scopes_operator '
                       'ON user_operator_scopes(operator_id)')
+            # Local permission changes are audit-recorded in the same SQLite
+            # transaction. Do not put customer data or access tokens here.
+            c.execute("""CREATE TABLE IF NOT EXISTS operator_scope_audit (
+                event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                actor_user_id INTEGER,
+                target_user_id INTEGER NOT NULL,
+                operator_id INTEGER NOT NULL,
+                action TEXT NOT NULL CHECK(action IN ('grant','revoke','reset')),
+                event_at INTEGER NOT NULL
+            )""")
+            c.execute('CREATE INDEX IF NOT EXISTS operator_scope_audit_target '
+                      'ON operator_scope_audit(target_user_id,event_at)')
             # Never silently trust orphaned/disabled accounts from migrated
             # stores; runtime reads additionally verify active capabilities.
             c.execute("""DELETE FROM user_operator_scopes
@@ -365,6 +377,12 @@ class Store:
                                  verified_at=excluded.verified_at""",
                 (user_id,operator_id,admin_id,current),
             )
+            c.execute(
+                """INSERT INTO operator_scope_audit
+                   (actor_user_id,target_user_id,operator_id,action,event_at)
+                   VALUES(?,?,?,'grant',?)""",
+                (admin_id,user_id,operator_id,current),
+            )
             # Revocation/session change must be immediately effective to any
             # later call; tokens/sessions are resolved again on every request.
 
@@ -380,10 +398,21 @@ class Store:
             ).fetchone()
             if not actor or not actor['is_active'] or actor['role'] != 'admin':
                 raise PermissionError('Active administrator required')
-            c.execute(
-                "DELETE FROM user_operator_scopes WHERE user_id=? AND operator_id=?",
+            existing = c.execute(
+                "SELECT 1 FROM user_operator_scopes WHERE user_id=? AND operator_id=?",
                 (user_id,operator_id),
-            )
+            ).fetchone()
+            if existing:
+                c.execute(
+                    "DELETE FROM user_operator_scopes WHERE user_id=? AND operator_id=?",
+                    (user_id,operator_id),
+                )
+                c.execute(
+                    """INSERT INTO operator_scope_audit
+                       (actor_user_id,target_user_id,operator_id,action,event_at)
+                       VALUES(?,?,?,'revoke',?)""",
+                    (admin_id,user_id,operator_id,int(time.time())),
+                )
 
     def verified_operator_ids(self, user_id: int) -> list[int]:
         """Default deny, including admins; never infer grants from UI labels."""
@@ -437,6 +466,18 @@ class Store:
             c.execute('DELETE FROM oauth_identities WHERE user_id=?', (user_id,))
             # Role/capability/active changes revoke all manually approved
             # operator scopes. Any future access needs new admin verification.
+            assigned = c.execute(
+                'SELECT operator_id FROM user_operator_scopes WHERE user_id=?',
+                (user_id,),
+            ).fetchall()
+            if assigned:
+                c.executemany(
+                    """INSERT INTO operator_scope_audit
+                       (actor_user_id,target_user_id,operator_id,action,event_at)
+                       VALUES(?,?,?,'reset',?)""",
+                    [(actor_id,user_id,r['operator_id'],int(time.time()))
+                     for r in assigned],
+                )
             c.execute('DELETE FROM user_operator_scopes WHERE user_id=?', (user_id,))
 
     def bind_oauth_identity(self, issuer: str, subject: str, user_id: int) -> int:
