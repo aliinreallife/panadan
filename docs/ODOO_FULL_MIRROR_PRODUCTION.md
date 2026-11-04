@@ -185,3 +185,45 @@ The full mirror CLI now has `snapshot-run` for operator-supervised, **bounded** 
 ```
 
 **This does not solve:** an all-37-field scoped dashboard/API/MCP read path, a validated retention and erasure policy, full-view consistency guarantees (the source has no change feed), any role-appropriate staging DSN, source-side data-copy permission, or a verified production backup and rollback. The command must NOT be run on the live VPS until those gates are independently approved. The branch is still draft and no production release is approved.
+
+
+## Staging-only operator-scoped local reporting (draft)
+
+A new additive, **manually applied** Panadan-owned PostgreSQL migration,
+`database/permissions/003_full_mirror_safe_reporting.sql`, creates
+`panadan_ingest.safe_mirror_call_listing_v1`. It must be applied **after**
+`001_multisource_foundation.sql` and `002_platform_runtime_roles.sql`
+by a reviewed *Panadan-owning* database administrator, never on Odoo.
+No production migration or deployment has been performed.
+
+The view exposes one **sanitized current-state summary per call** only when
+*all* joined variants agree on source ID, call date and numeric operator ID.
+It omits any source record whose operator is missing or ambiguous and returns
+NULL for conflicting AI score/state/direction/duration. It deliberately
+excludes customer name, phone, transcription, summaries, raw payload and
+arbitrary JSON. Only `panadan_report_reader` can SELECT this view; the
+ingest writer and PUBLIC cannot. The existing safe facts view is unaffected.
+
+`server/odoo_local_reporting.py` adds bounded list, by-ID lookup and count
+using **required, explicit, trusted numeric operator IDs**. Empty scopes
+deny access; direct ID and aggregate queries use the same restriction; the
+connection must be the dedicated PG18 `panadan_report_reader` login.
+The caller MUST derive those IDs from an authenticated server-side
+authorization mapping, **never** from request filter parameters. Until the
+organization confirms stable source operator IDs and implements/enforces
+this mapping across dashboard, API, remote MCP and WebMCP, the module must
+remain unconnected to live endpoints. A matching PG18 integration test proves
+two disjoint operator scopes cannot cross-read, and ambiguous-operator
+records cannot be read through either scope.
+
+**This is not yet a full 37-column dashboard replacement.** Sensitive
+data must go through a separately reviewed administrative/sensitive scope
+and audit mechanism; never grant the normal reporting role raw revision
+access merely to achieve full field parity. Access policy, retention and
+erasure governance, real customer-data copy approval, source freshness and
+restored offsite recovery remain independent release gates.
+
+The `status` command additionally reports **counts only**: committed pages,
+last commit age, pending/failed processing jobs and completed scan passes.
+It does not reveal source IDs, names or payloads. This is an operator
+diagnostic, not an automatic alerting or scheduling system.
