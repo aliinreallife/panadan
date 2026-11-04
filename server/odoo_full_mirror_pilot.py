@@ -133,6 +133,67 @@ def verify_sample(source, target, *, limit: int):
 
 
 
+
+def verify_range(source, target, *, after_id: int, limit: int,
+                 max_pages: int) -> dict:
+    """Bounded *read-only* parity walk; no source writes or target cursor.
+
+    Walk full groups without selecting a winner among duplicate view rows.
+    Call again with next_after_id until complete; do not reveal source text.
+    This checks the state observed in each source page, NOT a transactional
+    whole-view snapshot or all intermediate changes between passes.
+    """
+    if (type(after_id) is not int or after_id < 0
+            or type(limit) is not int or not 1 <= limit <= 100
+            or type(max_pages) is not int or not 1 <= max_pages <= 10):
+        raise ValueError('Invalid bounded parity scan arguments')
+    full.validate_schema(source)
+    cursor = after_id
+    totals = {
+        'pages': 0, 'examined': 0, 'matched': 0,
+        'missing': 0, 'different': 0, 'duplicate_row_calls': 0,
+        'source_rows_examined': 0,
+        'next_after_id': after_id, 'complete': False,
+        'source_modified': False, 'target_modified': False,
+    }
+    for _ in range(max_pages):
+        events, more, source_rows = full.read_snapshot_page(
+            source, after_id=cursor, limit=limit)
+        if more and not events:
+            raise ValueError('Parity page made no forward progress')
+        expected = {
+            event.external_id: digest
+            for event, digest in _validate_events(events)
+        }
+        known = target.execute(
+            'SELECT external_id, current_digest FROM panadan_ingest.source_records '
+            'WHERE source_key=%s AND external_id=ANY(%s) AND is_deleted=FALSE',
+            (SOURCE_KEY, list(expected)),
+        ).fetchall() if expected else []
+        present = {item['external_id']: item['current_digest'] for item in known}
+        missing = sum(key not in present for key in expected)
+        different = sum(key in present and present[key] != value
+                        for key, value in expected.items())
+        totals['pages'] += 1
+        totals['examined'] += len(events)
+        totals['matched'] += len(events) - missing - different
+        totals['missing'] += missing
+        totals['different'] += different
+        totals['duplicate_row_calls'] += sum(
+            len(e.payload['source_rows']) > 1 for e in events)
+        totals['source_rows_examined'] += source_rows
+        if events:
+            new_cursor = int(events[-1].external_id)
+            if new_cursor <= cursor:
+                raise ValueError('Parity cursor did not advance')
+            cursor = new_cursor
+        totals['next_after_id'] = cursor
+        if not more:
+            totals['complete'] = True
+            break
+    return totals
+
+
 def _check_identity_reuse(target, events):
     """Refuse an existing call ID whose stable source identity was replaced.
 
@@ -267,9 +328,10 @@ def apply(args):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=('status', 'preview', 'verify', 'snapshot', 'snapshot-run'))
+    p.add_argument('command', choices=('status', 'preview', 'verify', 'verify-run', 'snapshot', 'snapshot-run'))
     p.add_argument('--batch-size', type=int, default=100)
     p.add_argument('--max-pages', type=int, default=1)
+    p.add_argument('--after-id', type=int, default=0)
     p.add_argument('--mode', choices=('utc_naive',), default='utc_naive')
     for name in REQUIRED_ACKS:
         p.add_argument('--' + name.replace('_', '-'), action='store_true')
@@ -285,6 +347,14 @@ def main(argv=None):
                 with database.connect() as source:
                     print('FULL MIRROR PARITY:', verify_sample(
                         source, target, limit=args.batch_size))
+        elif args.command == 'verify-run':
+            # Read-only and bounded. No approval flags required because no
+            # local or source data is changed, and no cursor is written.
+            with guarded.owned_connection() as target:
+                with database.connect() as source:
+                    print('FULL MIRROR PARITY RANGE:', verify_range(
+                        source, target, after_id=args.after_id,
+                        limit=args.batch_size, max_pages=args.max_pages))
         else:
             print('FULL MIRROR PILOT:', apply(args))
         return 0
