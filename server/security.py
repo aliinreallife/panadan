@@ -487,6 +487,29 @@ class Store:
             )
         return permitted
 
+    def list_verified_operator_assignments(self, *, admin_id: int) -> list[dict]:
+        """Administrative metadata only; never customer rows or raw Odoo data."""
+        if type(admin_id) is not int or admin_id <= 0:
+            raise PermissionError('Active administrator required')
+        with self.db() as c:
+            actor = c.execute(
+                "SELECT role,is_active FROM users WHERE id=?", (admin_id,)
+            ).fetchone()
+            if not actor or not actor['is_active'] or actor['role'] != 'admin':
+                raise PermissionError('Active administrator required')
+            rows = c.execute(
+                """SELECT s.user_id, u.username, s.operator_id, s.verified_by,
+                          s.verified_at
+                   FROM user_operator_scopes AS s
+                   JOIN users AS u ON u.id=s.user_id
+                   WHERE u.is_active=1
+                   ORDER BY u.username, s.operator_id LIMIT 1001"""
+            ).fetchall()
+        # Explicit bound: never silently truncate an administrative list.
+        if len(rows) > 1000:
+            raise ValueError('Too many operator approvals to list')
+        return [dict(row) for row in rows]
+
     def create_user(self, username: str, password: str, role: str, caps: list[str] | None = None):
         if not username or len(username) > 80 or not username.replace('_','').replace('-','').isalnum():
             raise ValueError('Invalid username')
