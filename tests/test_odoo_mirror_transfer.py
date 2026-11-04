@@ -198,3 +198,48 @@ def test_enabled_stage_only_and_four_approval_flags(monkeypatch):
     assert kw["next_cursor"] == {"pass": 2, "last_id": 0}
     assert kw["source_key"] == pilot.SOURCE_KEY
     assert kw["stream"] == pilot.SNAPSHOT_STREAM
+
+
+def test_100_view_rows_roundtrip_with_37_fields_and_stable_hash():
+    rows = [fake_row(i) for i in range(1, 101)]
+    page = transfer.make_packet(Source(rows), after_id=0, limit=100)
+    assert transfer.MAX_CALLS == 100
+    assert page["source_rows"] == 100
+    assert len(page["events"]) == 100
+    rebuilt = transfer.validate_packet(
+        json.loads(transfer._canonical(page)),
+        expected_limit=100, expected_after_id=0)
+    assert len(rebuilt) == 100
+    assert all(len(event.payload["source_rows"][0]) == 37 for event in rebuilt)
+
+
+def test_100_view_rows_does_not_split_duplicate_id_at_boundary():
+    rows = [fake_row(i) for i in range(1, 99)]
+    variant = dict(fake_row(99), possibility_of_sale_ai=42)
+    rows.extend([fake_row(99), variant, fake_row(100), fake_row(101)])
+    packet = transfer.make_packet(Source(rows), after_id=0, limit=100)
+    events = transfer.validate_packet(
+        packet, expected_limit=100, expected_after_id=0)
+    assert packet["more"] is True
+    assert packet["source_rows"] == 100
+    assert len(events) == 99
+    assert events[-1].external_id == "99"
+    assert len(events[-1].payload["source_rows"]) == 2
+    following = transfer.make_packet(Source(rows), after_id=99, limit=100)
+    assert following["events"][0]["external_id"] == "100"
+
+
+def test_page_budget_101_is_rejected_for_both_export_and_import():
+    with pytest.raises(ValueError):
+        transfer.make_packet(Source([fake_row(1)]), after_id=0, limit=101)
+    packet = transfer.make_packet(Source([fake_row(1)]), after_id=0, limit=100)
+    with pytest.raises(ValueError):
+        transfer.validate_packet(
+            packet, expected_limit=101, expected_after_id=0)
+
+
+def test_100_row_wire_ceiling_is_not_increased():
+    assert transfer.MAX_WIRE_BYTES == 55_000_000
+    assert transfer.MAX_CALLS == 100
+    packet = transfer.make_packet(Source([fake_row(1)]), after_id=0, limit=100)
+    assert len(transfer._canonical(packet)) < transfer.MAX_WIRE_BYTES
