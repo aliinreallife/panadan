@@ -389,3 +389,86 @@ dashboard/API/MCP cutover still requires an independently reviewed source
 operator mapping, migration/backup, data-copy/retention authorization,
 freshness policy, and production-grade credential isolation. The main
 production API still reads Odoo directly.
+
+
+## Bounded supervised sync ticks and full-range parity (draft)
+
+Added `server/odoo_mirror_scheduler.py` as an **operator-invoked**,
+bounded reconciliation and freshness-policy entrypoint. It is **not**
+started by importing Panadan Web, and contains no active service, cron,
+systemd unit or live Docker schedule. An authorized operator may arrange
+periodic external invocation **only after** the data owner has approved
+copying personal and transcript data into Panadan-owned PostgreSQL, retention
+and deletion rules have been approved, the Odoo read-only contract is
+confirmed, and the target source `odoo_calls_full_v1` is deliberately
+registered/enabled by a separate admin.
+
+A single `tick` checks all **four explicit approval flags**, acquires
+the existing exclusive pilot lock, verifies source enablement, processes
+only the full-mirror normalization queue (not unrelated sources), and
+continues the current ID-keyset scan in at most **10 pages of 100 source
+rows**. The default tick has an additional **120-second wall-clock budget**,
+a **1,200-job processing budget**, a **2,500-job backpressure threshold**,
+and a **one-hour minimum gap** before starting a fresh completed scan.
+The operator can lower those budgets but cannot exceed hard caps. No
+delete/tombstone is inferred from source-view absence, no source Odoo write
+is attempted, and no customer fields or IDs are logged. Per-page
+revision/digest/checkpoint writes remain atomic. A failed later page leaves
+earlier commits resumable; a processing failure returns a nonzero exit
+rather than continuing silently.
+
+The bounded `health` command reads only Panadan-owned aggregate status
+and returns nonzero (exit 3) for disabled, never-started, processing-failed
+or stale states. The signal uses **time since the most recently committed
+page**, which is *not equivalent* to guaranteed Odoo real-time freshness
+or proof of a completed scan. Alerting/notification must be configured by
+a reviewed external supervisor; no network notification action is hidden
+in the runner.
+
+After all deployment approvals and isolated network/credential preflight
+are explicitly satisfied, the operator-facing syntax is:
+
+```bash
+# APPROVED ISOLATED ENVIRONMENT ONLY (not a current VPS instruction).
+python -m server.odoo_mirror_scheduler tick \
+  --ack-source-contract --ack-retention --ack-copy --ack-sensitive-data \
+  --batch-size 100 --max-pages 10 --max-process-jobs 1200 \
+  --max-tick-seconds 120 --min-pass-gap-seconds 3600
+
+# Diagnostic only. Nonzero means alert/hold production cutover.
+python -m server.odoo_mirror_scheduler health --max-stale-seconds 86400
+```
+
+**Important:** `tick` is a single bounded invocation. It is not a
+self-executing daemon; do not create a production recurring timer without
+the explicit operator/data-owner approvals, secured execution identity
+and monitored nonzero exits. Because the source is a joined reporting
+view without reliable CDC, repeated full scans can discover later source
+changes but **cannot capture every intermediate history version**. The
+current scanner never treats missing source rows as deletion.
+
+Also added `verify-run` to
+`server.odoo_full_mirror_pilot`: a **read-only** bounded parity walk,
+comparing the current canonical digest of each complete duplicate-safe
+source group to local `source_records` without modifying either source
+or target. It returns aggregate matching/missing/different counts and
+a resumable numeric `next_after_id`. Repeat from that cursor until
+`complete=True`; no personal text, transcripts or phones are printed.
+This is not a single consistent transaction spanning all source pages.
+The numeric cursor is operational scan metadata, not a customer field.
+
+```bash
+# For an already-approved read-only source + owned PG reader connection.
+python -m server.odoo_full_mirror_pilot verify-run \
+  --after-id 0 --batch-size 100 --max-pages 10
+# Continue with the returned next_after_id until complete=True.
+```
+
+A full scan can be compared only after sufficient reconciliation passes;
+concurrent source changes may cause transient differences. Verify and
+re-check bounded ranges rather than deleting records based on one pass.
+Before enabling the production schedule: prove a complete *converged*
+scan, check retained missing-record behavior, test recovery, verify all
+operator assignments and sensitive audit rules, and record the
+data owner's consent and retention/erasure decision. No activation or
+production copy has happened through this PR.
