@@ -165,7 +165,7 @@ def test_enabled_stage_only_and_four_approval_flags(monkeypatch):
     monkeypatch.setattr(transfer.target, "owned_connection", owned)
     monkeypatch.setattr(transfer.guarded, "exclusive_pilot", exclusive)
 
-    with pytest.raises(ValueError, match="not.*enabled"):
+    with pytest.raises(ValueError, match="explicitly enabled"):
         transfer.import_page(packet, expected_limit=25, approvals=approvals())
     assert access == ["staging", "sql"]
 
