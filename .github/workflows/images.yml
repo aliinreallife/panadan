@@ -41,8 +41,10 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           push: true
+          # On a branch-dispatched candidate, publish ONLY its immutable SHA
+          # tag. Never replace :main with unmerged code.
           tags: |
-            ghcr.io/${{ github.repository_owner }}/panadan-${{ matrix.name }}:main
             ghcr.io/${{ github.repository_owner }}/panadan-${{ matrix.name }}:sha-${{ github.sha }}
+            ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/panadan-{1}:main', github.repository_owner, matrix.name) || '' }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
