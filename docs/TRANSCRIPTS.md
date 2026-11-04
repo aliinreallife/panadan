@@ -15,6 +15,10 @@ Supported examples:
 - Standalone speaker labels followed by text on the next line
 - Literal escaped `\\n` or real newline separators
 - Multiline speech and speaker labels without speech
+- Dense single-paragraph Persian STT transcripts with recurring bare speaker labels
+  (`مشتری`, `اپراتور`) and label punctuation (`.`, `،`, `؟`, `:`)
+- Repeated/adjacent labels with no dialogue between them, without rendering empty bubbles
+- The observed abbreviated ASR operator-label typo `اپاتور` (speaker marker only)
 - Leading content with no speaker label, and conversations with no markers
 - Trailing `\\`-continued lines (common when pasted from Markdown)
 
@@ -22,6 +26,17 @@ The UI initially renders up to 80 turns and can progressively display more.
 It uses `textContent`, never `innerHTML`, for user transcripts.
 Only users with BOTH `calls:read` and `calls:sensitive` can see the transcript
 at all. The normal REST/MCP summary endpoints do not provide transcripts.
+
+The inline role splitter is conservative: it requires an initial speaker
+label, alternating operator/customer candidates, and repeated labels (or
+an explicit punctuation-delimited pair). Ordinary phrases such as
+`این مشتری` or `برای مشتری` are not treated as speaker labels. When
+inline grouping is applied, the UI displays a warning that the attribution
+may be uncertain, alongside the unchanged original in Raw. These are
+parsing *heuristics*, not a verified diarization system.
+
+No provided customer transcript is committed as a test fixture. New tests
+use synthetic conversations with the same separator/noise patterns.
 
 ## Reading limitations
 
