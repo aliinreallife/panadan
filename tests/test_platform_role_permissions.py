@@ -179,3 +179,57 @@ def test_source_deactivation_waits_for_ingest_lock(protected_db):
             owner.execute(
                 "UPDATE panadan_ingest.sources SET enabled = TRUE WHERE source_key = 'roles_synthetic'"
             )
+
+
+
+def test_full_mirror_conflicting_variants_are_not_exposed_to_reporting_role(protected_db):
+    """Synthetic duplicate view rows: restricted reader sees only safe facts."""
+    cfg, owner = protected_db
+    key = "roles_full_mirror"
+    register_source(owner, source_key=key, kind="database",
+                    label="Synthetic duplicate-source RBAC fixture")
+    owner.execute(
+        "UPDATE panadan_ingest.sources SET enabled=TRUE WHERE source_key=%s",
+        (key,))
+
+    common = {
+        "id": 71, "tellside": "IntoOut", "voice_length": 45.0,
+        "customername": "PRIVATE-NAME-TEST",
+        "transcription": "PRIVATE-TRANSCRIPT-TEST",
+    }
+    event = SourceEvent("71", "upsert", {
+        "id": 71, "source_schema": "odoo_view_37_v1",
+        "source_rows": [
+            {**common, "possibility_of_sale_ai": 25},
+            {**common, "possibility_of_sale_ai": 80},
+        ],
+    })
+    with _as_role(cfg, "panadan_ingest_writer", WRITER_PASSWORD) as writer:
+        batch = ingest_batch(
+            writer, source_key=key, stream="view_reconciliation_v1",
+            events=[event], expected_cursor=None,
+            next_cursor={"pass": 2, "last_id": 0},
+        )
+        assert batch.upserted == 1
+        # Process all synthetic pending jobs, including this source.
+        for _ in range(100):
+            if not process_next(writer):
+                break
+        else:
+            pytest.fail("Synthetic job queue did not drain")
+
+    with _as_role(cfg, "panadan_report_reader", READER_PASSWORD) as reader:
+        facts = reader.execute(
+            "SELECT fact_key, fact_value FROM panadan_ingest.safe_call_facts_v1 "
+            "WHERE source_key=%s ORDER BY fact_key", (key,)
+        ).fetchall()
+        names = {r["fact_key"] for r in facts}
+        assert names == {"call_direction", "recording_duration"}
+        assert "ai_sales_estimate" not in names
+        assert all("PRIVATE-NAME-TEST" not in str(row) for row in facts)
+        assert all("PRIVATE-TRANSCRIPT-TEST" not in str(row) for row in facts)
+        with pytest.raises(InsufficientPrivilege):
+            reader.execute(
+                "SELECT payload FROM panadan_ingest.raw_revisions "
+                "WHERE source_key=%s", (key,)
+            )
