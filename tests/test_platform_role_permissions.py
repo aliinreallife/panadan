@@ -612,6 +612,6 @@ def test_sensitive_full_mirror_detail_is_audited_and_strictly_scoped(protected_d
             source_identity_verified=True)
         with store.db() as audit:
             audit.execute('DROP TABLE sensitive_mirror_access_audit')
-        with pytest.raises(Exception):
+        with pytest.raises(__import__('sqlite3').OperationalError):
             detail.get_sensitive_call_for_session(
                 conn, store, session_token=allowed_session, call_id=701)
