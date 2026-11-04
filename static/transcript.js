@@ -28,15 +28,26 @@ function matchSpeaker(line) {
  */
 const INLINE_ROLE = /(?<![\p{L}\p{N}\u200c])(مشتری|اپراتور|اپاتور)(?:([:：.،؟؛!])|(?=\s|$))/gu;
 function inlineSpeakers(line) {
-  const matches = [...line.matchAll(INLINE_ROLE)].map(hit => ({
-    index: hit.index,
-    end: hit.index + hit[0].length,
-    speaker: SPEAKER_NAME[hit[1]] || hit[1],
-    explicit: Boolean(hit[2]),
-  }));
+  const matches = [...line.matchAll(INLINE_ROLE)]
+    .filter(hit => {
+      // A word such as "این مشتری" is ordinary prose, not a speaker turn.
+      if (hit[1] !== 'مشتری') return true;
+      const before = line.slice(0, hit.index);
+      const prior = before.match(/([\p{L}\u200c]+)\s*$/u)?.[1];
+      return !/^(?:این|آن|اون|همین|همون|یک|هر|هیچ|بعضی|برای|از|به|با|که|و|را|رو)$/u.test(prior || '');
+    })
+    .map(hit => ({
+      index: hit.index,
+      end: hit.index + hit[0].length,
+      speaker: SPEAKER_NAME[hit[1]] || hit[1],
+      explicit: Boolean(hit[2]),
+    }));
   if (!matches.length || line.slice(0, matches[0].index).trim()) return null;
   if (new Set(matches.map(hit => hit.speaker)).size < 2) return null;
-  if (matches.length < 3 && matches.filter(hit => hit.explicit).length < 1) return null;
+  const explicit = matches.filter(hit => hit.explicit).length;
+  const switches = matches.slice(1).filter((hit, i) => hit.speaker !== matches[i].speaker).length;
+  if (matches.length < 3 && !explicit) return null;
+  if (matches.length >= 3 && switches < 2 && !explicit) return null;
   return matches;
 }
 
