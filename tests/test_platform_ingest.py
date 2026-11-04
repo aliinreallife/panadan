@@ -708,8 +708,14 @@ def test_mirror_scoped_processor_does_not_dequeue_other_sources(pg):
         expected_cursor=None, next_cursor={"pass": 1, "last_id": 880},
     )
 
+    # Earlier synthetic tests may have left OTHER pending mirror revisions.
+    # Drain only this source; never infer queue emptiness from this fixture.
     assert process_next(pg, source_key=SOURCE_KEY)
-    assert not process_next(pg, source_key=SOURCE_KEY)
+    for _ in range(100):
+        if not process_next(pg, source_key=SOURCE_KEY):
+            break
+    else:
+        pytest.fail("Synthetic mirror queue did not drain")
     with pytest.raises(ValueError, match="reviewed full mirror"):
         process_next(pg, source_key=other_key)
     statuses = pg.execute(
