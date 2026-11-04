@@ -218,5 +218,12 @@ def test_snapshot_rejects_divergent_parent_anchors():
 
 
 def test_snapshot_requires_monotonic_positive_ids():
-    with pytest.raises(ValueError):
-        full.read_snapshot_page(Source([record(0)]), after_id=0)
+    with pytest.raises(ValueError, match='checkpoint'):
+        full.read_snapshot_page(Source([record(0)]), after_id=-1)
+
+    class BrokenOrder:
+        def execute(self, sql, params):
+            return Result([record(2), record(1)])
+
+    with pytest.raises(ValueError, match='Unordered'):
+        full.read_snapshot_page(BrokenOrder(), after_id=0)
