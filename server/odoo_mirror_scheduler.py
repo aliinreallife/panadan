@@ -14,6 +14,7 @@ import time
 
 from . import database, odoo_full_mirror_pilot as pilot
 from . import odoo_sync_pilot as guarded
+from . import odoo_mirror_target as mirror_target
 from .platform_processing import process_next
 
 # Even if operators supply huge CLI values, enforce a small, bounded tick.
@@ -99,7 +100,7 @@ def tick(args: argparse.Namespace) -> dict:
             or not 10 <= args.max_tick_seconds <= MAX_TICK_SECONDS):
         raise ValueError("Invalid tick resource budget")
     deadline = time.monotonic() + args.max_tick_seconds
-    with guarded.owned_connection() as target:
+    with mirror_target.owned_connection() as target:
         with guarded.exclusive_pilot(target):
             before = pilot.local_status(target)
             # No processing or source IO if the source has not been enabled
@@ -185,7 +186,7 @@ def main(argv=None) -> int:
             args.command = "snapshot-run"
             print("FULL MIRROR TICK:", tick(args))
             return 0
-        with guarded.owned_connection() as target:
+        with mirror_target.owned_connection() as target:
             result = health(
                 pilot.local_status(target),
                 max_stale_seconds=args.max_stale_seconds)
