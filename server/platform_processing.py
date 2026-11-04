@@ -80,21 +80,37 @@ def public_call_facts(payload: Mapping[str, object]) -> dict[str, object]:
     return out
 
 
-def process_next(conn) -> bool:
+def process_next(conn, *, source_key: str | None = None) -> bool:
     """Atomically claim/process one job (SKIP LOCKED) with versioned facts.
 
     A SQL/processing failure rolls back the job and facts for a later retry.
+    Optional source scope is limited to the explicit full-mirror source so
+    the supervised worker cannot accidentally drain unrelated pipelines.
     The pending queue is not an external queue; separate processes may safely
     call this function concurrently on Panadan's own PostgreSQL connection.
     """
     with conn.transaction():
-        job = conn.execute(
-            """SELECT job_id, revision_id
-               FROM panadan_ingest.processing_jobs
-               WHERE status = 'pending' AND processor = %s AND processor_version = %s
-               ORDER BY job_id FOR UPDATE SKIP LOCKED LIMIT 1""",
-            (PIPELINE_NAME, PIPELINE_VERSION),
-        ).fetchone()
+        if source_key is not None:
+            if source_key != "odoo_calls_full_v1":
+                raise ValueError("Scoped processing supports only the reviewed full mirror")
+            job = conn.execute(
+                """SELECT j.job_id, j.revision_id
+                   FROM panadan_ingest.processing_jobs AS j
+                   JOIN panadan_ingest.raw_revisions AS r
+                     ON r.revision_id=j.revision_id
+                   WHERE j.status='pending' AND j.processor=%s
+                     AND j.processor_version=%s AND r.source_key=%s
+                   ORDER BY j.job_id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
+                (PIPELINE_NAME, PIPELINE_VERSION, source_key),
+            ).fetchone()
+        else:
+            job = conn.execute(
+                """SELECT job_id, revision_id
+                   FROM panadan_ingest.processing_jobs
+                   WHERE status = 'pending' AND processor = %s AND processor_version = %s
+                   ORDER BY job_id FOR UPDATE SKIP LOCKED LIMIT 1""",
+                (PIPELINE_NAME, PIPELINE_VERSION),
+            ).fetchone()
         if job is None:
             return False
         rev = conn.execute(
