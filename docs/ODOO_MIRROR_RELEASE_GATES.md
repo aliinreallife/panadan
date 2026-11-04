@@ -219,3 +219,29 @@ A one-shot manual transfer avoids weakening either network boundary:
   authorization scope. **Do not enable the staging dashboard yet.**
 
 This is a staging pilot, not a production recovery/synchronization solution.
+
+
+## Larger supervised staging pages after first 275 calls (2026-11-04)
+
+Operator verification results: 275 current records, 275 historical revisions,
+11 committed 25-row pages, source disabled, all 37 view fields present.
+The 275-row encrypted VPS-local backup passed an independent PG18 restore drill
+and payload/checkpoint comparison; the first 25 and the latest 25 source calls
+passed fresh Odoo-to-staging parity. These source checks are bounded samples,
+not proof of whole-view consistency.
+
+A follow-up transport revision supports **up to 100 source rows per page**
+while keeping the **55,000,000-byte wire ceiling** and the 2 MB per-event
+ceiling. The operator must first test a read-only 100-row export/validation
+from the current pass-1 checkpoint. No raw customer JSON may be printed or
+persisted. The manual `tools/run-odoo-mirror-staging-next.sh` helper
+is limited to **3 pages x 100 source rows**, checks the cursor against the
+maximum staged ID, and disables the staging source after each page and on
+trapped failures. Duplicate source rows remain grouped without choosing one
+AI analysis. A malformed page or failed cursor CAS must fail closed.
+
+Do not start the write batch until the 100-row read-only test and full branch
+CI have passed. Recheck the staging source is disabled after the batch, then
+run integrity / independent encrypted restore / fresh source parity again.
+Production dashboard, Web, VPN topology, and MCP stay unchanged. Local backup
+remains insufficient as a production disaster recovery plan.
