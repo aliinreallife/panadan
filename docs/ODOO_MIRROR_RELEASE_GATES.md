@@ -175,3 +175,47 @@ roles, connect the dashboard to production, or schedule automatic copying.
 For exact project-specific staging command syntax and SQL migration review,
 see `docs/ODOO_FULL_MIRROR_PRODUCTION.md`. Do not paste passwords,
 transcripts or complete DSN files into issues or ChatGPT.
+
+
+## First-page staging pipe transport (2026-11-04)
+
+The project operator elected to **defer encrypted off-host backups for the
+isolated staging experiment only**, after passing an independent restore
+drill on an empty database. This is a *knowingly accepted staging recovery
+risk*; an existing VPS-local empty-db dump and restore drill are not an
+off-host recovery plan and do not satisfy production release gates.
+After a real-data import, perform a NEW encrypted local backup and independent
+restore check; no production cutover is permitted without approved DR.
+
+The existing production VPN namespace can read Odoo, but the protected
+staging writer accepts only `127.0.0.1:55432` in the VPS host namespace.
+A one-shot manual transfer avoids weakening either network boundary:
+
+`tools/run-odoo-mirror-staging-page.sh first-page
+--ack-source-contract --ack-retention --ack-copy --ack-sensitive-data`
+
+- Exporter runs a temporary, locked-down container sharing only the existing
+  VPN namespace. It checks Odoo `report_user` + READ ONLY, validates the
+  fixed 37-column schema, and fetches **at most 25 source rows**.
+- Exported JSON (which is **sensitive**) travels exclusively via a Unix
+  process pipe to an independent temporary importer container. Never echo,
+  tee, redirect, inspect, or save exporter stdout. The source container
+  disables Docker's stdout log driver to avoid preserving the stream in
+  container logs.
+- Importer uses a separately mounted `0600` restricted staging writer
+  DSN, host localhost `127.0.0.1:55432`, and a snapshot cursor check.
+  It verifies the canonical digest, all expected field names/types, source
+  ID ordering, duplicate-group completeness, payload-size budgets and
+  stable `call_id`/`create_date` identity anchors **before** the atomic
+  checkpoint/ingestion transaction.
+- Each invocation requires the four explicit acknowledgements, an independently
+  enabled staging source, and **zero preexisting mirrored records**. This
+  first-page helper **must not** be used to resume a complete scan.
+- No Odoo writes, no tunnel reconfiguration, no unprotected full DB role,
+  no production dashboard cutover, no plaintext export file, and no
+  automatic scheduled job are introduced.
+- Before granting any staging users access to sensitive detail, the Odoo
+  owner must independently confirm numeric operator-ID semantics and
+  authorization scope. **Do not enable the staging dashboard yet.**
+
+This is a staging pilot, not a production recovery/synchronization solution.
