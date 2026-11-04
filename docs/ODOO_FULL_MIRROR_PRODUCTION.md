@@ -472,3 +472,44 @@ scan, check retained missing-record behavior, test recovery, verify all
 operator assignments and sensitive audit rules, and record the
 data owner's consent and retention/erasure decision. No activation or
 production copy has happened through this PR.
+
+
+## Operator grant admin page and safe staging MCP (draft)
+
+An **explicitly gated** administrative page is now available in source code
+at `/dashboard/operator-scopes` only when
+`PANADAN_MIRROR_SCOPE_ADMIN_ENABLE=YES` and Panadan uses the current
+SQLite authentication authority. Default: hidden/404, including if a
+PostgreSQL-staging auth store is active. The page requires an authenticated
+Panadan administrator and correct CSRF token to create/revoke a manually
+verified numeric Odoo operator mapping; a required checkbox records the
+administrator's assertion that the ID and user entitlement were checked
+independently with the Odoo owner. All changes use the server-side Store's
+existing grant rules, revoke immediately on the next read, and write
+security audit metadata. Never interpret ticking the checkbox alone as
+proof of an actual authorization agreement. A scoped listing of approved
+IDs is available only to active admins. No Odoo write or copy is triggered.
+
+The isolated `server/odoo_staging_app.py` additionally mounts
+`/mcp/` behind a separate *loopback-only* transport with exact localhost
+Host/Origin protection and `mcp:read` bearer-token authentication. The
+three MCP tools in `server/odoo_mirror_mcp.py` expose only the
+operator-scoped, sanitized PG18 call list, per-ID summary and aggregate
+count. Each tool call revalidates token scope, active owner and effective
+operator permissions before any PG read. There is NO arbitrary SQL,
+sensitive customer detail, transcript reader, source Odoo query or automatic
+token creation on this staging MCP surface. The public production
+`/mcp` tools remain unchanged and still read their existing source.
+
+Manual staging tests confirm the read-only API is independent. Synthetic
+MCP JSON-RPC transport tests exercise initialization, list/call,
+revocation, invalid token denial and no fallback to live Odoo on a missing
+local DB. Do not proxy this loopback-only staging MCP publicly: a proxy
+can appear as a localhost peer to the app. This is not the approved
+production OAuth MCP cutover.
+
+**Bottom line:** staged API and safe MCP tools are implemented, but full
+product cutover, public ingress and customer copy are still gated on
+validated Odoo source identity, legal/retention approvals and a reviewed
+production authorization/backup/restore plan. See
+`docs/ODOO_MIRROR_RELEASE_GATES.md` for the complete checklist.
