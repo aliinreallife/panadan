@@ -549,127 +549,111 @@ def test_odoo_write_date_end_to_end_local_pg_backfill_then_old_row_update(pg):
 
 
 def test_full_mirror_pilot_pg18_insert_update_replay_and_missing_row_retention(pg):
-    """Synthetic source -> disposable PG18 only; proves full-field persistence.
+    """Synthetic joined rows -> disposable PG18 with revisions and replay.
 
-    Never reads the live Odoo view. Distinct source key and pre-existing
-    disposable PG fixture prevent touching production data or cursors.
+    Does not touch live Odoo, and checks detection of child-only changes that
+    do NOT advance the parent call's write_date.
     """
     from datetime import date, datetime, timedelta, timezone
     from server import odoo_full_mirror_adapter as full
     from server import odoo_full_mirror_pilot as pilot
-    from server import odoo_sync_adapter as legacy
 
     now = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)
+    old = now - timedelta(minutes=60)
 
-    def record(call_id, updated, summary):
+    def record(call_id, summary, *, score=50):
         values = {}
         for name, kind in full.COLUMN_TYPES:
             if kind == 'integer':
                 values[name] = 1
             elif kind == 'double precision':
                 values[name] = 1.25
-            elif kind == 'character varying' or kind == 'text':
+            elif kind in ('character varying', 'text'):
                 values[name] = 'SYNTHETIC ONLY'
             elif kind == 'date':
                 values[name] = date(2026, 11, 4)
             elif kind == 'timestamp without time zone':
-                values[name] = updated.replace(tzinfo=None)
+                values[name] = old.replace(tzinfo=None)
             elif kind == 'jsonb':
                 values[name] = {'en_US': 'Synthetic'}
             else:
-                pytest.fail('Unrecognized synthetic full-mirror type')
-        values['id'] = call_id
-        values['summary'] = summary
-        values['transcription'] = 'FAKE-TRANSCRIPT\n' * 100
-        values['customertell'] = '0000000000'
-        values['customername'] = 'SYNTHETIC PERSON'
+                pytest.fail('Unknown synthetic field')
+        values.update(
+            id=call_id, summary=summary, possibility_of_sale_ai=score,
+            transcription='FAKE-TRANSCRIPT\\n' * 100,
+            customertell='0000000000', customername='SYNTHETIC PERSON')
         return values
 
     class Result:
-        def __init__(self, rows=(), row=None):
+        def __init__(self, rows=()):
             self.rows = list(rows)
-            self.row = row
+
         def fetchall(self):
             return self.rows
-        def fetchone(self):
-            return self.row
 
     class SyntheticOdoo:
         def __init__(self):
-            self.clock = now
-            old = now - timedelta(minutes=60)
-            self.records = {i: record(i, old, 'Original')
-                            for i in (1, 2)}
+            self.records = [record(1, 'Original'), record(2, 'Original')]
 
         def execute(self, sql, params=None):
             if sql == full.SCHEMA_SQL:
-                return Result(rows=[
-                    {'column_name': name, 'data_type': kind,
-                     'is_nullable': 'YES'}
-                    for name, kind in full.COLUMN_TYPES
-                ])
-            if sql == legacy.SOURCE_CLOCK_SQL:
-                return Result(row={'source_now': self.clock})
+                return Result([
+                    {'column_name': name, 'data_type': kind, 'is_nullable': 'YES'}
+                    for name, kind in full.COLUMN_TYPES])
             if sql == full.ID_SQL:
                 after_id, limit = params
-                return Result(rows=sorted(
-                    (row for row in self.records.values()
-                     if row['id'] > after_id),
+                return Result(sorted(
+                    (row for row in self.records if row['id'] > after_id),
                     key=lambda row: row['id'])[:limit])
-            if sql == full.CHANGE_SQL:
-                lower, upper, position_ts, position_id, limit = params
-                return Result(rows=sorted(
-                    (row for row in self.records.values()
-                     if lower <= row['write_date'] <= upper
-                     and (row['write_date'], row['id'])
-                     > (position_ts, position_id)),
-                    key=lambda row: (row['write_date'], row['id']))[:limit])
-            raise AssertionError('Source access must be fixed read-only SQL')
+            raise AssertionError('Only fixed read-only view SQL is permitted')
 
-    fake = SyntheticOdoo()
+    source = SyntheticOdoo()
     key = pilot.SOURCE_KEY
     register_source(pg, source_key=key, kind='database',
-                    label='Synthetic full-field mirror')
-    registry = pg.execute(
+                    label='Synthetic snapshot mirror')
+    assert pg.execute(
         'SELECT enabled FROM panadan_ingest.sources WHERE source_key=%s',
-        (key,)).fetchone()
-    assert registry['enabled'] is False
-    with pytest.raises(ValueError, match='not enabled'):
-        pilot._seed(fake, pg)
+        (key,)).fetchone()['enabled'] is False
 
-    # Only the owned synthetic PG18 database owner can activate this fixture.
+    with pytest.raises(ValueError, match='not enabled'):
+        pilot._snapshot(source, pg, limit=100)
+
     pg.execute('UPDATE panadan_ingest.sources SET enabled=TRUE WHERE source_key=%s',
                (key,))
-    seed = pilot._seed(fake, pg)
-    assert seed['cursor_stored']
-    first = pilot._backfill(fake, pg, limit=100)
-    assert first['examined'] == 2
-    assert first['changed'] == 2 and not first['more']
-    assert pilot.verify_sample(fake, pg, limit=100)['all_match']
-    assert pilot.local_status(pg)['local_records'] == 2
+    first = pilot._snapshot(source, pg, limit=100)
+    assert first['calls'] == 2 and first['changed'] == 2
+    assert first['pass_complete']
+    assert pilot.verify_sample(source, pg, limit=100)['all_match']
 
-    # Two changes with identical timestamps: an existing row is updated and
-    # one new call arrives. Existing revision is preserved.
-    updated = now + timedelta(minutes=2)
-    fake.clock = now + timedelta(minutes=8)
-    fake.records[1] = record(1, updated, 'Updated')
-    fake.records[3] = record(3, updated, 'New')
-    polled = pilot._updates(fake, pg, limit=100)
-    assert polled['examined'] == 2
-    assert polled['changed'] == 2 and not polled['more']
-    assert pilot.verify_sample(fake, pg, limit=100)['all_match']
+    # Replaying an unchanged full pass must produce zero new revisions.
+    replay = pilot._snapshot(source, pg, limit=100)
+    assert replay['changed'] == 0 and replay['unchanged'] == 2
 
-    # Source record #2 disappears: do NOT delete or tombstone locally.
-    fake.records.pop(2)
-    fake.clock += timedelta(minutes=2)
-    replay = pilot._updates(fake, pg, limit=100)
-    assert replay['changed'] == 0
+    # Joined analysis changes without changing parent write_date. One
+    # duplicated call is preserved as two distinct view-row variants.
+    source.records[0]['summary'] = 'Updated'
+    source.records.append(record(1, 'Other analysis', score=90))
+    source.records.append(record(3, 'New'))
+    changed = pilot._snapshot(source, pg, limit=100)
+    assert changed['changed'] == 2
+    assert changed['source_rows'] == 4
+    assert pilot.verify_sample(source, pg, limit=100)['all_match']
+
+    # Same rows but reverse tie order: canonical grouping is idempotent.
+    source.records.reverse()
+    replay = pilot._snapshot(source, pg, limit=100)
+    assert replay['changed'] == 0 and replay['unchanged'] == 3
+
+    # A missing upstream call is never tombstoned in the local store.
+    source.records = [row for row in source.records if row['id'] != 2]
+    absence = pilot._snapshot(source, pg, limit=100)
+    assert absence['changed'] == 0
     assert pilot.local_status(pg)['local_records'] == 3
-    still_there = pg.execute(
+    stored_two = pg.execute(
         'SELECT is_deleted, revision_no FROM panadan_ingest.source_records '
         'WHERE source_key=%s AND external_id=%s',
         (key, '2')).fetchone()
-    assert still_there == {'is_deleted': False, 'revision_no': 1}
+    assert stored_two == {'is_deleted': False, 'revision_no': 1}
 
     stored = pg.execute(
         'SELECT revision_no, operation, payload FROM panadan_ingest.raw_revisions '
@@ -677,8 +661,7 @@ def test_full_mirror_pilot_pg18_insert_update_replay_and_missing_row_retention(p
         (key, '1')).fetchall()
     assert [entry['revision_no'] for entry in stored] == [1, 2]
     assert [entry['operation'] for entry in stored] == ['upsert', 'upsert']
-    assert stored[0]['payload']['summary'] == 'Original'
-    assert stored[1]['payload']['summary'] == 'Updated'
-    assert len(stored[1]['payload']) == 37
-    assert stored[1]['payload']['transcription'] == 'FAKE-TRANSCRIPT\n' * 100
+    assert stored[0]['payload']['source_rows'][0]['summary'] == 'Original'
+    assert len(stored[1]['payload']['source_rows']) == 2
+    assert all(len(r) == 37 for r in stored[1]['payload']['source_rows'])
     assert pilot.local_status(pg)['local_revisions'] == 4
