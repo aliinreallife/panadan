@@ -8,8 +8,6 @@ pilot lock. No Odoo writes, deletion, public endpoint or raw customer logging.
 """
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import argparse
 import sys
 import time
