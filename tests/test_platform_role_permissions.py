@@ -323,3 +323,109 @@ def test_local_mirror_listing_enforces_scopes_and_excludes_ambiguous_operator(pr
 
     with pytest.raises(ValueError, match="Restricted"):
         local.list_calls(owner, operator_ids=[11])
+
+
+
+def test_authenticated_local_reporting_uses_verified_scopes_only(protected_db, tmp_path):
+    """Both browser and API token are bound to approved local user IDs."""
+    from server import odoo_local_reporting as local
+    from server.security import Store
+
+    cfg, owner = protected_db
+    register_source(owner, source_key=local.SOURCE_KEY, kind="database",
+                    label="Synthetic session-scoped mirror")
+    owner.execute(
+        "UPDATE panadan_ingest.sources SET enabled=TRUE WHERE source_key=%s",
+        (local.SOURCE_KEY,),
+    )
+    with _as_role(cfg, "panadan_ingest_writer", WRITER_PASSWORD) as writer:
+        events = [
+            SourceEvent(str(cid), "upsert", {
+                "id": cid, "source_schema": "odoo_view_37_v1",
+                "source_rows": [{
+                    "id": cid, "CALLDATE": "2026-11-04",
+                    "vw_danix_base_info_users": operator,
+                    "tellside": "IntoOut",
+                    "voice_length": 30.0,
+                    "customername": "HIDDEN PERSONAL DATA",
+                    "transcription": "HIDDEN PERSONAL TRANSCRIPT",
+                }],
+            })
+            for cid, operator in ((301, 11), (302, 22))
+        ]
+        result = ingest_batch(
+            writer, source_key=local.SOURCE_KEY,
+            stream="user_scope_fixture", events=events,
+            expected_cursor=None, next_cursor={"pass": 1, "last_id": 302},
+        )
+        assert result.upserted == 2
+
+    store = Store(str(tmp_path / "isolated-authority.sqlite"))
+    store.bootstrap("scope_admin", "example-very-long-bootstrap-password")
+    admin_id = store.verify_login("scope_admin", "example-very-long-bootstrap-password")
+    alice_id = store.create_user("reader_alice", "alice-secret-password-long", "reader")
+    bob_id = store.create_user("reader_bob", "bobby-secret-password-long", "reader")
+    alice_session, _ = store.create_session(alice_id)
+    bob_session, _ = store.create_session(bob_id)
+    _, alice_token = store.create_token("alice", "api:read", 7, owner_id=alice_id)
+
+    with _as_role(cfg, "panadan_report_reader", READER_PASSWORD) as reader:
+        assert local.list_calls_for_session(
+            reader, store, session_token=alice_session) == []
+        assert local.count_calls_for_session(
+            reader, store, session_token=alice_session) == 0
+
+        # Role alone, including admin role, does not grant a wildcard.
+        with pytest.raises(ValueError, match="identity"):
+            store.authorize_operator_scope(
+                admin_id=admin_id, user_id=alice_id, operator_id=11)
+
+        store.authorize_operator_scope(
+            admin_id=admin_id, user_id=alice_id, operator_id=11,
+            source_identity_verified=True)
+        store.authorize_operator_scope(
+            admin_id=admin_id, user_id=bob_id, operator_id=22,
+            source_identity_verified=True)
+
+        a_rows = local.list_calls_for_session(
+            reader, store, session_token=alice_session)
+        b_rows = local.list_calls_for_session(
+            reader, store, session_token=bob_session)
+        assert [r["call_id"] for r in a_rows] == [301]
+        assert [r["call_id"] for r in b_rows] == [302]
+        assert local.get_call_for_session(
+            reader, store, session_token=alice_session, call_id=302) is None
+        assert local.get_call_for_session(
+            reader, store, session_token=bob_session, call_id=301) is None
+        assert local.count_calls_for_session(
+            reader, store, session_token=alice_session) == 1
+        assert [r["call_id"] for r in local.list_calls_for_token(
+            reader, store, token=alice_token)] == [301]
+        assert local.get_call_for_token(
+            reader, store, token=alice_token, call_id=302) is None
+        assert local.count_calls_for_token(reader, store, token=alice_token) == 1
+        assert all("HIDDEN PERSONAL" not in str(r) for r in a_rows + b_rows)
+
+        for raw_session in ("fake-session", "", None):
+            with pytest.raises(PermissionError):
+                local.list_calls_for_session(
+                    reader, store, session_token=raw_session)
+        with pytest.raises(PermissionError):
+            local.list_calls_for_token(
+                reader, store, token="wrong-token")
+        with pytest.raises(ValueError, match="Unsupported"):
+            local.list_calls_for_token(
+                reader, store, token=alice_token, service_scope="api:sensitive")
+
+        # Immediate revocation of an already-issued browser session/API token.
+        store.revoke_operator_scope(
+            admin_id=admin_id, user_id=alice_id, operator_id=11)
+        assert local.list_calls_for_session(
+            reader, store, session_token=alice_session) == []
+        assert local.list_calls_for_token(
+            reader, store, token=alice_token) == []
+
+        store.update_user(bob_id, "reader", None, False, admin_id)
+        with pytest.raises(PermissionError):
+            local.list_calls_for_session(
+                reader, store, session_token=bob_session)
