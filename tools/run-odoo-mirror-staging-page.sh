@@ -78,7 +78,7 @@ echo "Starting a bounded Odoo -> staging transfer (max 25 source rows) ..." >&2
 # should echo source JSON or write payloads to application/CLI logs.
 sudo docker run --rm \
   --name panadan-mirror-vpn-page-export \
-  --pull=never \
+  --pull=never --log-driver=none \
   --network container:panadan-vpn-1 \
   --read-only --cap-drop=ALL --security-opt no-new-privileges \
   --user "$(id -u):$(id -g)" --memory=256m --pids-limit=128 \
@@ -89,7 +89,7 @@ sudo docker run --rm \
   -m server.odoo_mirror_transfer export --batch-size 25 --after-id 0 \
 | sudo docker run --rm -i \
   --name panadan-mirror-host-page-import \
-  --pull=never --network host \
+  --pull=never --log-driver=none --network host \
   --read-only --cap-drop=ALL --security-opt no-new-privileges \
   --user "$(id -u):$(id -g)" --memory=256m --pids-limit=128 \
   -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/opt/panadan \
