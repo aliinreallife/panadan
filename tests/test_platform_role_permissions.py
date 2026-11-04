@@ -351,7 +351,7 @@ def test_authenticated_local_reporting_uses_verified_scopes_only(protected_db, t
                     "transcription": "HIDDEN PERSONAL TRANSCRIPT",
                 }],
             })
-            for cid, operator in ((301, 11), (302, 22))
+            for cid, operator in ((301, 111), (302, 222))
         ]
         result = ingest_batch(
             writer, source_key=local.SOURCE_KEY,
@@ -378,13 +378,13 @@ def test_authenticated_local_reporting_uses_verified_scopes_only(protected_db, t
         # Role alone, including admin role, does not grant a wildcard.
         with pytest.raises(ValueError, match="identity"):
             store.authorize_operator_scope(
-                admin_id=admin_id, user_id=alice_id, operator_id=11)
+                admin_id=admin_id, user_id=alice_id, operator_id=111)
 
         store.authorize_operator_scope(
-            admin_id=admin_id, user_id=alice_id, operator_id=11,
+            admin_id=admin_id, user_id=alice_id, operator_id=111,
             source_identity_verified=True)
         store.authorize_operator_scope(
-            admin_id=admin_id, user_id=bob_id, operator_id=22,
+            admin_id=admin_id, user_id=bob_id, operator_id=222,
             source_identity_verified=True)
 
         a_rows = local.list_calls_for_session(
@@ -419,7 +419,7 @@ def test_authenticated_local_reporting_uses_verified_scopes_only(protected_db, t
 
         # Immediate revocation of an already-issued browser session/API token.
         store.revoke_operator_scope(
-            admin_id=admin_id, user_id=alice_id, operator_id=11)
+            admin_id=admin_id, user_id=alice_id, operator_id=111)
         assert local.list_calls_for_session(
             reader, store, session_token=alice_session) == []
         assert local.list_calls_for_token(
