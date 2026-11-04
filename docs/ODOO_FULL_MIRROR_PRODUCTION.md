@@ -51,6 +51,21 @@ This **replaces the earlier proposed seven-day/limited-field production target**
 - The current local PG dump is **not** off-host recovery. Source Odoo backups cannot restore Panadan-only changes, account data, cursor state or revision history. The operator currently accepts the off-host recovery risk, but the risk must be documented; practice a restore before changing the dashboard read path.
 - The server has an operator-owned untracked `prodctl.sh` and hardened Plane/Caddy/VPN networks. **Do not** replace it or invoke a bare Compose up/down. Keep the live Web/VPN/Plane stack unchanged until a reviewed, reversible deployment is approved.
 
+## New release blocker — real Odoo view has duplicate ID (2026-11-04)
+
+The operator ran a full-view, read-only count against `public.vw_danix_call_info_report`:
+
+- `COUNT(*) = 95,495`
+- `COUNT(id) = 95,495` (no NULL IDs)
+- `COUNT(DISTINCT id) = 95,494`
+- `COUNT(*) FILTER (WHERE write_date IS NULL) = 0`
+
+**Exactly one ID has two occurrences.** This invalidates the global unique-ID assumption for both the eight-field pilot and new 37-field mirror. The current keyset `WHERE id > checkpoint` pagination can skip one duplicate at a page boundary, and per-ID ingestion may coalesce two distinct rows or miss changes. The timestamp+ID cursor also cannot uniquely distinguish rows with the same ID and timestamp.
+
+**Block all production imports, even a 100-record pilot, until the duplicate's root cause is understood and a stable unique row identity or upstream view fix is approved and tested.** Do not silently `DISTINCT`/deduplicate, trust `call_id` without a full uniqueness/stability audit, overwrite both under the same `id`, or increase page size as a substitute.
+
+Next read-only diagnostic: identify the duplicate ID internally without printing it, fetch only its two rows, and output *column names that differ* plus whether the rows are byte-for-byte equivalent at the Python field-value level. Never output any source ID, name, phone number, transcript or raw field values. If they differ, investigate JOIN/cardinality and request a unique, stable source key or view fix from the Odoo DBA. If they are identical, determine why the source emits duplicate rows before selecting a source-side canonicalization strategy. Prove the final uniqueness guarantee globally and regress pagination across a duplicate page boundary before approval.
+
 ## Staged delivery / acceptance criteria
 
 1. **Audit + test-first implementation:** Collect live metadata and safe size statistics; verify source IDs and update semantics; add full-field adapter, schema-drift guard, type preservation, >2MB handling and tests with synthetic sensitive data.
