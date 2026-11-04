@@ -70,6 +70,26 @@ This **replaces the earlier proposed seven-day/limited-field production target**
 - **Crucially, this is only a reader module**, not a production-import-ready worker. No live code path, scheduler or database write has been wired to it; the existing restricted eight-field pilot remains unchanged.
 - Actual full-field writes still need payload-size handling (existing `server/platform_ingest.py` limit: 2,000,000 JSON bytes/record), new guarded worker, parity/recovery tests, authorization, and approved deployment.
 
+## Verified live size samples — 2026-11-04
+
+The operator queried the authorized production view in **read-only** mode and reported:
+
+| Source ID sample | Rows | Largest transcript | Largest JSONB full record | Over 2,000,000 bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Lowest IDs (ASC) | 100 | 0 bytes | 4,523 bytes | 0 |
+| Highest IDs (DESC) | 100 | 25,300 bytes | 30,748 bytes | 0 |
+
+This measures PostgreSQL `octet_length(to_jsonb(view_row)::text)`, **not** exactly the Python serialized payload; it is a reassuring size estimate, not a whole-dataset maximum. The current **2 MB writer cap remains unchanged**, and any oversized record must fail visibly without truncation until a reviewed large-payload implementation exists.
+
+## Isolated full-field pilot code (draft only)
+
+- `server/odoo_full_mirror_pilot.py` provides manually invoked `status`, `preview`, `verify`, `seed`, `backfill` and `updates` commands with a separate `odoo_calls_full_v1` source key, so the full-field cursors never mix with the existing `odoo_calls` eight-field pilot.
+- No scheduler, no auto-registration, no automatic source activation, no Odoo write and no deletion operation. Runtime uses the restricted `panadan_ingest_writer` target via the already validated private DSN. `seed` still runs before backfill and all writes go through the existing atomic checkpoint/revision store.
+- Full-field pilot writes require all four explicit flags `--ack-source-contract --ack-retention --ack-copy --ack-sensitive-data`, an **owner-registered/enabled** dedicated source, one page of at most 100 records, and secure source/data-owner approvals. These flags do **not** override the independent production deployment/recovery approvals.
+- The CLI currently fails closed for a JSON payload exceeding 2 MB; it does not silently drop or truncate a long transcript.
+- Synthetic tests cover fail-closed approvals, bounded previews, source-disabled refusal and upsert-only behavior. Actual CI and disposable-PG18 integration results must be checked before any production invocation.
+- The full-field pilot module is **not part of the live Web runtime deployment**, and the dedicated source has not been registered or enabled on production. Do not run its write commands on the VPS now.
+
 ## Existing implementation gaps (reviewed 2026-11-04)
 
 - `server/odoo_sync_adapter.py` only selects eight restricted fields plus one update marker; it excludes names, phones, transcripts and most reporting metadata.
