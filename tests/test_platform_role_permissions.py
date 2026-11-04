@@ -53,6 +53,9 @@ def protected_db():
         owner.execute(perms)
         # Grant/VIEW migration must be safely re-applicable.
         owner.execute(perms)
+        mirror_perms = Path("database/permissions/003_full_mirror_safe_reporting.sql").read_text()
+        owner.execute(mirror_perms)
+        owner.execute(mirror_perms)
         register_source(owner, source_key="roles_synthetic", kind="manual",
                         label="Disposable permission fixture")
         owner.execute("""
@@ -233,3 +236,90 @@ def test_full_mirror_conflicting_variants_are_not_exposed_to_reporting_role(prot
                 "SELECT payload FROM panadan_ingest.raw_revisions "
                 "WHERE source_key=%s", (key,)
             )
+
+
+
+def test_local_mirror_listing_enforces_scopes_and_excludes_ambiguous_operator(protected_db):
+    """One combined staging test: PG SQL projection + role + Python scope."""
+    from server import odoo_local_reporting as local
+
+    cfg, owner = protected_db
+    register_source(owner, source_key=local.SOURCE_KEY, kind="database",
+                    label="Synthetic scoped mirror")
+    owner.execute(
+        "UPDATE panadan_ingest.sources SET enabled=TRUE WHERE source_key=%s",
+        (local.SOURCE_KEY,))
+
+    def variant(identity, operator_id, *, score=50, state="SoldOut"):
+        return {
+            "id": identity, "CALLDATE": "2026-11-04",
+            "vw_danix_base_info_users": operator_id,
+            "tellside": "IntoOut", "tellstate": "FirstToch",
+            "aicallinfostate": state, "voice_length": 45.0,
+            "possibility_of_sale_ai": score,
+            "customername": "PRIVATE CUSTOMER NAME",
+            "customertell": "PRIVATE CUSTOMER PHONE",
+            "transcription": "PRIVATE CUSTOMER TRANSCRIPT",
+        }
+
+    def event(identity, variants):
+        return SourceEvent(str(identity), "upsert", {
+            "id": identity, "source_schema": "odoo_view_37_v1",
+            "source_rows": variants,
+        })
+
+    records = [
+        event(101, [variant(101, 11, score=20), variant(101, 11, score=90)]),
+        event(102, [variant(102, 22, score=45)]),
+        # One source call with divergent operator identity: fail closed
+        # instead of exposing it to either operator.
+        event(103, [variant(103, 11), variant(103, 22)]),
+        # No verified operator: not available through a scoped read.
+        event(104, [variant(104, None)]),
+    ]
+    with _as_role(cfg, "panadan_ingest_writer", WRITER_PASSWORD) as writer:
+        ingested = ingest_batch(
+            writer, source_key=local.SOURCE_KEY,
+            stream="view_reconciliation_v1", events=records,
+            expected_cursor=None, next_cursor={"pass": 2, "last_id": 0})
+        assert ingested.upserted == 4
+        with pytest.raises(InsufficientPrivilege):
+            writer.execute("SELECT * FROM panadan_ingest.safe_mirror_call_listing_v1")
+
+    with _as_role(cfg, "panadan_report_reader", READER_PASSWORD) as reader:
+        eleven = local.list_calls(reader, operator_ids=[11])
+        assert [r["call_id"] for r in eleven] == [101]
+        assert eleven[0]["source_row_count"] == 2
+        assert eleven[0]["ai_sales_score"] is None
+        assert eleven[0]["tellside"] == "IntoOut"
+        twenty_two = local.list_calls(reader, operator_ids=[22])
+        assert [r["call_id"] for r in twenty_two] == [102]
+        assert twenty_two[0]["ai_sales_score"] == 45
+        assert local.count_calls(reader, operator_ids=[11]) == 1
+        assert local.count_calls(reader, operator_ids=[22]) == 1
+        assert local.count_calls(reader, operator_ids=[11, 22]) == 2
+        assert local.count_calls(reader, operator_ids=[]) == 0
+        assert local.list_calls(reader, operator_ids=[]) == []
+        assert local.get_call(reader, operator_ids=[11], call_id=101)["call_id"] == 101
+        assert local.get_call(reader, operator_ids=[22], call_id=101) is None
+        assert local.get_call(reader, operator_ids=[11, 22], call_id=103) is None
+        assert local.get_call(reader, operator_ids=[11, 22], call_id=104) is None
+        assert [r["call_id"] for r in
+                local.list_calls(reader, operator_ids=[11, 22], after_id=101)] == [102]
+        assert all(
+            "PRIVATE CUSTOMER" not in str(row)
+            for row in eleven + twenty_two
+        )
+        with pytest.raises(InsufficientPrivilege):
+            reader.execute("SELECT * FROM panadan_ingest.raw_revisions LIMIT 1")
+        with pytest.raises(ValueError, match="scope"):
+            local.list_calls(reader, operator_ids=None)
+        with pytest.raises(ValueError, match="scope"):
+            local.list_calls(reader, operator_ids=[True])
+        with pytest.raises(ValueError, match="page size"):
+            local.list_calls(reader, operator_ids=[11], limit=500)
+        with pytest.raises(ValueError, match="identity"):
+            local.get_call(reader, operator_ids=[11], call_id=-2)
+
+    with pytest.raises(ValueError, match="Restricted"):
+        local.list_calls(owner, operator_ids=[11])
