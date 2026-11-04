@@ -623,6 +623,12 @@ def test_full_mirror_pilot_pg18_insert_update_replay_and_missing_row_retention(p
     first = pilot._snapshot(source, pg, limit=100)
     assert first['calls'] == 2 and first['changed'] == 2
     assert first['pass_complete']
+    status = pilot.local_status(pg)
+    assert status['completed_passes'] == 1
+    assert status['committed_pages'] == 1
+    assert status['processing_pending'] == 2
+    assert status['processing_failed'] == 0
+    assert status['seconds_since_last_commit'] is not None
     assert pilot.verify_sample(source, pg, limit=100)['all_match']
 
     # Replaying an unchanged full pass must produce zero new revisions.
