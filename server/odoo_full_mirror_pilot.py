@@ -19,6 +19,7 @@ from .platform_ingest import checkpoint, ingest_batch, _validate_events
 SOURCE_KEY = 'odoo_calls_full_v1'
 BACKFILL_STREAM = 'id_backfill_and_new'
 UPDATES_STREAM = 'updated_at'
+SNAPSHOT_STREAM = 'view_reconciliation_v1'
 REQUIRED_ACKS = guarded.REQUIRED_ACKS + ('ack_sensitive_data',)
 
 
@@ -34,6 +35,7 @@ def local_status(target):
         'SELECT enabled FROM panadan_ingest.sources WHERE source_key=%s',
         (SOURCE_KEY,),
     ).fetchone()
+    snapshot = checkpoint(target, source_key=SOURCE_KEY, stream=SNAPSHOT_STREAM)
     record_count = target.execute(
         'SELECT count(*) AS n FROM panadan_ingest.source_records WHERE source_key=%s AND is_deleted=FALSE',
         (SOURCE_KEY,),
@@ -51,6 +53,8 @@ def local_status(target):
             target, source_key=SOURCE_KEY, stream=UPDATES_STREAM) is not None,
         'id_cursor_started': checkpoint(
             target, source_key=SOURCE_KEY, stream=BACKFILL_STREAM) is not None,
+        'snapshot_pass': snapshot['pass'] if isinstance(snapshot, dict) else None,
+        'snapshot_in_progress': bool(snapshot and snapshot.get('last_id', 0)),
     }
 
 
@@ -59,14 +63,16 @@ def preview(*, limit: int = 100):
         raise ValueError('Preview limit must be 1..100')
     with database.connect() as source:
         full.validate_schema(source)
-        events = full.read_id_page(source, after_id=0, limit=limit)
+        events, more, source_rows = full.read_snapshot_page(source, after_id=0, limit=limit)
     sizes = [
         len(json.dumps(entry.payload, sort_keys=True, ensure_ascii=False,
                        allow_nan=False, separators=(',', ':')).encode('utf-8'))
-        for _, _, entry in events
+        for entry in events
     ]
     return {
-        'fields': len(full.COLUMN_NAMES), 'rows_examined': len(events),
+        'fields': len(full.COLUMN_NAMES), 'rows_examined': source_rows,
+        'calls_examined': len(events), 'more': more,
+        'multiple_row_calls': sum(len(e.payload['source_rows']) > 1 for e in events),
         'max_payload_bytes': max(sizes, default=0),
         'over_2mb': sum(n > 2_000_000 for n in sizes),
         'source_is_read_only': True, 'target_unchanged': True,
@@ -77,9 +83,9 @@ def verify_sample(source, target, *, limit: int):
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError('Invalid parity sample size')
     full.validate_schema(source)
-    rows = full.read_id_page(source, after_id=0, limit=limit)
+    events, _, _ = full.read_snapshot_page(source, after_id=0, limit=limit)
     expected = {event.external_id: digest for event, digest in
-                _validate_events([event for _, _, event in rows])}
+                _validate_events(events)}
     known = target.execute(
         'SELECT external_id, current_digest FROM panadan_ingest.source_records '
         'WHERE source_key=%s AND external_id = ANY(%s) AND is_deleted=FALSE',
@@ -90,69 +96,93 @@ def verify_sample(source, target, *, limit: int):
     different = sum(k in present and present[k] != digest
                     for k, digest in expected.items())
     return {
-        'examined': len(rows), 'matched': len(rows) - missing - different,
+        'examined': len(events), 'matched': len(events) - missing - different,
         'missing': missing, 'different': different,
         'all_match': not missing and not different,
     }
 
 
-def _seed(source, target):
-    full.validate_schema(source)
-    if checkpoint(target, source_key=SOURCE_KEY, stream=BACKFILL_STREAM) is not None:
-        raise ValueError('Cannot seed after backfill began')
-    if checkpoint(target, source_key=SOURCE_KEY, stream=UPDATES_STREAM) is not None:
-        raise ValueError('Update cursor already seeded')
-    start = full.initial_change_cursor(full.source_upper_bound(source))
-    ingest_batch(target, source_key=SOURCE_KEY, stream=UPDATES_STREAM,
-                 events=[], expected_cursor=None, next_cursor=start)
-    return {'operation': 'seed', 'cursor_stored': True}
 
 
-def _backfill(source, target, *, limit):
+def _check_identity_reuse(target, events):
+    """Refuse an existing call ID whose stable source identity was replaced.
+
+    Neither call_id nor create_date is printed; legacy payloads must be
+    explicitly migrated, never silently overwritten by the new envelope.
+    """
+    if not events:
+        return
+    keys = [event.external_id for event in events]
+    rows = target.execute(
+        """
+        SELECT current.external_id, revision.payload
+        FROM panadan_ingest.source_records AS current
+        JOIN panadan_ingest.raw_revisions AS revision
+          ON revision.source_key = current.source_key
+         AND revision.external_id = current.external_id
+         AND revision.revision_no = current.revision_no
+        WHERE current.source_key = %s
+          AND current.external_id = ANY(%s)
+          AND current.is_deleted = FALSE
+        """,
+        (SOURCE_KEY, keys),
+    ).fetchall()
+    by_id = {event.external_id: event for event in events}
+    for previous in rows:
+        saved = previous['payload']
+        incoming = by_id[previous['external_id']].payload
+        if (
+            not isinstance(saved, dict)
+            or saved.get('source_schema') != 'odoo_view_37_v1'
+            or not isinstance(saved.get('source_rows'), list)
+            or not saved['source_rows']
+        ):
+            raise ValueError('Existing local source shape is incompatible')
+        old = saved['source_rows'][0]
+        new = incoming['source_rows'][0]
+        if (old.get('call_id'), old.get('create_date')) != (
+            new['call_id'], new['create_date']
+        ):
+            raise ValueError('Source call identity appears reused; refusing overwrite')
+
+
+def _snapshot(source, target, *, limit):
+    """One manual, checkpointed reconciliation page. Never tombstone absence."""
     full.validate_schema(source)
-    seeded = checkpoint(target, source_key=SOURCE_KEY, stream=UPDATES_STREAM)
-    if seeded is None or seeded.get('marker') != full.MARKER:
-        raise ValueError('Seed the full mirror update cursor first')
-    before = checkpoint(target, source_key=SOURCE_KEY, stream=BACKFILL_STREAM)
-    if before is not None and (
-        set(before) != {'last_id'} or
-        type(before['last_id']) is not int or before['last_id'] < 0
+    if (checkpoint(target, source_key=SOURCE_KEY, stream=BACKFILL_STREAM) is not None
+        or checkpoint(target, source_key=SOURCE_KEY, stream=UPDATES_STREAM) is not None):
+        raise ValueError('Legacy full-mirror cursors require explicit migration')
+
+    before = checkpoint(target, source_key=SOURCE_KEY, stream=SNAPSHOT_STREAM)
+    if before is None:
+        pass_number, after_id = 1, 0
+    elif (
+        not isinstance(before, dict) or set(before) != {'pass', 'last_id'}
+        or type(before['pass']) is not int or before['pass'] < 1
+        or type(before['last_id']) is not int or before['last_id'] < 0
     ):
-        raise ValueError('Invalid ID checkpoint')
-    rows = full.read_id_page(
-        source, after_id=0 if before is None else before['last_id'], limit=limit)
-    after = full.id_next_cursor(rows, before)
-    result = ingest_batch(
-        target, source_key=SOURCE_KEY, stream=BACKFILL_STREAM,
-        events=[event for _, _, event in rows],
-        expected_cursor=before, next_cursor=after)
-    return {
-        'operation': 'backfill', 'examined': result.examined,
-        'changed': result.upserted, 'unchanged': result.unchanged,
-        'more': len(rows) == limit,
-    }
+        raise ValueError('Invalid reconciliation checkpoint')
+    else:
+        pass_number, after_id = before['pass'], before['last_id']
 
-
-def _updates(source, target, *, limit):
-    full.validate_schema(source)
-    before = checkpoint(target, source_key=SOURCE_KEY, stream=UPDATES_STREAM)
-    if before is None or before.get('marker') != full.MARKER:
-        raise ValueError('Seed the full mirror update cursor first')
-    window = full.plan_change_window(before, full.source_upper_bound(source))
-    if window is None:
-        return {'operation': 'updates', 'examined': 0, 'changed': 0, 'more': False}
-    low, high, pos = window
-    rows = full.read_change_page(
-        source, lower=low, upper=high, position=pos, limit=limit)
-    after = full.change_next_cursor(before, window, rows, limit)
+    events, more, source_rows = full.read_snapshot_page(
+        source, after_id=after_id, limit=limit)
+    _check_identity_reuse(target, events)
+    if more:
+        if not events:
+            raise ValueError('Snapshot page made no progress')
+        next_cursor = {'pass': pass_number, 'last_id': int(events[-1].external_id)}
+    else:
+        # Completed pass. The next manual invocation starts a new pass.
+        next_cursor = {'pass': pass_number + 1, 'last_id': 0}
     result = ingest_batch(
-        target, source_key=SOURCE_KEY, stream=UPDATES_STREAM,
-        events=[event for _, _, event in rows],
-        expected_cursor=before, next_cursor=after)
+        target, source_key=SOURCE_KEY, stream=SNAPSHOT_STREAM,
+        events=events, expected_cursor=before, next_cursor=next_cursor)
     return {
-        'operation': 'updates', 'examined': result.examined,
+        'operation': 'snapshot', 'pass': pass_number,
+        'source_rows': source_rows, 'calls': result.examined,
         'changed': result.upserted, 'unchanged': result.unchanged,
-        'more': len(rows) == limit,
+        'more': more, 'pass_complete': not more,
     }
 
 
@@ -170,18 +200,14 @@ def apply(args):
             if not source or not source['enabled']:
                 raise ValueError('Full mirror source is not explicitly enabled')
             with database.connect() as source_conn:
-                if args.command == 'seed':
-                    return _seed(source_conn, target)
-                if args.command == 'backfill':
-                    return _backfill(source_conn, target, limit=args.batch_size)
-                if args.command == 'updates':
-                    return _updates(source_conn, target, limit=args.batch_size)
+                if args.command == 'snapshot':
+                    return _snapshot(source_conn, target, limit=args.batch_size)
                 raise ValueError('Unknown mirror operation')
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=('status', 'preview', 'verify', 'seed', 'backfill', 'updates'))
+    p.add_argument('command', choices=('status', 'preview', 'verify', 'snapshot'))
     p.add_argument('--batch-size', type=int, default=100)
     p.add_argument('--max-pages', type=int, default=1)
     p.add_argument('--mode', choices=('utc_naive',), default='utc_naive')
