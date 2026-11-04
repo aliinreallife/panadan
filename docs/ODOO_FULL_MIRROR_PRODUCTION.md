@@ -66,7 +66,7 @@ This **replaces the earlier proposed seven-day/limited-field production target**
 
 - New isolated `server/odoo_full_mirror_adapter.py` explicitly describes **all 37 observed view fields** and performs strict schema/order/type checks before any full-field read.
 - It supports bounded keyset ID pages, `(write_date,id)` update pages, raw call metadata including sensitive names, phones and transcripts, JSONB, date, timestamp and float types. Unrecognized types fail closed; it **does not truncate** transcripts or propagate source disappearance as deletion.
-- New `tests/test_odoo_full_mirror_adapter.py` uses synthetic data only. The full repository CI passed for the draft's adapter and pilot test commit, but live-data and disposable-PG18 end-to-end validation are still required.
+- New `tests/test_odoo_full_mirror_adapter.py` uses synthetic data only. The full repository CI passed for the draft's adapter and pilot test commit, and the new disposable-PG18 integration test passed, but live-data parity, full backfill, sensitive access controls and recovery rehearsal are still required.
 - **Crucially, this remains an isolated, disabled-by-default draft pilot**, not a production-ready worker. A separate operator-only CLI has been added, but no existing live Web, scheduler, database source, read path or restricted eight-field pilot is wired to it.
 - Production readiness still requires audited large-payload handling if needed (existing `server/platform_ingest.py` limit: 2,000,000 JSON bytes/record), broader source-ID/update coverage proof, disposable-PG18 parity/recovery tests, authorization, and approved deployment.
 
@@ -78,8 +78,11 @@ The operator queried the authorized production view in **read-only** mode and re
 | --- | ---: | ---: | ---: | ---: |
 | Lowest IDs (ASC) | 100 | 0 bytes | 4,523 bytes | 0 |
 | Highest IDs (DESC) | 100 | 25,300 bytes | 30,748 bytes | 0 |
+| Offset 1,000 (ASC) | 100 | 0 bytes | 4,196 bytes | 0 |
+| Offset 5,000 (ASC) | 100 | 0 bytes | 4,166 bytes | 0 |
+| Offset 10,000 (ASC) | 100 | 0 bytes | 4,063 bytes | 0 |
 
-This measures PostgreSQL `octet_length(to_jsonb(view_row)::text)`, **not** exactly the Python serialized payload; it is a reassuring size estimate, not a whole-dataset maximum. The current **2 MB writer cap remains unchanged**, and any oversized record must fail visibly without truncation until a reviewed large-payload implementation exists.
+A total of **500 sample rows** showed no over-limit records. This measures PostgreSQL `octet_length(to_jsonb(view_row)::text)`, **not** exactly the Python serialized payload; it is a reassuring size estimate, not a whole-dataset maximum. The current **2 MB writer cap remains unchanged**, and any oversized record must fail visibly without truncation until a reviewed large-payload implementation exists.
 
 ## Isolated full-field pilot code (draft only)
 
@@ -87,7 +90,7 @@ This measures PostgreSQL `octet_length(to_jsonb(view_row)::text)`, **not** exact
 - No scheduler, no auto-registration, no automatic source activation, no Odoo write and no deletion operation. Runtime uses the restricted `panadan_ingest_writer` target via the already validated private DSN. `seed` still runs before backfill and all writes go through the existing atomic checkpoint/revision store.
 - Full-field pilot writes require all four explicit flags `--ack-source-contract --ack-retention --ack-copy --ack-sensitive-data`, an **owner-registered/enabled** dedicated source, one page of at most 100 records, and secure source/data-owner approvals. These flags do **not** override the independent production deployment/recovery approvals.
 - The CLI currently fails closed for a JSON payload exceeding 2 MB; it does not silently drop or truncate a long transcript.
-- Synthetic tests cover fail-closed approvals, bounded previews, source-disabled refusal and upsert-only behavior. Actual CI and disposable-PG18 integration results must be checked before any production invocation.
+- Synthetic tests cover fail-closed approvals, bounded previews, source-disabled refusal and upsert-only behavior. **CI quality, Docker builds and platform-integration passed at commit `8150dd2`**, including a new disposable-PG18 synthetic test for full-field insert/update/replay and retention of an upstream-missing record. The live source and production owned PostgreSQL have not been used for that integration test.
 - The full-field pilot module is **not part of the live Web runtime deployment**, and the dedicated source has not been registered or enabled on production. Do not run its write commands on the VPS now.
 
 ## Existing implementation gaps (reviewed 2026-11-04)
