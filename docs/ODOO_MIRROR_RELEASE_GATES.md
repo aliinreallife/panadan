@@ -26,9 +26,12 @@ database, or switch the existing Panadan UI/MCP.
 
 ## Mandatory external approvals — cannot be inferred from code or tests
 
-- [ ] **Data owner** authorizes copying personal contact details, transcripts,
-  summaries and AI analysis out of Odoo into a designated Panadan-owned store,
-  and confirms any cross-border/employee/customer obligations.
+- [x] **Project operator attests authorization** (2026-11-04) to copy
+  Odoo customer records, including phone numbers and transcripts, into
+  Panadan-owned storage for this project. This is a *user-provided
+  attestation*, not independent verification of data-owner paperwork.
+  Before real copying, operations must document the approved staging
+  destination and applicable cross-border/employee/customer requirements.
 - [ ] **Odoo owner** confirms the 37-field view contract, source timezone and
   exact identity/ownership semantics of `vw_danix_base_info_users`.
   Display names and teams are **not** identity proof.
@@ -122,3 +125,53 @@ refusal is not authorization to relax it.
 cannot guarantee recording every intermediate change. Reconciliation can
 converge to the most recently observed source state, but does not provide
 lossless CDC or a consistent single instant snapshot across ~95k rows.
+
+
+## Isolated staging writer option (not production activation)
+
+The existing supervised importer initially supported only a restricted
+writer for the production-owned PG18 host `panadan-auth-postgres` /
+database `panadan`, while the isolated staging API expected a disposable,
+localhost-only `panadan_ci`. These two targets are deliberately different.
+
+`server/odoo_mirror_target.py` now allows the already reviewed
+`server.odoo_full_mirror_pilot` and
+`server.odoo_mirror_scheduler` commands to use a **separate, opt-in
+staging-only writer** without weakening the existing production writer
+selector. Default/unspecified mode preserves the existing guarded writer.
+
+To select *only* a pre-existing isolated PostgreSQL 18 staging instance,
+set the following variables in the private, isolated runner environment:
+
+```text
+PANADAN_FULL_MIRROR_TARGET_MODE=isolated-staging
+PANADAN_FULL_MIRROR_STAGING_ISOLATED=YES
+PANADAN_FULL_MIRROR_STAGING_WRITER_DSN_FILE=/absolute/private/writer.dsn
+```
+
+The file must be a regular, non-symlink file, owned by root or the
+executing account, mode `0600` or stricter, and contain one libpq DSN
+line with **only**:
+- host `127.0.0.1` and an explicit numeric TCP port,
+- dbname `panadan_ci` and user `panadan_ingest_writer`,
+- password and explicit sslmode `prefer`, `require` or `verify-full`.
+
+The selector rejects production `panadan`, source `odoo`, alternate
+hosts, wrong database roles, libpq redirect environment, symlinks, group
+or world readable files and any unsupported mode, **without fallback** to
+the production target. Once connected, it verifies the real PG18 database
+name and `current_user`. No password or private DSN is stored in
+GitHub, exposed in chat or printed in diagnostics.
+
+**Staging is not an implicit consent or rollout switch:** the source Odoo
+reader remains separately read-only; `snapshot`/`snapshot-run`/`tick`
+still require all four explicit approval flags and a separately registered,
+enabled source in the owned target. The selected loopback PostgreSQL port
+must be a *genuinely isolated test instance*, not a port-forward to the
+live production instance; that infrastructure fact must be verified by
+the operator. This module does not provision a staging DB or initialize
+roles, connect the dashboard to production, or schedule automatic copying.
+
+For exact project-specific staging command syntax and SQL migration review,
+see `docs/ODOO_FULL_MIRROR_PRODUCTION.md`. Do not paste passwords,
+transcripts or complete DSN files into issues or ChatGPT.
