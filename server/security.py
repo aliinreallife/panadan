@@ -170,6 +170,28 @@ class Store:
                 team TEXT,
                 updated_at INTEGER NOT NULL
             )""")
+            # Verified numeric operator IDs are an explicit authorization
+            # boundary, unlike the display-name operator_directory.
+            # No implicit grants, not even for admin users. Binding changes
+            # require an active admin + manual source-ID confirmation.
+            c.execute("""CREATE TABLE IF NOT EXISTS user_operator_scopes (
+                user_id INTEGER NOT NULL,
+                operator_id INTEGER NOT NULL CHECK(
+                    operator_id BETWEEN 1 AND 999999999),
+                verified_by INTEGER NOT NULL,
+                verified_at INTEGER NOT NULL,
+                PRIMARY KEY(user_id,operator_id),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )""")
+            c.execute('CREATE INDEX IF NOT EXISTS user_operator_scopes_operator '
+                      'ON user_operator_scopes(operator_id)')
+            # Never silently trust orphaned/disabled accounts from migrated
+            # stores; runtime reads additionally verify active capabilities.
+            c.execute("""DELETE FROM user_operator_scopes
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM users u
+                    WHERE u.id=user_operator_scopes.user_id AND u.is_active=1
+                )""")
             # Previously created tokens were admin-owned; require the existing admin
             # account to remain active for those tokens to work.
             admin = c.execute('SELECT id FROM users WHERE role=? ORDER BY id LIMIT 1', ('admin',)).fetchone()
@@ -300,6 +322,90 @@ class Store:
                     (operator_name,destination or None,team or None,int(time.time()))
                 )
 
+    @staticmethod
+    def _operator_scope_id(value: int) -> int:
+        if type(value) is not int or not 1 <= value <= 999_999_999:
+            raise ValueError('Invalid verified operator ID')
+        return value
+
+    def authorize_operator_scope(
+        self, *, admin_id: int, user_id: int, operator_id: int,
+        source_identity_verified: bool = False,
+    ) -> None:
+        """Admin records an independently confirmed stable Odoo operator ID.
+
+        Approval requires proof outside this code; the boolean is an explicit
+        operator attestation, NOT automatic inference from a display name.
+        No HTTP or MCP method currently exposes this administrative operation.
+        """
+        operator_id = self._operator_scope_id(operator_id)
+        if (type(admin_id) is not int or admin_id <= 0
+                or type(user_id) is not int or user_id <= 0
+                or source_identity_verified is not True):
+            raise ValueError('Explicit verified source identity is required')
+        with self.db() as c:
+            actor = c.execute(
+                "SELECT role,is_active FROM users WHERE id=?", (admin_id,)
+            ).fetchone()
+            target = c.execute(
+                "SELECT role,grants,is_active FROM users WHERE id=?", (user_id,)
+            ).fetchone()
+            if not actor or not actor['is_active'] or actor['role'] != 'admin':
+                raise PermissionError('Active administrator required')
+            if (not target or not target['is_active']
+                    or 'calls:read' not in permissions(target['role'],target['grants'])):
+                raise PermissionError('Active call-reader target required')
+            current = int(time.time())
+            c.execute(
+                """INSERT INTO user_operator_scopes(
+                    user_id,operator_id,verified_by,verified_at)
+                   VALUES(?,?,?,?)
+                   ON CONFLICT(user_id,operator_id)
+                   DO UPDATE SET verified_by=excluded.verified_by,
+                                 verified_at=excluded.verified_at""",
+                (user_id,operator_id,admin_id,current),
+            )
+            # Revocation/session change must be immediately effective to any
+            # later call; tokens/sessions are resolved again on every request.
+
+    def revoke_operator_scope(
+        self, *, admin_id: int, user_id: int, operator_id: int,
+    ) -> None:
+        operator_id = self._operator_scope_id(operator_id)
+        if type(admin_id) is not int or admin_id <= 0 or type(user_id) is not int or user_id <= 0:
+            raise ValueError('Invalid scope revocation')
+        with self.db() as c:
+            actor = c.execute(
+                "SELECT role,is_active FROM users WHERE id=?", (admin_id,)
+            ).fetchone()
+            if not actor or not actor['is_active'] or actor['role'] != 'admin':
+                raise PermissionError('Active administrator required')
+            c.execute(
+                "DELETE FROM user_operator_scopes WHERE user_id=? AND operator_id=?",
+                (user_id,operator_id),
+            )
+
+    def verified_operator_ids(self, user_id: int) -> list[int]:
+        """Default deny, including admins; never infer grants from UI labels."""
+        if type(user_id) is not int or user_id <= 0:
+            raise ValueError('Invalid local principal')
+        with self.db() as c:
+            user = c.execute(
+                "SELECT role,grants,is_active FROM users WHERE id=?", (user_id,)
+            ).fetchone()
+            if (not user or not user['is_active']
+                    or 'calls:read' not in permissions(user['role'],user['grants'])):
+                return []
+            rows = c.execute(
+                """SELECT operator_id FROM user_operator_scopes
+                   WHERE user_id=? ORDER BY operator_id LIMIT 201""",
+                (user_id,),
+            ).fetchall()
+        # Fail closed on overflow. Never return just the first 200 IDs.
+        if len(rows) > 200:
+            raise ValueError('Verified operator scope exceeds supported size')
+        return [int(row['operator_id']) for row in rows]
+
     def create_user(self, username: str, password: str, role: str, caps: list[str] | None = None):
         if not username or len(username) > 80 or not username.replace('_','').replace('-','').isalnum():
             raise ValueError('Invalid username')
@@ -329,6 +435,9 @@ class Store:
             c.execute('DELETE FROM access_tokens WHERE owner_id=?', (user_id,))
             # Reauthorization is required after a role or status update.
             c.execute('DELETE FROM oauth_identities WHERE user_id=?', (user_id,))
+            # Role/capability/active changes revoke all manually approved
+            # operator scopes. Any future access needs new admin verification.
+            c.execute('DELETE FROM user_operator_scopes WHERE user_id=?', (user_id,))
 
     def bind_oauth_identity(self, issuer: str, subject: str, user_id: int) -> int:
         """Administrator-approved binding of an IdP subject to a local account.
