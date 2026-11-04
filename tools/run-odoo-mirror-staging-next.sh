@@ -30,8 +30,8 @@ CONF="$HOME/.config/panadan-mirror-staging/writer.dsn"
 SOURCE_ENV="$HOME/panadan/.env.db"
 DB="panadan-mirror-staging-pg18"
 SOURCE="odoo_calls_full_v1"
-PAGES=10
-PAGE_SIZE=25
+PAGES=3
+PAGE_SIZE=100
 ENABLED=0
 
 command -v flock >/dev/null
@@ -99,13 +99,17 @@ read_state() {
     COALESCE((SELECT cursor->>'last_id'
               FROM panadan_ingest.sync_checkpoints
               WHERE source_key='$SOURCE' AND stream='view_reconciliation_v1'),
+             'missing') || '|' ||
+    COALESCE((SELECT MAX(external_id::bigint)::text
+              FROM panadan_ingest.source_records WHERE source_key='$SOURCE'),
              'missing');")"
-  IFS='|' read -r database version enabled records revisions pass cursor <<< "$data"
+  IFS='|' read -r database version enabled records revisions pass cursor max_id <<< "$data"
   [[ "$database" == panadan_ci && "$version" == 180006 &&
      "$enabled" == false && "$records" =~ ^[0-9]+$ &&
      "$revisions" =~ ^[0-9]+$ && "$pass" =~ ^[0-9]+$ &&
-     "$cursor" =~ ^[0-9]+$ && "$records" -ge 25 &&
-     "$revisions" -ge "$records" ]] || {
+     "$cursor" =~ ^[0-9]+$ && "$max_id" =~ ^[0-9]+$ &&
+     "$records" -ge 275 && "$revisions" -ge "$records" &&
+     ( "$pass" != 1 || "$cursor" == "$max_id" ) ]] || {
     echo "Unexpected staging checkpoint or source state" >&2
     exit 2
   }
@@ -144,7 +148,7 @@ for ((i=1; i<=PAGES; i++)); do
     --pull=never --log-driver=none \
     --network container:panadan-vpn-1 \
     --read-only --cap-drop=ALL --security-opt no-new-privileges \
-    --user "$(id -u):$(id -g)" --memory=256m --pids-limit=128 \
+    --user "$(id -u):$(id -g)" --memory=512m --pids-limit=128 \
     --env-file "$SOURCE_ENV" \
     -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/opt/panadan \
     -v "$ROOT:/opt/panadan:ro" -w /opt/panadan \
@@ -155,7 +159,7 @@ for ((i=1; i<=PAGES; i++)); do
     --name panadan-mirror-host-continue-import \
     --pull=never --log-driver=none --network host \
     --read-only --cap-drop=ALL --security-opt no-new-privileges \
-    --user "$(id -u):$(id -g)" --memory=256m --pids-limit=128 \
+    --user "$(id -u):$(id -g)" --memory=512m --pids-limit=128 \
     -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/opt/panadan \
     -e PANADAN_FULL_MIRROR_TARGET_MODE=isolated-staging \
     -e PANADAN_FULL_MIRROR_STAGING_ISOLATED=YES \
