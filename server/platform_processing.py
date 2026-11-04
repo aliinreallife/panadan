@@ -19,6 +19,38 @@ ENUM = re.compile(r"^[A-Za-z0-9_]{1,60}$")
 DIRECTIONS = {"IntoOut": "outgoing", "OutToIn": "incoming"}
 
 
+# These are deliberately the only raw fields that the v1 facts processor
+# can use. Sensitive raw 37-field variants remain in the restricted revision
+# store, never in the public facts projection.
+_MIRROR_SAFE_FIELDS = (
+    "tellside", "tellstate", "aicallinfostate",
+    "voice_length", "possibility_of_sale_ai",
+)
+
+
+def _uniform_mirror_facts(payload: Mapping[str, object]) -> dict[str, object]:
+    """Only project facts that agree across *every* joined view variant.
+
+    The reporting view is not unique by call id. Picking the first or highest
+    score would fabricate an authoritative analysis where none is known.
+    Malformed envelopes fail closed without displaying raw values.
+    """
+    rows = payload.get("source_rows")
+    identity = payload.get("id")
+    if (type(identity) is not int or identity < 1
+            or not isinstance(rows, list) or not rows
+            or any(not isinstance(row, dict) or row.get("id") != identity
+                   for row in rows)):
+        raise ValueError("Invalid full mirror source envelope")
+    first = rows[0]
+    return {
+        name: first[name]
+        for name in _MIRROR_SAFE_FIELDS
+        if name in first
+        and all(name in row and row[name] == first[name] for row in rows[1:])
+    }
+
+
 def public_call_facts(payload: Mapping[str, object]) -> dict[str, object]:
     """Small allowlist; never copies transcript, names, phones or AI prose.
 
@@ -26,6 +58,8 @@ def public_call_facts(payload: Mapping[str, object]) -> dict[str, object]:
     """
     if not isinstance(payload, dict):
         raise ValueError("Expected a JSON object")
+    if payload.get("source_schema") == "odoo_view_37_v1":
+        payload = _uniform_mirror_facts(payload)
     out = {}
     direction = payload.get("tellside")
     if isinstance(direction, str) and direction in DIRECTIONS:
