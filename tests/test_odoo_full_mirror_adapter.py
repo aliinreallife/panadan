@@ -158,3 +158,65 @@ def test_reject_non_utc_mode():
         full.validate_schema(Source(), mode='timestamptz')
     with pytest.raises(ValueError):
         full.normalized(record(), mode='timestamptz')
+
+
+
+def test_snapshot_keeps_duplicate_at_boundary_and_all_37_fields():
+    rows = [
+        record(1),
+        record(2, possibility_of_sale_ai=25),
+        record(2, possibility_of_sale_ai=75, tell_state_desc='Changed'),
+        record(3),
+    ]
+    source = Source(rows)
+    first, more, examined = full.read_snapshot_page(
+        source, after_id=0, limit=2)
+    assert more is True and examined == 1
+    assert [e.external_id for e in first] == ['1']
+    second, more, examined = full.read_snapshot_page(
+        source, after_id=1, limit=2)
+    assert more is True and examined == 2
+    assert [e.external_id for e in second] == ['2']
+    assert len(second[0].payload['source_rows']) == 2
+    assert all(len(row) == 37 for row in second[0].payload['source_rows'])
+    assert {row['possibility_of_sale_ai']
+            for row in second[0].payload['source_rows']} == {25, 75}
+    third, more, examined = full.read_snapshot_page(
+        source, after_id=2, limit=2)
+    assert more is False and examined == 1
+    assert [e.external_id for e in third] == ['3']
+    assert all(e.operation == 'upsert' for e in first + second + third)
+
+
+def test_snapshot_canonical_hash_is_independent_of_join_tie_order():
+    a = record(2, possibility_of_sale_ai=20)
+    b = record(2, possibility_of_sale_ai=30)
+    e1 = full.read_snapshot_page(Source([a, b]), after_id=0)[0][0]
+    e2 = full.read_snapshot_page(Source([b, a]), after_id=0)[0][0]
+    assert e1.payload == e2.payload
+    assert len(e1.payload['source_rows']) == 2
+
+
+def test_snapshot_preserves_identical_duplicate_multiplicity():
+    one = record(3)
+    events, more, rows = full.read_snapshot_page(Source([one, one]), after_id=0)
+    assert not more and rows == 2
+    assert len(events) == 1
+    assert len(events[0].payload['source_rows']) == 2
+
+
+def test_snapshot_refuses_unbounded_single_id_group():
+    source = Source([record(9, possibility_of_sale_ai=i) for i in range(3)])
+    with pytest.raises(ValueError, match='Too many view rows'):
+        full.read_snapshot_page(source, after_id=0, limit=2)
+
+
+def test_snapshot_rejects_divergent_parent_anchors():
+    source = Source([record(9, call_id='call-a'), record(9, call_id='call-b')])
+    with pytest.raises(ValueError, match='Conflicting call identity anchors'):
+        full.read_snapshot_page(source, after_id=0)
+
+
+def test_snapshot_requires_monotonic_positive_ids():
+    with pytest.raises(ValueError):
+        full.read_snapshot_page(Source([record(0)]), after_id=0)
