@@ -10,7 +10,7 @@ For isolated testing only:
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from collections.abc import Mapping
 import os
@@ -21,6 +21,8 @@ from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from mcp.server.transport_security import TransportSecuritySettings
+from .odoo_mirror_mcp import create_mirror_mcp
 
 from .security import Store
 from .odoo_staging_api import create_router
@@ -103,6 +105,43 @@ def staging_settings(environ: Mapping[str, str]) -> tuple[str, str, str]:
     return auth_path, report_dsn, sensitive_dsn
 
 
+class _StagingMCPBearerGate:
+    """Every transport request needs an active scoped MCP token."""
+    def __init__(self, inner, auth_store):
+        self.inner = inner
+        self.auth_store = auth_store
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] not in ("http", "websocket"):
+            await self.inner(scope, receive, send)
+            return
+        if scope["type"] != "http":
+            await send({"type": "websocket.close", "code": 1008})
+            return
+        headers = {key.lower(): val for key, val in scope.get("headers", [])}
+        authorization = headers.get(b"authorization", b"").decode("latin1")
+        token = authorization[7:] if authorization.startswith("Bearer ") else ""
+        valid = (1 <= len(token) <= 256
+                 and not any(ch.isspace() for ch in token)
+                 and self.auth_store.verify_token(
+                     token, "mcp:read", "calls:read"))
+        if not valid:
+            await send({
+                "type": "http.response.start", "status": 401,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"cache-control", b"no-store"),
+                    (b"www-authenticate", b'Bearer realm="local-mirror"'),
+                ],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": b'{"error":"unauthorized"}',
+            })
+            return
+        await self.inner(scope, receive, send)
+
+
 def create_staging_app(environ: Mapping[str, str] | None = None) -> FastAPI:
     env = os.environ if environ is None else environ
     auth_path, report_dsn, sensitive_dsn = staging_settings(env)
@@ -124,9 +163,19 @@ def create_staging_app(environ: Mapping[str, str] | None = None) -> FastAPI:
         ) as conn:
             yield conn
 
+    # Staging has an independent, summary-only MCP tool registry.
+    # Never attach these tools to the live Panadan MCP singleton.
+    scoped_mcp = create_mirror_mcp(
+        auth_store, open_reporting=open_report)
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        async with scoped_mcp.session_manager.run():
+            yield
+
     instance = FastAPI(
         title="Panadan isolated mirror staging", version="0.0.0-staging",
-        docs_url=None, redoc_url=None, openapi_url=None,
+        docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan,
     )
     # Even if a careless operator starts uvicorn on 0.0.0.0, only the
     # actual TCP loopback peer may access the app. Never trust forwarded
@@ -143,6 +192,24 @@ def create_staging_app(environ: Mapping[str, str] | None = None) -> FastAPI:
 
     instance.include_router(create_router(
         auth_store, open_reporting=open_report, open_sensitive=open_sensitive,
+    ))
+    # Only private loopback clients and a valid mcp:read user may reach SDK.
+    # The SDK also applies its own exact localhost Host/Origin checks.
+    instance.mount("/mcp", _StagingMCPBearerGate(
+        scoped_mcp.streamable_http_app(
+            streamable_http_path="/",
+            stateless_http=True,
+            json_response=True,
+            host="127.0.0.1",
+            transport_security=TransportSecuritySettings(
+                enable_dns_rebinding_protection=True,
+                allowed_hosts=["localhost:*", "127.0.0.1:*", "[::1]:*"],
+                allowed_origins=[
+                    "http://localhost:*", "http://127.0.0.1:*",
+                ],
+            ),
+        ),
+        auth_store,
     ))
     return instance
 
