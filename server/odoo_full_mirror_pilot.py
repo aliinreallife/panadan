@@ -48,11 +48,36 @@ def local_status(target):
         'SELECT count(*) AS n FROM panadan_ingest.raw_revisions WHERE source_key=%s',
         (SOURCE_KEY,),
     ).fetchone()['n']
+    sync_activity = target.execute(
+        """SELECT COUNT(*) AS committed_pages,
+                  EXTRACT(EPOCH FROM clock_timestamp()-MAX(finished_at)) AS age_seconds
+           FROM panadan_ingest.sync_runs
+           WHERE source_key=%s AND stream=%s""",
+        (SOURCE_KEY, SNAPSHOT_STREAM),
+    ).fetchone()
+    processing = target.execute(
+        """SELECT COUNT(*) FILTER (WHERE j.status='pending') AS pending,
+                  COUNT(*) FILTER (WHERE j.status='failed') AS failed
+           FROM panadan_ingest.processing_jobs AS j
+           JOIN panadan_ingest.raw_revisions AS r ON r.revision_id=j.revision_id
+           WHERE r.source_key=%s""",
+        (SOURCE_KEY,),
+    ).fetchone()
     return {
         'source_registered': row is not None,
         'source_enabled': bool(row and row['enabled']),
         'local_records': record_count,
         'local_revisions': revision_count,
+        'committed_pages': int(sync_activity['committed_pages']),
+        'seconds_since_last_commit': (
+            int(sync_activity['age_seconds'])
+            if sync_activity['age_seconds'] is not None else None),
+        'processing_pending': int(processing['pending']),
+        'processing_failed': int(processing['failed']),
+        'completed_passes': (
+            max(0, snapshot['pass'] - 1)
+            if isinstance(snapshot, dict) and type(snapshot.get('pass')) is int
+            else None),
         'update_cursor_seeded': checkpoint(
             target, source_key=SOURCE_KEY, stream=UPDATES_STREAM) is not None,
         'id_cursor_started': checkpoint(
