@@ -792,3 +792,134 @@ def test_staging_local_mirror_http_enforces_scoped_tokens_and_audited_detail(
     # No customer values are exposed in failed responses.
     assert 'SECRET HTTP' not in client.get(
         base + '/calls/902', headers=header_a).text
+
+
+
+def test_staging_browser_dashboard_uses_session_scopes_and_sensitive_audit(
+        protected_db, tmp_path):
+    """Actual HTML login -> restricted PG18 rows -> audited sensitive detail."""
+    from contextlib import contextmanager
+    import re
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from server import odoo_local_reporting as local
+    from server.odoo_full_mirror_adapter import COLUMN_TYPES
+    from server.odoo_staging_dashboard import create_dashboard_router
+    from server.security import Store
+
+    cfg, owner = protected_db
+    register_source(owner, source_key=local.SOURCE_KEY, kind="database",
+                    label="Synthetic HTML staging source")
+    owner.execute(
+        "UPDATE panadan_ingest.sources SET enabled=TRUE WHERE source_key=%s",
+        (local.SOURCE_KEY,),
+    )
+    fields = {}
+    for name, kind in COLUMN_TYPES:
+        fields[name] = (
+            1 if kind == "integer" else
+            1.0 if kind == "double precision" else
+            "2026-11-04" if kind == "date" else
+            "2026-11-04T12:00:00.000000"
+            if kind == "timestamp without time zone" else
+            {"en_US": "SYNTHETIC"} if kind == "jsonb" else
+            "SYNTHETIC ONLY"
+        )
+    fields.update(id=1101, vw_danix_base_info_users=991,
+                  customername="PRIVATE HTML CUSTOMER",
+                  transcription="PRIVATE HTML TRANSCRIPT",
+                  possibility_of_sale_ai=35,
+                  tellside="IntoOut",
+                  call_id="synthetic-html-unique")
+
+    with _as_role(cfg, "panadan_ingest_writer", WRITER_PASSWORD) as writer:
+        assert ingest_batch(
+            writer, source_key=local.SOURCE_KEY,
+            stream="html_fixture",
+            events=[SourceEvent("1101", "upsert", {
+                "id": 1101, "source_schema": "odoo_view_37_v1",
+                "source_rows": [fields],
+            })], expected_cursor=None,
+            next_cursor={"pass": 1, "last_id": 1101},
+        ).upserted == 1
+
+    store = Store(str(tmp_path / "html-auth.sqlite"))
+    store.bootstrap("root", "another-very-long-test-password")
+    admin = store.verify_login("root", "another-very-long-test-password")
+    ordinary = store.create_user(
+        "html_ordinary", "a-very-long-ordinary-password", "reader")
+    sensitive = store.create_user(
+        "html_sensitive", "a-very-long-sensitive-password", "reader",
+        ["calls:read", "calls:sensitive", "calls:transcript:read"])
+    for user_id in (ordinary, sensitive):
+        store.authorize_operator_scope(
+            admin_id=admin, user_id=user_id, operator_id=991,
+            source_identity_verified=True)
+
+    @contextmanager
+    def report():
+        with _as_role(cfg, "panadan_report_reader", READER_PASSWORD) as conn:
+            yield conn
+
+    @contextmanager
+    def detail():
+        with _as_role(cfg, "panadan_mirror_sensitive_reader",
+                      SENSITIVE_PASSWORD) as conn:
+            yield conn
+
+    app = FastAPI()
+    app.include_router(create_dashboard_router(
+        store, open_reporting=report, open_sensitive=detail))
+
+    def login_as(client, name, password):
+        login_page = client.get("/local/login")
+        assert login_page.status_code == 200
+        nonce = re.search(r'name="nonce" value="([^"]+)"',
+                          login_page.text).group(1)
+        answer = client.post(
+            "/local/login", data={
+                "username": name, "password": password, "nonce": nonce,
+            }, follow_redirects=False)
+        assert answer.status_code == 303
+
+    with TestClient(app) as c:
+        assert c.get("/local/dashboard").status_code == 401
+        assert c.get("/local/calls/1101").status_code == 401
+        login_as(c, "html_ordinary", "a-very-long-ordinary-password")
+        dash = c.get("/local/dashboard")
+        assert dash.status_code == 200
+        assert dash.headers["cache-control"] == "no-store"
+        assert "1101" in dash.text
+        assert "PRIVATE HTML" not in dash.text
+        assert c.get("/local/calls/1101").status_code == 200
+        assert "PRIVATE HTML" not in c.get("/local/calls/1101").text
+        assert c.get("/local/sensitive/calls/1101").status_code == 403
+        assert c.get("/local/calls/999999").status_code == 404
+
+        csrf = store.session(c.cookies.get(
+            "panadan_local_mirror_session"))["csrf"]
+        assert c.post("/local/logout", data={
+            "csrf": "wrong"}).status_code == 403
+        assert c.post("/local/logout", data={
+            "csrf": csrf}, follow_redirects=False).status_code == 303
+        assert c.get("/local/dashboard").status_code == 401
+
+    with TestClient(app) as c:
+        login_as(c, "html_sensitive", "a-very-long-sensitive-password")
+        full = c.get("/local/sensitive/calls/1101")
+        assert full.status_code == 200
+        assert full.headers["cache-control"] == "no-store"
+        assert full.json()["source_rows"][0]["transcription"] == (
+            "PRIVATE HTML TRANSCRIPT")
+        with store.db() as db:
+            audit = db.execute(
+                "SELECT user_id,call_id,surface "
+                "FROM sensitive_mirror_access_audit").fetchall()
+        assert [(row["user_id"], row["call_id"], row["surface"])
+                for row in audit] == [(sensitive, 1101, "dashboard")]
+        store.revoke_operator_scope(
+            admin_id=admin, user_id=sensitive, operator_id=991)
+        assert c.get("/local/dashboard").status_code == 200
+        assert "1101" not in c.get("/local/dashboard").text
+        assert c.get("/local/sensitive/calls/1101").status_code == 403
