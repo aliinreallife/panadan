@@ -437,3 +437,181 @@ def test_authenticated_local_reporting_uses_verified_scopes_only(protected_db, t
         with pytest.raises(PermissionError):
             local.list_calls_for_session(
                 reader, store, session_token=bob_session)
+
+
+
+def test_sensitive_full_mirror_detail_is_audited_and_strictly_scoped(protected_db, tmp_path):
+    """Full 37-field synthetic rows; dedicated PG role + authenticated audit."""
+    from server import odoo_sensitive_detail as detail
+    from server.odoo_full_mirror_adapter import COLUMN_TYPES
+    from server.security import Store
+
+    cfg, owner = protected_db
+    register_source(owner, source_key=detail.SOURCE_KEY, kind="database",
+                    label="Synthetic sensitive detail scope")
+    owner.execute(
+        "UPDATE panadan_ingest.sources SET enabled=TRUE WHERE source_key=%s",
+        (detail.SOURCE_KEY,),
+    )
+
+    def full_variant(identity, operator, *, score=50):
+        row = {}
+        for name, kind in COLUMN_TYPES:
+            row[name] = (
+                1 if kind == 'integer' else
+                2.5 if kind == 'double precision' else
+                '2026-11-04' if kind == 'date' else
+                '2026-11-04T12:00:00.000000'
+                if kind == 'timestamp without time zone' else
+                {'en_US': 'Synthetic'} if kind == 'jsonb' else
+                'SYNTHETIC ONLY'
+            )
+        row.update(
+            id=identity, vw_danix_base_info_users=operator,
+            customername='PRIVATE CUSTOMER NAME TEST',
+            customertell='PRIVATE CUSTOMER PHONE TEST',
+            transcription='PRIVATE CUSTOMER TRANSCRIPT TEST',
+            possibility_of_sale_ai=score,
+            call_id='synthetic-only-call',
+        )
+        return row
+
+    events = [
+        SourceEvent('701', 'upsert', {
+            'id': 701, 'source_schema': 'odoo_view_37_v1',
+            'source_rows': [
+                full_variant(701, 801, score=20),
+                full_variant(701, 801, score=95),
+            ],
+        }),
+        SourceEvent('702', 'upsert', {
+            'id': 702, 'source_schema': 'odoo_view_37_v1',
+            'source_rows': [full_variant(702, 802)],
+        }),
+        SourceEvent('703', 'upsert', {
+            'id': 703, 'source_schema': 'odoo_view_37_v1',
+            'source_rows': [
+                full_variant(703, 801),
+                full_variant(703, 802),
+            ],
+        }),
+    ]
+    with _as_role(cfg, "panadan_ingest_writer", WRITER_PASSWORD) as writer:
+        result = ingest_batch(
+            writer, source_key=detail.SOURCE_KEY,
+            stream="sensitive_fixture", events=events,
+            expected_cursor=None, next_cursor={'pass': 1, 'last_id': 703},
+        )
+        assert result.upserted == 3
+        with pytest.raises(InsufficientPrivilege):
+            writer.execute(
+                "SELECT * FROM panadan_ingest.sensitive_mirror_call_detail_v1")
+
+    with _as_role(cfg, "panadan_report_reader", READER_PASSWORD) as ordinary:
+        with pytest.raises(InsufficientPrivilege):
+            ordinary.execute(
+                "SELECT * FROM panadan_ingest.sensitive_mirror_call_detail_v1")
+
+    store = Store(str(tmp_path / 'sensitive-identity.sqlite'))
+    store.bootstrap('root', 'example-very-long-bootstrap-password')
+    admin = store.verify_login('root', 'example-very-long-bootstrap-password')
+    sensitive_caps = ['calls:read','calls:sensitive','calls:transcript:read']
+    allowed = store.create_user(
+        'sensitive_allowed', 'long-strong-pwd-12345678', 'reader', sensitive_caps)
+    other = store.create_user(
+        'sensitive_other', 'long-strong-pwd-87654321', 'reader', sensitive_caps)
+    ordinary_user = store.create_user(
+        'ordinary_user', 'long-strong-pwd-abcdefgh', 'reader')
+    store.authorize_operator_scope(
+        admin_id=admin, user_id=allowed, operator_id=801,
+        source_identity_verified=True)
+    store.authorize_operator_scope(
+        admin_id=admin, user_id=other, operator_id=802,
+        source_identity_verified=True)
+    store.authorize_operator_scope(
+        admin_id=admin, user_id=ordinary_user, operator_id=801,
+        source_identity_verified=True)
+    allowed_session, _ = store.create_session(allowed)
+    other_session, _ = store.create_session(other)
+    ordinary_session, _ = store.create_session(ordinary_user)
+    _, sensitive_token = store.create_token(
+        'sensitive-test', 'api:sensitive', 7, owner_id=allowed)
+    _, read_only_token = store.create_token(
+        'read-only-test', 'api:read', 7, owner_id=allowed)
+
+    with _as_role(cfg, "panadan_mirror_sensitive_reader", SENSITIVE_PASSWORD) as conn:
+        for sql in (
+            "SELECT * FROM panadan_ingest.raw_revisions LIMIT 1",
+            "SELECT * FROM panadan_ingest.source_records LIMIT 1",
+            "SELECT * FROM panadan_ingest.safe_mirror_call_listing_v1 LIMIT 1",
+        ):
+            with pytest.raises(InsufficientPrivilege):
+                conn.execute(sql)
+
+        content = detail.get_sensitive_call_for_session(
+            conn, store, session_token=allowed_session, call_id=701)
+        assert content['call_id'] == 701
+        assert content['operator_id'] == 801
+        assert content['revision_no'] == 1
+        assert content['source_row_count'] == 2
+        assert len(content['source_rows']) == 2
+        assert all(len(r) == 37 for r in content['source_rows'])
+        assert {r['possibility_of_sale_ai'] for r in content['source_rows']} == {20,95}
+        assert all(r['transcription'] == 'PRIVATE CUSTOMER TRANSCRIPT TEST'
+                   for r in content['source_rows'])
+
+        assert detail.get_sensitive_call_for_session(
+            conn, store, session_token=other_session, call_id=701) is None
+        assert detail.get_sensitive_call_for_session(
+            conn, store, session_token=allowed_session, call_id=702) is None
+        assert detail.get_sensitive_call_for_session(
+            conn, store, session_token=allowed_session, call_id=703) is None
+        assert detail.get_sensitive_call_for_token(
+            conn, store, token=sensitive_token, call_id=701)['call_id'] == 701
+
+        with pytest.raises(PermissionError):
+            detail.get_sensitive_call_for_session(
+                conn, store, session_token=ordinary_session, call_id=701)
+        with pytest.raises(PermissionError):
+            detail.get_sensitive_call_for_session(
+                conn, store, session_token='invalid-session', call_id=701)
+        with pytest.raises(PermissionError):
+            detail.get_sensitive_call_for_token(
+                conn, store, token=read_only_token, call_id=701)
+        with pytest.raises(PermissionError):
+            detail.get_sensitive_call_for_token(
+                conn, store, token='invalid-token', call_id=701)
+        with pytest.raises(ValueError, match='call ID'):
+            detail.get_sensitive_call_for_session(
+                conn, store, session_token=allowed_session, call_id=0)
+
+        with store.db() as audit:
+            attempted = audit.execute(
+                "SELECT user_id,call_id,surface FROM sensitive_mirror_access_audit "
+                "ORDER BY event_id"
+            ).fetchall()
+        assert len(attempted) == 5
+        assert [(a['call_id'],a['surface']) for a in attempted] == [
+            (701,'dashboard'),(701,'dashboard'),(702,'dashboard'),
+            (703,'dashboard'),(701,'api')]
+        assert all(a['user_id'] in (allowed,other) for a in attempted)
+
+        # Existing session/token no longer grants sensitive access immediately.
+        store.revoke_operator_scope(
+            admin_id=admin, user_id=allowed, operator_id=801)
+        with pytest.raises(PermissionError, match='operator'):
+            detail.get_sensitive_call_for_session(
+                conn, store, session_token=allowed_session, call_id=701)
+        with pytest.raises(PermissionError, match='operator'):
+            detail.get_sensitive_call_for_token(
+                conn, store, token=sensitive_token, call_id=701)
+
+        # Failing the pre-read audit fails closed instead of returning payloads.
+        store.authorize_operator_scope(
+            admin_id=admin, user_id=allowed, operator_id=801,
+            source_identity_verified=True)
+        with store.db() as audit:
+            audit.execute('DROP TABLE sensitive_mirror_access_audit')
+        with pytest.raises(Exception):
+            detail.get_sensitive_call_for_session(
+                conn, store, session_token=allowed_session, call_id=701)
