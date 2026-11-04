@@ -10,7 +10,7 @@ from server import odoo_full_mirror_pilot as pilot
 from server import odoo_full_mirror_adapter as full
 
 
-def opts(command='backfill', **changes):
+def opts(command='snapshot', **changes):
     data = dict(
         command=command, mode='utc_naive', batch_size=100, max_pages=1,
         ack_source_contract=True, ack_copy=True, ack_retention=True,
@@ -111,16 +111,15 @@ def test_source_disabled_refuses_write_before_looking_up_customer_data(monkeypat
         pilot.apply(opts())
 
 
-def test_backfill_emits_upserts_only_and_keeps_cursor(monkeypatch):
-    events = [full.normalized(fake_row(4))]
-    checkpoints = {'updated_at': {'marker': 'write_date',
-                                  'completed_through': '2026-11-04T01:00:00+00:00'},
-                   'id_backfill_and_new': None}
+def test_snapshot_emits_grouped_upserts_and_atomic_cursor(monkeypatch):
+    events = [full.read_snapshot_page(FakeRecords([fake_row(4)]), after_id=0)[0][0]]
+    checkpoints = {pilot.UPDATES_STREAM: None, pilot.BACKFILL_STREAM: None,
+                   pilot.SNAPSHOT_STREAM: None}
     monkeypatch.setattr(pilot, 'checkpoint',
                         lambda target, *, source_key, stream: checkpoints[stream])
     monkeypatch.setattr(pilot.full, 'validate_schema', lambda source: 'write_date')
-    monkeypatch.setattr(pilot.full, 'read_id_page',
-                        lambda source, *, after_id, limit: events)
+    monkeypatch.setattr(pilot.full, 'read_snapshot_page',
+                        lambda source, *, after_id, limit: (events, True, 1))
     recorded = {}
 
     def ingest(*args, **kwargs):
@@ -128,12 +127,76 @@ def test_backfill_emits_upserts_only_and_keeps_cursor(monkeypatch):
         return SimpleNamespace(examined=1, upserted=1, unchanged=0)
 
     monkeypatch.setattr(pilot, 'ingest_batch', ingest)
-    answer = pilot._backfill(object(), object(), limit=100)
-    assert answer['changed'] == 1 and answer['examined'] == 1
+    answer = pilot._snapshot(object(), FakeTarget(), limit=100)
+    assert answer['changed'] == 1 and answer['calls'] == 1
     assert recorded['source_key'] == pilot.SOURCE_KEY
-    assert recorded['next_cursor'] == {'last_id': 4}
+    assert recorded['stream'] == pilot.SNAPSHOT_STREAM
+    assert recorded['next_cursor'] == {'pass': 1, 'last_id': 4}
     assert all(event.operation == 'upsert' for event in recorded['events'])
-    assert len(recorded['events'][0].payload) == 37
+    assert len(recorded['events'][0].payload['source_rows'][0]) == 37
+
+
+class FakeRecords:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def execute(self, sql, params):
+        if sql == full.ID_SQL:
+            after, limit = params
+            return Result(rows=[r for r in self.rows if r['id'] > after][:limit])
+        raise AssertionError('Unexpected source SQL')
+
+
+class FakeTarget:
+    def __init__(self, previous=()):
+        self.previous = previous
+
+    def execute(self, sql, params):
+        assert 'raw_revisions' in sql
+        return Result(rows=self.previous)
+
+
+def test_snapshot_pass_completion_and_no_tombstones(monkeypatch):
+    checkpoints = {pilot.UPDATES_STREAM: None, pilot.BACKFILL_STREAM: None,
+                   pilot.SNAPSHOT_STREAM: {'pass': 2, 'last_id': 9}}
+    monkeypatch.setattr(pilot, 'checkpoint',
+                        lambda target, *, source_key, stream: checkpoints[stream])
+    monkeypatch.setattr(pilot.full, 'validate_schema', lambda source: 'write_date')
+    monkeypatch.setattr(pilot.full, 'read_snapshot_page',
+                        lambda source, *, after_id, limit: ([], False, 0))
+    recorded = {}
+
+    def ingest(*args, **kwargs):
+        recorded.update(kwargs)
+        return SimpleNamespace(examined=0, upserted=0, unchanged=0)
+
+    monkeypatch.setattr(pilot, 'ingest_batch', ingest)
+    result = pilot._snapshot(object(), FakeTarget(), limit=100)
+    assert result['pass_complete']
+    assert recorded['events'] == []
+    assert recorded['next_cursor'] == {'pass': 3, 'last_id': 0}
+
+
+def test_changed_identity_anchors_are_rejected(monkeypatch):
+    event = full.read_snapshot_page(FakeRecords([fake_row(4)]),
+                                    after_id=0)[0][0]
+    old = dict(event.payload)
+    old['source_rows'] = [dict(event.payload['source_rows'][0],
+                               call_id='reused-call')]
+    target = FakeTarget([{'external_id': '4', 'payload': old}])
+    with pytest.raises(ValueError, match='identity appears reused'):
+        pilot._check_identity_reuse(target, [event])
+
+
+def test_legacy_cursors_block_snapshot(monkeypatch):
+    checkpoints = {pilot.UPDATES_STREAM: {'marker': 'write_date'},
+                   pilot.BACKFILL_STREAM: None,
+                   pilot.SNAPSHOT_STREAM: None}
+    monkeypatch.setattr(pilot, 'checkpoint',
+                        lambda target, *, source_key, stream: checkpoints[stream])
+    monkeypatch.setattr(pilot.full, 'validate_schema', lambda source: 'write_date')
+    with pytest.raises(ValueError, match='Legacy'):
+        pilot._snapshot(object(), FakeTarget(), limit=100)
 
 
 def test_no_scheduler_or_deletion_or_implicit_registration():
