@@ -39,3 +39,60 @@ def test_bootstrap_does_not_reset_admin(tmp_path):
     st.bootstrap('admin','a-different-long-password')
     assert st.verify_login('admin','an-initial-long-password')
     assert not st.verify_login('admin','a-different-long-password')
+
+
+
+def test_verified_numeric_operator_scopes_require_admin_attestation(tmp_path):
+    import pytest
+    st = Store(str(tmp_path / 'scopes.sqlite'))
+    st.bootstrap('admin', 'example-very-long-bootstrap-password')
+    admin = st.verify_login('admin', 'example-very-long-bootstrap-password')
+    user_a = st.create_user('operator_reader_a', 'reader-a-long-password', 'reader')
+    user_b = st.create_user('operator_reader_b', 'reader-b-long-password', 'reader')
+    assert st.verified_operator_ids(admin) == []  # No admin wildcard
+    assert st.verified_operator_ids(user_a) == []
+
+    with pytest.raises(ValueError, match='verified source identity'):
+        st.authorize_operator_scope(
+            admin_id=admin, user_id=user_a, operator_id=11)
+    with pytest.raises(PermissionError, match='administrator'):
+        st.authorize_operator_scope(
+            admin_id=user_a, user_id=user_a, operator_id=11,
+            source_identity_verified=True)
+    with pytest.raises(ValueError, match='operator ID'):
+        st.authorize_operator_scope(
+            admin_id=admin, user_id=user_a, operator_id=True,
+            source_identity_verified=True)
+    with pytest.raises(ValueError, match='operator ID'):
+        st.authorize_operator_scope(
+            admin_id=admin, user_id=user_a, operator_id=0,
+            source_identity_verified=True)
+
+    st.authorize_operator_scope(
+        admin_id=admin, user_id=user_a, operator_id=11,
+        source_identity_verified=True)
+    st.authorize_operator_scope(
+        admin_id=admin, user_id=user_a, operator_id=12,
+        source_identity_verified=True)
+    st.authorize_operator_scope(
+        admin_id=admin, user_id=user_b, operator_id=22,
+        source_identity_verified=True)
+    assert st.verified_operator_ids(user_a) == [11, 12]
+    assert st.verified_operator_ids(user_b) == [22]
+    assert st.verified_operator_ids(admin) == []
+
+    with pytest.raises(PermissionError, match='administrator'):
+        st.revoke_operator_scope(
+            admin_id=user_b, user_id=user_a, operator_id=11)
+    st.revoke_operator_scope(admin_id=admin, user_id=user_a, operator_id=11)
+    assert st.verified_operator_ids(user_a) == [12]
+
+    # An existing account role/capability change erases all approvals.
+    st.update_user(user_b, 'reader', None, True, admin)
+    assert st.verified_operator_ids(user_b) == []
+    st.update_user(user_a, 'reader', None, False, admin)
+    assert st.verified_operator_ids(user_a) == []
+    with pytest.raises(PermissionError, match='target'):
+        st.authorize_operator_scope(
+            admin_id=admin, user_id=user_a, operator_id=11,
+            source_identity_verified=True)
