@@ -26,8 +26,12 @@ REQUIRED_ACKS = guarded.REQUIRED_ACKS + ('ack_sensitive_data',)
 def require_approval(args):
     if not all(getattr(args, name, False) is True for name in REQUIRED_ACKS):
         raise ValueError('Full mirror write requires explicit source, retention, copy and sensitive-data approval')
-    if args.mode != 'utc_naive' or not 1 <= args.batch_size <= 100 or args.max_pages != 1:
-        raise ValueError('Full mirror pilot is restricted to one page of at most 100 records')
+    if (args.mode != 'utc_naive' or type(args.batch_size) is not int
+        or not 1 <= args.batch_size <= 100
+        or type(args.max_pages) is not int
+        or not 1 <= args.max_pages <= 10
+        or (args.command != 'snapshot-run' and args.max_pages != 1)):
+        raise ValueError('Mirror writes require 1..100 rows/page; snapshot-run permits at most 10 pages')
 
 
 def local_status(target):
@@ -186,6 +190,33 @@ def _snapshot(source, target, *, limit):
     }
 
 
+
+def _snapshot_run(source, target, *, limit: int, max_pages: int):
+    """Supervised finite replay, stopping at the first completed pass.
+
+    Commit each page with its cursor. A failed later page leaves earlier
+    pages durable; the next invocation safely resumes. No timer or auto-loop.
+    """
+    if type(max_pages) is not int or not 1 <= max_pages <= 10:
+        raise ValueError('Invalid manual snapshot-run page budget')
+    totals = {'operation': 'snapshot-run', 'pages': 0,
+              'source_rows': 0, 'calls': 0,
+              'changed': 0, 'unchanged': 0, 'pass_complete': False}
+    for _ in range(max_pages):
+        part = _snapshot(source, target, limit=limit)
+        if totals['pages'] == 0:
+            totals['pass'] = part['pass']
+        elif part['pass'] != totals['pass']:
+            raise RuntimeError('Snapshot pass changed unexpectedly')
+        totals['pages'] += 1
+        for key in ('source_rows', 'calls', 'changed', 'unchanged'):
+            totals[key] += part[key]
+        totals['pass_complete'] = part['pass_complete']
+        if part['pass_complete']:
+            break
+    return totals
+
+
 def apply(args):
     require_approval(args)
     with guarded.owned_connection() as target:
@@ -202,12 +233,16 @@ def apply(args):
             with database.connect() as source_conn:
                 if args.command == 'snapshot':
                     return _snapshot(source_conn, target, limit=args.batch_size)
+                if args.command == 'snapshot-run':
+                    return _snapshot_run(
+                        source_conn, target,
+                        limit=args.batch_size, max_pages=args.max_pages)
                 raise ValueError('Unknown mirror operation')
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=('status', 'preview', 'verify', 'snapshot'))
+    p.add_argument('command', choices=('status', 'preview', 'verify', 'snapshot', 'snapshot-run'))
     p.add_argument('--batch-size', type=int, default=100)
     p.add_argument('--max-pages', type=int, default=1)
     p.add_argument('--mode', choices=('utc_naive',), default='utc_naive')
