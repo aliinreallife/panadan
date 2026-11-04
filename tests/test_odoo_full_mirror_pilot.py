@@ -249,3 +249,68 @@ def test_mirror_projection_rejects_invalid_envelopes(payload):
     from server.platform_processing import public_call_facts
     with pytest.raises(ValueError, match='Invalid full mirror'):
         public_call_facts(payload)
+
+
+
+def test_manual_snapshot_run_commits_pages_and_stops_at_pass_boundary(monkeypatch):
+    """One supervised command can resume pages without crossing into a new pass."""
+    recorded = []
+
+    def part(_source, _target, *, limit):
+        recorded.append(limit)
+        return {
+            'pass': 7, 'source_rows': 100, 'calls': 100,
+            'changed': 2, 'unchanged': 98,
+            'pass_complete': len(recorded) == 3,
+        }
+
+    monkeypatch.setattr(pilot, '_snapshot', part)
+    result = pilot._snapshot_run(object(), object(), limit=100, max_pages=10)
+    assert recorded == [100, 100, 100]
+    assert result == {
+        'operation': 'snapshot-run', 'pages': 3, 'source_rows': 300,
+        'calls': 300, 'changed': 6, 'unchanged': 294,
+        'pass_complete': True, 'pass': 7,
+    }
+
+
+def test_manual_snapshot_run_enforces_budget_and_approval(monkeypatch):
+    calls = []
+
+    def part(_source, _target, *, limit):
+        calls.append(limit)
+        return {
+            'pass': 1, 'source_rows': 100, 'calls': 100,
+            'changed': 0, 'unchanged': 100, 'pass_complete': False,
+        }
+
+    monkeypatch.setattr(pilot, '_snapshot', part)
+    result = pilot._snapshot_run(object(), object(), limit=100, max_pages=2)
+    assert result['pages'] == 2 and not result['pass_complete']
+    assert len(calls) == 2
+
+    with pytest.raises(ValueError, match='budget'):
+        pilot._snapshot_run(object(), object(), limit=100, max_pages=11)
+    with pytest.raises(ValueError, match='pages'):
+        pilot.require_approval(opts(command='snapshot-run', max_pages=11))
+    with pytest.raises(ValueError, match='pages'):
+        pilot.require_approval(opts(command='snapshot', max_pages=2))
+    pilot.require_approval(opts(command='snapshot-run', max_pages=10))
+
+
+def test_manual_snapshot_run_aborts_on_page_failure(monkeypatch):
+    count = {'n': 0}
+
+    def part(_source, _target, *, limit):
+        count['n'] += 1
+        if count['n'] == 2:
+            raise RuntimeError('synthetic source interruption')
+        return {
+            'pass': 1, 'source_rows': 100, 'calls': 100,
+            'changed': 100, 'unchanged': 0, 'pass_complete': False,
+        }
+
+    monkeypatch.setattr(pilot, '_snapshot', part)
+    with pytest.raises(RuntimeError, match='interruption'):
+        pilot._snapshot_run(object(), object(), limit=100, max_pages=4)
+    assert count['n'] == 2
