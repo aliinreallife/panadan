@@ -169,3 +169,19 @@ python -m server.odoo_full_mirror_pilot snapshot --batch-size 100 \
 The full mirror's `source_rows` envelope is **not** equivalent to the legacy flat eight-field format. The v1 platform facts processor now recognizes the explicit `source_schema=odoo_view_37_v1` envelope and derives only the existing allowlisted **non-sensitive** fields for which every row variant agrees: `tellside`, `tellstate`, `aicallinfostate`, `voice_length`, and `possibility_of_sale_ai`. If two analyses produce conflicting scores, the safe `ai_sales_estimate` fact is **omitted**, not selected arbitrarily or averaged. Private names, phones, summaries, free-text AI descriptions and transcripts remain restricted to raw revisions. Invalid mirror envelopes fail closed. A synthetic PG18 permission test verifies that `panadan_report_reader` cannot directly SELECT the raw revision payload or obtain contradictory scores through `safe_call_facts_v1`.
 
 This restricted v1 facts view is **not** a complete 37-field authorized local dashboard replacement. Additional operator-scoped sensitive projections, policy checks, traceability, and audit logging are required before any dashboard/API/MCP cutover. No source scheduler, owner enablement, or production import was added.
+
+
+## Supervised multi-page reconciliation runner (draft)
+
+The full mirror CLI now has `snapshot-run` for operator-supervised, **bounded** forward reconciliation against the existing read-only view. It processes up to **10 pages of at most 100 source view rows each** per invocation, stopping early when a scan pass completes. Each page is ingested with the same atomic source digest + cursor transaction used by `snapshot`. If the source times out or a later page fails, earlier pages remain committed and the next invocation resumes at the last good cursor; no delete or automatic scheduler is involved. Both commands require all four existing copy/retention/sensitive-data approvals and an explicitly owner-enabled target source.
+
+**Testing:** A synthetic PG18 test exercises duplicate rows crossing page boundaries within a `snapshot-run`, including correct per-call digest revision behavior. Further integration/security/performance verification is required before real-record import.
+
+```bash
+# Example for an ALREADY APPROVED, isolated target ONLY, never default VPS:
+# python -m server.odoo_full_mirror_pilot snapshot-run --batch-size 100 \
+#   --max-pages 10 --ack-source-contract --ack-retention \
+#   --ack-copy --ack-sensitive-data
+```
+
+**This does not solve:** an all-37-field scoped dashboard/API/MCP read path, a validated retention and erasure policy, full-view consistency guarantees (the source has no change feed), any role-appropriate staging DSN, source-side data-copy permission, or a verified production backup and rollback. The command must NOT be run on the live VPS until those gates are independently approved. The branch is still draft and no production release is approved.
