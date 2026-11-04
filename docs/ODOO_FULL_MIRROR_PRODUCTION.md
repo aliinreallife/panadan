@@ -130,3 +130,35 @@ A total of **500 sample rows** showed no over-limit records. This measures Postg
 - The production Web DSN mount/scheduler is **not** integrated into the reviewed production release controller. A temporary restricted container has successfully performed local read-only `status`; no source has been enabled.
 - `panadan_ingest.sources` already has `odoo_calls` registered but disabled. At the last verified live check: zero source records, revisions, committed pages, or cursors.
 - The live dashboard/API/MCP still read the source view over VPN, and production account authorization still uses SQLite. Neither read-path nor auth cutover is part of the mirror preparation.
+
+
+## Draft alternative with restricted-view access — snapshot reconciliation (2026-11-04)
+
+**Status: code + synthetic tests only; not production approved, deployed, or exercised with sensitive data.** The operator has only the SELECT privilege on the 37-field reporting view. Inspection established that `possibility_of_sale_ai` and `tell_state_desc` originate from a joined analysis table; the exposed `write_date` comes only from the parent call table. A joined-record edit can therefore remain invisible to the parent timestamp. The view also emits different rows under one call ID.
+
+Rather than claim the current `(write_date,id)` change cursor is reliable, the draft standalone manual full-mirror CLI now offers **`snapshot`**, which performs one **bounded, forward-only ID page** per invocation. The old `seed`, `backfill` and `updates` commands are no longer accepted by this full-mirror CLI. The legacy eight-field adapter is unchanged and must not be used as a reliable production change feed.
+
+- Read only the reviewed 37 columns from `public.vw_danix_call_info_report`. Query `id > last_id ORDER BY id LIMIT (N+1)` with one look-ahead row. If the look-ahead row shares the final page ID, defer the **entire** ID group to the next page instead of checkpointing an incomplete call. A group larger than the per-page bound fails closed.
+- Store one raw event per **call ID**, with an explicit `source_schema: odoo_view_37_v1`, `id` and `source_rows` array containing **every full 37-field view row**, including duplicate identical rows. Canonically sort variant payloads to make their digest independent of unstable JOIN tie ordering. No guessed authoritative analysis or transcription is chosen.
+- Check stable anchors `(call_id, create_date)` across grouped rows and before overwriting an existing Panadan record. If an existing ID changes these anchors or the stored payload uses a conflicting older shape, refuse the entire page. This is a conservative guard, not proof that Odoo will never reuse an ID.
+- Commit events and the `view_reconciliation_v1` cursor atomically in the existing revision store, with a distinct stream checkpoint. On the end of a pass, advance `pass` and reset `last_id=0`. A subsequent **manual** invocation begins the next pass; unchanged groups create no new revision. A changed joined field is detected by the complete payload digest even if the exposed `write_date` did not advance.
+- Never emit tombstones based on absence. Removed view rows remain in Panadan as last-known historical data; automatic freshness or missing-state classification is **not** implemented.
+- Keep all four write acknowledgments, the owner-enabled source requirement, the private restricted writer DSN, one page per invocation, and the 2,000,000-byte per-event ceiling. The envelope and duplicates consume additional bytes. Any oversized group fails closed and requires separate review.
+- Do **not** treat these calls as globally consistent database snapshots. Every page is a separate SELECT and the source can change between pages. Under ongoing updates, results can be temporarily inconsistent and intermediate revisions are **not** guaranteed; repeat full scans converge only when the source eventually stabilizes. A complete scan of ~95k rows is not proven fast or low-impact under the source query timeout. No scheduler, automatic catch-up, dashboard cutover, or production deployment is introduced.
+
+### Manual staging-only interface (after isolated integration tests)
+
+```bash
+python -m server.odoo_full_mirror_pilot status
+python -m server.odoo_full_mirror_pilot preview --batch-size 100
+python -m server.odoo_full_mirror_pilot verify --batch-size 100
+# snapshot performs a target WRITE and is forbidden on production until
+# separate source/retention/privacy/deployment approvals, verified backup,
+# source ID stability assessment and measured query performance.
+python -m server.odoo_full_mirror_pilot snapshot --batch-size 100 \
+  --ack-source-contract --ack-retention --ack-copy --ack-sensitive-data
+```
+
+**Open gates:** Run disposable-PG18 integration tests, ensure per-user RBAC and sensitive storage/recovery, verify stable call IDs over time, assess source load and full-pass rate, handle exceptionally large fan-out and payloads, add robust monitoring of failed/unfinished passes, and obtain explicit authorization for production data copying. View-only access limits certainty: it cannot reveal an upstream authoritative analysis, intermediate edits between passes, or deletions that should trigger erasure.
+
+**No VPS commands or production writes are authorized by this section.**
