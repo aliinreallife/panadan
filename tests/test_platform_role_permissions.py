@@ -18,6 +18,7 @@ from server.platform_processing import process_next
 
 WRITER_PASSWORD = "synthetic_writer_test_password_only"
 READER_PASSWORD = "synthetic_reader_test_password_only"
+SENSITIVE_PASSWORD = "synthetic_sensitive_test_password_only"
 
 
 @pytest.fixture(scope="module")
@@ -44,10 +45,14 @@ def protected_db():
           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='panadan_report_reader') THEN
             CREATE ROLE panadan_report_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
           END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='panadan_mirror_sensitive_reader') THEN
+            CREATE ROLE panadan_mirror_sensitive_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+          END IF;
         END
         $roles$;
         ALTER ROLE panadan_ingest_writer PASSWORD 'synthetic_writer_test_password_only';
         ALTER ROLE panadan_report_reader PASSWORD 'synthetic_reader_test_password_only';
+        ALTER ROLE panadan_mirror_sensitive_reader PASSWORD 'synthetic_sensitive_test_password_only';
         """)
         perms = Path("database/permissions/002_platform_runtime_roles.sql").read_text()
         owner.execute(perms)
@@ -56,6 +61,9 @@ def protected_db():
         mirror_perms = Path("database/permissions/003_full_mirror_safe_reporting.sql").read_text()
         owner.execute(mirror_perms)
         owner.execute(mirror_perms)
+        sensitive_perms = Path("database/permissions/004_full_mirror_sensitive_detail.sql").read_text()
+        owner.execute(sensitive_perms)
+        owner.execute(sensitive_perms)
         register_source(owner, source_key="roles_synthetic", kind="manual",
                         label="Disposable permission fixture")
         owner.execute("""
