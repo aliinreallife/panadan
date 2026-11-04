@@ -338,3 +338,54 @@ The source-owner/operator-ID confirmation, copy/retention/legal approvals,
 staging restore/backup and a reviewed complete product-surface cutover are
 still outstanding. **Never run the migration against Odoo or deploy the
 sensitive view to production simply because CI passes.**
+
+
+## Isolated local-mirror API staging route (draft)
+
+**Added an isolated REST API prototype, not deployed to the live Web service.**
+`server/odoo_staging_api.py` exposes the new, non-legacy paths:
+`/api/v1/local-mirror/calls`, `/api/v1/local-mirror/count`,
+`/api/v1/local-mirror/calls/{call_id}`, and
+`/api/v1/local-mirror/sensitive/calls/{call_id}` within a separately
+constructed staging application. No existing `/api/v1/calls`, dashboard,
+`/mcp` or WebMCP handler is modified.
+
+Normal endpoints verify the current `api:read` token's `calls:read`
+capability and derive operator IDs exclusively from the **active token
+owner's approved numeric grants**. Sensitive endpoints require a valid
+`api:sensitive` token and all `calls:read`, `calls:sensitive` and
+`calls:transcript:read` capabilities, then commit a pre-read audit record
+before a dedicated sensitive PG18 SELECT. The HTTP layer does NOT accept
+operator ID lists or user IDs as filter parameters. An absent or wrong-scope
+token is rejected before opening a PostgreSQL reader connection; a call
+belonging to a different operator returns 404, and malformed records fail
+closed. Both classes of successful response carry `Cache-Control: no-store`.
+All backend failures return generic errors with no raw SQL/DSN/customer data.
+
+`server/odoo_staging_app.py` supplies an **optional standalone staging
+entrypoint**; it has no app object in the default import path. To construct
+an app it requires both explicit `PANADAN_LOCAL_MIRROR_STAGING_ENABLE=YES`
+and `PANADAN_LOCAL_MIRROR_STAGING_ISOLATED=YES`, a *separate existing
+disposable* SQLite store under `/tmp/panadan-mirror-staging-*/...sqlite`,
+absence of `PANADAN_PUBLIC_ORIGIN`, and two distinct private DSN files
+for `panadan_report_reader` and
+`panadan_mirror_sensitive_reader`. DSNs must point only at loopback
+`127.0.0.1` **panadan_ci PG18** (never source Odoo or production Panadan);
+file permissions must exclude group/other access and symlinks are refused.
+A middleware rejects non-loopback TCP clients even if someone mistakenly
+starts an ASGI server bound to all interfaces. TLS/public reverse-proxy
+deployment is not supported; **never reverse-proxy this app publicly or
+treat a localhost source IP from an on-host proxy as public authentication**.
+
+Synthetic test coverage includes genuine FastAPI TestClient requests through
+the local SQLite authority into disposable PG18, authorized and unauthorized
+normal/sensitive service tokens, two disjoint operator scopes, ambiguous
+analysis rows, 37-field detail, audits, revocations, malformed authentication,
+wrong source credentials, public-origin rejection, and remote-client rejection.
+
+Do **not** add this isolated router to `server.main` or the production
+`dan.panafor.com` ingress as part of PR #97. A complete end-user
+dashboard/API/MCP cutover still requires an independently reviewed source
+operator mapping, migration/backup, data-copy/retention authorization,
+freshness policy, and production-grade credential isolation. The main
+production API still reads Odoo directly.
