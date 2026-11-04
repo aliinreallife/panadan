@@ -48,7 +48,7 @@ def _private_file(value: str, *, kind: str) -> Path:
         if (not stat.S_ISREG(meta.st_mode)
                 or stat.S_IMODE(meta.st_mode) & 0o077
                 or meta.st_uid not in (os.geteuid(), 0)
-                or not 16 <= meta.st_size <= 4096):
+                or not 16 <= meta.st_size <= (4096 if kind == "reader DSN" else 20_000_000)):
             raise ValueError(f"Private {kind} file required")
     except OSError:
         raise ValueError(f"Cannot read private {kind} file") from None
