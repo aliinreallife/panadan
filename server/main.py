@@ -43,6 +43,8 @@ oauth_config = OAuthConfig.from_env()
 oauth_verifier = OAuthVerifier(oauth_config) if oauth_config.mode == 'oauth' else None
 COOKIE_SECURE = os.getenv('PANADAN_COOKIE_SECURE', 'true').lower() == 'true'
 COOKIE_NAME = 'panadan_session'
+# Operator grants are invisible unless a separately reviewed admin flag is set.
+MIRROR_OPERATOR_SCOPE_ADMIN_ENABLED = os.getenv('PANADAN_MIRROR_SCOPE_ADMIN_ENABLE') == 'YES'
 PUBLIC_ORIGIN = read_public_origin(cookie_secure=COOKIE_SECURE)
 templates = Jinja2Templates(directory='templates')
 templates.env.filters['date_time'] = lambda value: datetime.fromtimestamp(value, timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if value else '—'
@@ -89,7 +91,8 @@ async def audit_http_activity(request: Request, call_next):
         '/dashboard/filter-options', '/dashboard/api', '/dashboard/users',
         '/dashboard/tokens', '/dashboard/connect', '/dashboard/oauth',
         '/dashboard/activity', '/dashboard/activity/data',
-        '/dashboard/operator', '/dashboard/operators', '/dashboard/operators/assign'
+        '/dashboard/operator', '/dashboard/operators', '/dashboard/operators/assign',
+        '/dashboard/operator-scopes'
     }
     if path in approved:
         action = path
@@ -103,6 +106,8 @@ async def audit_http_activity(request: Request, call_next):
         action = '/api/v1/calls/{id}'
     elif path.startswith('/dashboard/tokens/'):
         action = '/dashboard/tokens/{id}/action'
+    elif path.startswith('/dashboard/operator-scopes/'):
+        action = '/dashboard/operator-scopes/action'
     elif path.startswith('/dashboard/users/'):
         action = '/dashboard/users/{id}/action'
     elif path.startswith('/dashboard/oauth/'):
@@ -570,6 +575,65 @@ def private_openapi(request: Request, session: dict = Depends(current_session)):
 
 
 
+def _operator_scope_admin(session: dict):
+    from .security import Store
+    if not MIRROR_OPERATOR_SCOPE_ADMIN_ENABLED or not isinstance(store, Store):
+        raise HTTPException(404, 'Operator scope administration is not enabled')
+    admin_only(session)
+
+
+@app.get('/dashboard/operator-scopes', response_class=HTMLResponse,
+         include_in_schema=False)
+def operator_scopes_page(request: Request,
+                         session: dict = Depends(current_session)):
+    _operator_scope_admin(session)
+    return templates.TemplateResponse(request, 'operator_scopes.html', {
+        'session': session, 'csrf': session['csrf'],
+        'users': store.list_users(),
+        'scopes': store.list_verified_operator_assignments(
+            admin_id=session['user_id']),
+    }, headers={'Cache-Control': 'no-store'})
+
+
+@app.post('/dashboard/operator-scopes/grant', include_in_schema=False)
+def operator_scopes_grant(
+    request: Request, user_id: int = Form(...), operator_id: int = Form(...),
+    verified: str = Form(''), csrf: str = Form(...),
+    session: dict = Depends(current_session),
+):
+    _operator_scope_admin(session)
+    csrf_check(request, csrf, session)
+    if verified != 'yes':
+        raise HTTPException(400, 'Source operator identity confirmation required')
+    try:
+        store.authorize_operator_scope(
+            admin_id=session['user_id'], user_id=user_id,
+            operator_id=operator_id, source_identity_verified=True)
+    except PermissionError:
+        raise HTTPException(403, 'Operator grant not permitted') from None
+    except ValueError:
+        raise HTTPException(400, 'Invalid verified operator assignment') from None
+    return RedirectResponse('/dashboard/operator-scopes', status_code=303)
+
+
+@app.post('/dashboard/operator-scopes/revoke', include_in_schema=False)
+def operator_scopes_revoke(
+    request: Request, user_id: int = Form(...), operator_id: int = Form(...),
+    csrf: str = Form(...), session: dict = Depends(current_session),
+):
+    _operator_scope_admin(session)
+    csrf_check(request, csrf, session)
+    try:
+        store.revoke_operator_scope(
+            admin_id=session['user_id'], user_id=user_id,
+            operator_id=operator_id)
+    except PermissionError:
+        raise HTTPException(403, 'Operator revocation not permitted') from None
+    except ValueError:
+        raise HTTPException(400, 'Invalid operator revocation') from None
+    return RedirectResponse('/dashboard/operator-scopes', status_code=303)
+
+
 @app.get('/dashboard/users', response_class=HTMLResponse, include_in_schema=False)
 def users_page(request: Request, session: dict = Depends(current_session)):
     admin_only(session)
@@ -586,6 +650,7 @@ def users_page(request: Request, session: dict = Depends(current_session)):
             'tokens:manage':'مدیریت توکن‌ها',
         },
         'role_labels':{'admin':'مدیر کل','analyst':'تحلیل‌گر','reader':'خواننده','metrics':'فقط آمار'},
+        'operator_scope_admin_enabled': MIRROR_OPERATOR_SCOPE_ADMIN_ENABLED,
         'error':request.query_params.get('error'),
     })
 
