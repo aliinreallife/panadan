@@ -23,6 +23,21 @@ BEGIN
 END
 $guard$;
 
+-- 002 revoked PUBLIC database CONNECT; grant only CONNECT to this new role.
+-- No TEMP, CREATE, table-owner or raw-table privileges.
+DO $db_connect$
+BEGIN
+    EXECUTE format(
+        'REVOKE ALL ON DATABASE %I FROM panadan_mirror_sensitive_reader',
+        current_database()
+    );
+    EXECUTE format(
+        'GRANT CONNECT ON DATABASE %I TO panadan_mirror_sensitive_reader',
+        current_database()
+    );
+END
+$db_connect$;
+
 REVOKE ALL ON SCHEMA panadan_ingest FROM PUBLIC;
 GRANT USAGE ON SCHEMA panadan_ingest TO panadan_mirror_sensitive_reader;
 
