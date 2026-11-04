@@ -513,3 +513,48 @@ product cutover, public ingress and customer copy are still gated on
 validated Odoo source identity, legal/retention approvals and a reviewed
 production authorization/backup/restore plan. See
 `docs/ODOO_MIRROR_RELEASE_GATES.md` for the complete checklist.
+
+
+## Isolated staging browser dashboard (draft)
+
+`server/odoo_staging_dashboard.py` and the two
+`templates/odoo_mirror_local_*.html` files provide a simple, RTL Persian,
+**loopback-only** browser interface mounted exclusively on the isolated
+`server.odoo_staging_app`. It is **not part of the live Panadan Web
+dashboard**.
+
+- `GET /local/login` and `POST /local/login`: local staging SQLite
+  authentication with short-lived nonce, login throttling and an
+  HttpOnly/SameSite=Strict session cookie. Staging has no public HTTPS
+  domain, so the cookie is not marked Secure; *never* proxy this
+  application publicly. The existing production session cookie name
+  is not reused.
+- `GET /local/dashboard`: bounded current-state list (at most 50/page)
+  and count. It resolves the active user from the session, checks
+  `calls:read`, and uses only the verified per-user numeric operator
+  grants and the restricted sanitized PostgreSQL reader. No arbitrary
+  operator/username filter is accepted.
+- `GET /local/calls/{id}`: safe per-call metadata, with the same active
+  principal and operator constraint; returns 404 across user boundaries.
+- `GET /local/sensitive/calls/{id}`: requires all three
+  `calls:read`, `calls:sensitive` and
+  `calls:transcript:read` capabilities. It uses the separate sensitive
+  PG18 role and commits a durable metadata-only audit before SELECT.
+  Full 37-field JSON retains all joined analyses without choosing
+  a contradictory value. Any missing audit capability fails closed.
+- `POST /local/logout`: session logout with CSRF and Origin checks.
+  Every dashboard/detail response disables caching and HTML template values
+  are automatically escaped.
+
+The staging UI displays an explicit warning that a partly synchronized
+source can be incomplete. It does **not** claim real-time Odoo parity.
+The UI is an acceptance harness for the local database and authorization
+model, not a drop-in reproduction of Panadan's existing rich dashboard
+(filters, history, charts, team facets, activity and all MCP features).
+Those remain independent production cutover tasks and should not be
+silently switched on by deploying this draft branch.
+
+The disposable PG18 browser integration test verifies nonce login,
+scoped summary without customer text, unauthorized sensitive denial,
+approved full detail, pre-read audit, logout CSRF and immediate
+operator-grant revocation.
