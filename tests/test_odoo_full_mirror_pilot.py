@@ -357,7 +357,7 @@ def test_parity_range_paginates_complete_duplicate_groups_without_writes(monkeyp
 
     target = TargetReadOnly()
     first = pilot.verify_range(
-        source, target, after_id=0, limit=3, max_pages=1)
+        source, target, after_id=0, limit=2, max_pages=1)
     assert first['examined'] == 1
     assert first['duplicate_row_calls'] == 0
     assert first['next_after_id'] == 1
