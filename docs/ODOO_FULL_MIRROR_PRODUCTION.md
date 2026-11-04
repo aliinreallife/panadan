@@ -558,3 +558,63 @@ The disposable PG18 browser integration test verifies nonce login,
 scoped summary without customer text, unauthorized sensitive denial,
 approved full detail, pre-read audit, logout CSRF and immediate
 operator-grant revocation.
+
+
+## Approved-copy staging preflight (2026-11-04)
+
+The project operator has reported that they hold authorization to
+copy the Odoo call/customer information (including phone numbers,
+transcripts and AI analyses) into Panadan storage, and has contacted
+the Odoo team about confirming the required source operator IDs.
+This is an operator attestation, **not** an independent legal/retention
+assessment or proof of correct operator-ID semantics. The ID reply
+and secured staging destination still need verification before granting
+real users any operator scopes.
+
+Earlier full-mirror write tooling used only the Panadan production-owned
+writer DSN, which made a genuinely isolated trial impossible without
+changing protected production connection rules. The new
+`server/odoo_mirror_target.py` selector preserves the current
+production default but allows `snapshot`, `snapshot-run`, `status`,
+`verify-run`, and `server.odoo_mirror_scheduler tick/health`
+to target an explicitly selected **loopback-only `panadan_ci` PG18
+staging database**. Use the complete preflight/approval requirements in
+`docs/ODOO_MIRROR_RELEASE_GATES.md`.
+
+Example **environment names** (do not put credentials in the repository
+or logs):
+
+```bash
+export PANADAN_FULL_MIRROR_TARGET_MODE=isolated-staging
+export PANADAN_FULL_MIRROR_STAGING_ISOLATED=YES
+export PANADAN_FULL_MIRROR_STAGING_WRITER_DSN_FILE=/absolute/private/writer.dsn
+```
+
+The private writer DSN must use localhost `127.0.0.1`, an explicit port,
+`dbname=panadan_ci` and `user=panadan_ingest_writer`, with password and
+explicit SSL policy. File owner and mode `0600` are validated; symlinks
+and any production Odoo or Panadan target identity are rejected. Do not
+pass the DSN itself on a shell command line.
+
+**First staging checkpoint, read-only:**
+
+```bash
+python -m server.odoo_mirror_preflight
+```
+
+It checks separately (1) isolated writer PG18 identity and
+least-privilege role grants, and (2) `report_user` on the Odoo
+`odoo` database with a read-only transaction and the expected ordered
+37-column schema. It returns only boolean states and staging counts.
+It does not fetch customer rows, enable the mirror, create tables,
+advance cursors, or connect the live dashboard. The exact command will
+refuse when the isolated staging instance, tunnel, credentials or
+approved source metadata are missing. Treat that as a correct hold,
+not a reason to bypass any guard.
+
+**Then**, only after the independent PG18 staging restore/backup
+drill and identity/retention confirmations: prepare/enroll the target
+source by its separately reviewed administrator, run one explicit
+`snapshot` with all four approval flags, and compare digests before
+opening the staging dashboard/API/MCP. Nothing in this preflight
+activates a scheduler or authorizes a production cutover.
