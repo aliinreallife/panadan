@@ -1,6 +1,6 @@
 /**
  * Lossless-display companion for potentially messy speech-to-text transcripts.
- * \`raw\` is NEVER modified or persisted; parsing is strictly presentational.
+ * `raw` is NEVER modified or persisted; parsing is strictly presentational.
  * Supports newline-delimited speaker labels and dense single-paragraph dialogue.
  * Dense paragraphs are heuristic and always retain the exact Raw tab.
  */
@@ -94,7 +94,7 @@ export function parseTranscript(input) {
   }
   push();
   const warnings = [];
-  if (emptyLabels) warnings.push(\`\${emptyLabels.toLocaleString('fa-IR')} برچسب بدون گفتار نادیده گرفته شد\`);
+  if (emptyLabels) warnings.push(`${emptyLabels.toLocaleString('fa-IR')} برچسب بدون گفتار نادیده گرفته شد`);
   if (inlineLines) warnings.push('تفکیک گویندگان در متن یک‌خطی احتمالی است؛ با متن خام مقایسه کنید');
   if (unattributed || !labelsFound) warnings.push('بخشی از گفتار گویندهٔ مشخص ندارد');
   return {
