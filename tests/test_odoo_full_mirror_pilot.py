@@ -314,3 +314,74 @@ def test_manual_snapshot_run_aborts_on_page_failure(monkeypatch):
     with pytest.raises(RuntimeError, match='interruption'):
         pilot._snapshot_run(object(), object(), limit=100, max_pages=4)
     assert count['n'] == 2
+
+
+
+def test_parity_range_paginates_complete_duplicate_groups_without_writes(monkeypatch):
+    """Parity counts are stable across duplicate boundaries and restarts."""
+    rows = [
+        fake_row(1), fake_row(2), fake_row(2), fake_row(3),
+        fake_row(4), fake_row(5),
+    ]
+
+    class SourceReadOnly:
+        def execute(self, sql, params):
+            if sql == full.ID_SQL:
+                after, amount = params
+                return Result(rows=[
+                    row for row in rows if row['id'] > after
+                ][:amount])
+            if sql == full.SCHEMA_SQL:
+                return Result(rows=[
+                    {'column_name': name, 'data_type': kind,
+                     'is_nullable': 'YES'} for name, kind in full.COLUMN_TYPES
+                ])
+            raise AssertionError('Parity may only execute approved source SELECTs')
+
+    source = SourceReadOnly()
+    saved = {}
+    for event in full.read_snapshot_page(source, after_id=0, limit=10)[0]:
+        saved[event.external_id] = pilot._validate_events([event])[0][1]
+    saved['3'] = 'f' * 64   # Drift despite matched source row
+    del saved['4']         # Missing local record
+
+    class TargetReadOnly:
+        def execute(self, sql, params):
+            assert 'SELECT external_id, current_digest' in sql
+            key, ids = params
+            assert key == pilot.SOURCE_KEY
+            return Result(rows=[
+                {'external_id': identity, 'current_digest': saved[identity]}
+                for identity in ids if identity in saved
+            ])
+
+    target = TargetReadOnly()
+    first = pilot.verify_range(
+        source, target, after_id=0, limit=3, max_pages=1)
+    assert first['examined'] == 1
+    assert first['duplicate_row_calls'] == 0
+    assert first['next_after_id'] == 1
+    assert not first['complete']
+    assert first['missing'] == 0 and first['different'] == 0
+
+    continued = pilot.verify_range(
+        source, target, after_id=first['next_after_id'],
+        limit=3, max_pages=5)
+    assert continued['complete']
+    assert continued['examined'] == 4
+    assert continued['duplicate_row_calls'] == 1
+    assert continued['missing'] == 1 and continued['different'] == 1
+    assert continued['matched'] == 2
+    assert continued['next_after_id'] == 5
+    assert 'sensitive-data-not-to-log' not in json.dumps(continued)
+
+
+@pytest.mark.parametrize('args', [
+    {'after_id': -1, 'limit': 100, 'max_pages': 1},
+    {'after_id': True, 'limit': 100, 'max_pages': 1},
+    {'after_id': 0, 'limit': 101, 'max_pages': 1},
+    {'after_id': 0, 'limit': 100, 'max_pages': 11},
+])
+def test_parity_range_rejects_invalid_bounds(args):
+    with pytest.raises(ValueError, match='bounded'):
+        pilot.verify_range(object(), object(), **args)
