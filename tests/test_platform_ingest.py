@@ -634,9 +634,12 @@ def test_full_mirror_pilot_pg18_insert_update_replay_and_missing_row_retention(p
     source.records[0]['summary'] = 'Updated'
     source.records.append(record(1, 'Other analysis', score=90))
     source.records.append(record(3, 'New'))
-    changed = pilot._snapshot(source, pg, limit=100)
+    changed = pilot._snapshot_run(source, pg, limit=2, max_pages=3)
     assert changed['changed'] == 2
     assert changed['source_rows'] == 4
+    assert changed['calls'] == 3
+    assert changed['pages'] == 2
+    assert changed['pass_complete'] is True
     assert pilot.verify_sample(source, pg, limit=100)['all_match']
 
     # Same rows but reverse tie order: canonical grouping is idempotent.
