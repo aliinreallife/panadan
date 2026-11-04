@@ -95,3 +95,81 @@ def count_calls(conn, *, operator_ids: Sequence[int]) -> int:
         (SOURCE_KEY, permitted),
     ).fetchone()
     return int(row["n"])
+
+
+
+def _scope_from_session(auth_store, session_token: str) -> list[int]:
+    """Resolve a real, unexpired browser session; never accept raw user IDs."""
+    from .security import has_capability
+    if not isinstance(session_token, str) or len(session_token) > 256:
+        raise PermissionError("Authenticated session required")
+    session = auth_store.session(session_token)
+    if not session or not has_capability(session, "calls:read"):
+        raise PermissionError("Call reading permission required")
+    return auth_store.verified_operator_ids(session["user_id"])
+
+
+def _scope_from_token(auth_store, token: str, *, service_scope: str) -> list[int]:
+    """Check token *capability* and owner status before resolving operator grants."""
+    if service_scope not in ("api:read", "mcp:read"):
+        raise ValueError("Unsupported scoped reporting token")
+    if not isinstance(token, str) or len(token) > 256:
+        raise PermissionError("Authenticated service token required")
+    if not auth_store.verify_token(token, service_scope, "calls:read"):
+        raise PermissionError("Call reading permission required")
+    actor = auth_store.actor_for_token(token, service_scope)
+    if type(actor) is not int or actor <= 0:
+        raise PermissionError("Active token owner required")
+    return auth_store.verified_operator_ids(actor)
+
+
+def list_calls_for_session(conn, auth_store, *, session_token: str,
+                           after_id: int = 0, limit: int = 50) -> list[dict]:
+    """Scoped browser listing. Does not accept client-provided operator IDs."""
+    return list_calls(
+        conn, operator_ids=_scope_from_session(auth_store, session_token),
+        after_id=after_id, limit=limit,
+    )
+
+
+def get_call_for_session(conn, auth_store, *, session_token: str,
+                         call_id: int) -> dict | None:
+    """Same operator authorization for direct-ID browser lookup."""
+    return get_call(
+        conn, operator_ids=_scope_from_session(auth_store, session_token),
+        call_id=call_id,
+    )
+
+
+def count_calls_for_session(conn, auth_store, *, session_token: str) -> int:
+    return count_calls(
+        conn, operator_ids=_scope_from_session(auth_store, session_token),
+    )
+
+
+def list_calls_for_token(conn, auth_store, *, token: str,
+                         service_scope: str = "api:read",
+                         after_id: int = 0, limit: int = 50) -> list[dict]:
+    """For staging API/MCP only; token verification is performed inside."""
+    return list_calls(
+        conn, operator_ids=_scope_from_token(
+            auth_store, token, service_scope=service_scope),
+        after_id=after_id, limit=limit,
+    )
+
+
+def get_call_for_token(conn, auth_store, *, token: str, call_id: int,
+                       service_scope: str = "api:read") -> dict | None:
+    return get_call(
+        conn, operator_ids=_scope_from_token(
+            auth_store, token, service_scope=service_scope),
+        call_id=call_id,
+    )
+
+
+def count_calls_for_token(conn, auth_store, *, token: str,
+                          service_scope: str = "api:read") -> int:
+    return count_calls(
+        conn, operator_ids=_scope_from_token(
+            auth_store, token, service_scope=service_scope),
+    )
