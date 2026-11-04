@@ -197,6 +197,17 @@ class Store:
             )""")
             c.execute('CREATE INDEX IF NOT EXISTS operator_scope_audit_target '
                       'ON operator_scope_audit(target_user_id,event_at)')
+            # Sensitive full-field reads require a durable pre-read audit.
+            # No customer data, transcript or secret is stored in this log.
+            c.execute("""CREATE TABLE IF NOT EXISTS sensitive_mirror_access_audit (
+                event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                call_id INTEGER NOT NULL CHECK(call_id BETWEEN 1 AND 999999999),
+                surface TEXT NOT NULL CHECK(surface IN ('dashboard','api')),
+                event_at INTEGER NOT NULL
+            )""")
+            c.execute('CREATE INDEX IF NOT EXISTS sensitive_mirror_access_user_time '
+                      'ON sensitive_mirror_access_audit(user_id,event_at)')
             # Never silently trust orphaned/disabled accounts from migrated
             # stores; runtime reads additionally verify active capabilities.
             c.execute("""DELETE FROM user_operator_scopes
@@ -434,6 +445,47 @@ class Store:
         if len(rows) > 200:
             raise ValueError('Verified operator scope exceeds supported size')
         return [int(row['operator_id']) for row in rows]
+
+    def authorize_sensitive_mirror_attempt(
+        self, *, user_id: int, call_id: int, surface: str,
+    ) -> list[int]:
+        """Recheck active capabilities and grants; audit BEFORE any PG read.
+
+        This is an application authorization bridge for the current SQLite
+        auth authority. It never accepts user-supplied operator scopes. A
+        failure to persist the audit refuses the sensitive read.
+        """
+        if (type(user_id) is not int or user_id <= 0
+                or type(call_id) is not int or not 1 <= call_id <= 999999999
+                or surface not in ('dashboard', 'api')):
+            raise ValueError('Invalid sensitive mirror audit request')
+        with self.db() as c:
+            user = c.execute(
+                "SELECT role,grants,is_active FROM users WHERE id=?", (user_id,)
+            ).fetchone()
+            if (not user or not user['is_active']
+                    or not {'calls:read', 'calls:sensitive',
+                            'calls:transcript:read'} <= permissions(
+                                user['role'], user['grants'])):
+                raise PermissionError('Sensitive call privileges required')
+            rows = c.execute(
+                "SELECT operator_id FROM user_operator_scopes "
+                "WHERE user_id=? ORDER BY operator_id LIMIT 201",
+                (user_id,),
+            ).fetchall()
+            if not rows:
+                raise PermissionError('No verified source operator scope')
+            if len(rows) > 200:
+                raise ValueError('Verified operator scope exceeds supported size')
+            permitted = [int(row['operator_id']) for row in rows]
+            # Audit each authorized attempt, including an ID that may not
+            # exist, to prevent a silent raw-data read on logging failures.
+            c.execute(
+                """INSERT INTO sensitive_mirror_access_audit
+                   (user_id,call_id,surface,event_at) VALUES(?,?,?,?)""",
+                (user_id,call_id,surface,int(time.time())),
+            )
+        return permitted
 
     def create_user(self, username: str, password: str, role: str, caps: list[str] | None = None):
         if not username or len(username) > 80 or not username.replace('_','').replace('-','').isalnum():
