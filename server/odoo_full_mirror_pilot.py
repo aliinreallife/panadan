@@ -14,6 +14,7 @@ import sys
 
 from . import database, odoo_full_mirror_adapter as full
 from . import odoo_sync_pilot as guarded
+from . import odoo_mirror_target as mirror_target
 from .platform_ingest import checkpoint, ingest_batch, _validate_events
 
 SOURCE_KEY = 'odoo_calls_full_v1'
@@ -305,7 +306,7 @@ def _snapshot_run(source, target, *, limit: int, max_pages: int):
 
 def apply(args):
     require_approval(args)
-    with guarded.owned_connection() as target:
+    with mirror_target.owned_connection() as target:
         with guarded.exclusive_pilot(target):
             # Confirm explicitly registered and ENABLED separate mirror source
             # before querying source payloads; the restricted writer has no
@@ -340,17 +341,17 @@ def main(argv=None):
         if args.command == 'preview':
             print('FULL MIRROR PREVIEW:', preview(limit=args.batch_size))
         elif args.command == 'status':
-            with guarded.owned_connection() as target:
+            with mirror_target.owned_connection() as target:
                 print('FULL MIRROR STATUS:', local_status(target))
         elif args.command == 'verify':
-            with guarded.owned_connection() as target:
+            with mirror_target.owned_connection() as target:
                 with database.connect() as source:
                     print('FULL MIRROR PARITY:', verify_sample(
                         source, target, limit=args.batch_size))
         elif args.command == 'verify-run':
             # Read-only and bounded. No approval flags required because no
             # local or source data is changed, and no cursor is written.
-            with guarded.owned_connection() as target:
+            with mirror_target.owned_connection() as target:
                 with database.connect() as source:
                     print('FULL MIRROR PARITY RANGE:', verify_range(
                         source, target, after_id=args.after_id,
