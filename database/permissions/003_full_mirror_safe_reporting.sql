@@ -93,7 +93,7 @@ WHERE
     AND r.payload->>'id' = s.external_id
     AND jsonb_array_length(envelope.rows) BETWEEN 1 AND 100
     AND jsonb_typeof(firstrow.r) = 'object'
-    AND firstrow.r->>'CALLDATE' ~ '^\\d{4}-\\d{2}-\\d{2}$'
+    AND firstrow.r->>'CALLDATE' ~ '^\[0-9]{4}-\[0-9]{2}-\[0-9]{2}$'
     AND firstrow.r->>'vw_danix_base_info_users' ~ '^[1-9][0-9]{0,8}$'
     AND NOT EXISTS (
         SELECT 1 FROM jsonb_array_elements(envelope.rows) AS variant(r)
