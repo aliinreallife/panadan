@@ -1,0 +1,57 @@
+<!doctype html><html lang="fa" dir="rtl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>تماس‌های محلی | پانادان</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f8f7;color:#19312a;font:14px/1.7 Vazirmatn,Tahoma,Arial,sans-serif}
+header{background:#fff;border-bottom:1px solid #dfebe4;padding:18px max(20px,calc((100vw - 1160px)/2));display:flex;justify-content:space-between;align-items:center;gap:16px}
+header b{font-size:17px}.meta{color:#67796e;font-size:12px}.wrap{max-width:1160px;margin:32px auto;padding:0 20px}
+h1{margin:0 0 12px;font-size:25px}.summary{margin:0 0 24px;color:#63746b}
+.card{background:#fff;border:1px solid #e3ece7;border-radius:16px;overflow:hidden;box-shadow:0 4px 18px #1d392009}
+.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:850px}th,td{padding:13px 15px;text-align:right;white-space:nowrap;border-bottom:1px solid #ecf1ee}
+th{background:#f9fbfa;color:#506359;font-size:12px;font-weight:600}tr:last-child td{border-bottom:0}
+a{color:#106c55;text-decoration:none;font-weight:600}a:hover{text-decoration:underline}
+.status{display:inline-block;border-radius:100px;background:#eff7f3;padding:4px 9px;color:#21684f;font-size:12px}
+.mono{font-family:ui-monospace,Consolas,monospace}.muted{color:#74877d}.actions{display:flex;gap:10px}
+button{border:1px solid #d3dfd8;background:#fff;color:#285642;padding:7px 12px;border-radius:9px;cursor:pointer;font:inherit}
+.footer{display:flex;justify-content:space-between;align-items:center;gap:15px;padding:16px 20px}
+.empty{text-align:center;padding:60px 20px;color:#6b7c70}.warning{border:1px solid #eddbba;background:#fff9ef;border-radius:10px;padding:12px 16px;color:#78602b;margin-bottom:18px}
+@media(max-width:700px){.wrap{margin:20px auto}h1{font-size:21px}header{padding:15px 20px}}
+</style>
+</head><body>
+<header>
+ <div><b>پانادان · آینهٔ محلی</b><div class="meta">نسخهٔ آزمایشی با دسترسی محدود</div></div>
+ <form action="/local/logout" method="post"><input type="hidden" name="csrf" value="{{csrf}}"><button type="submit">خروج</button></form>
+</header>
+<main class="wrap">
+<h1>تماس‌های مجاز شما</h1>
+<p class="summary">سلام {{session.username}} · {{count}} تماس در محدودهٔ اپراتورهای تأییدشدهٔ شما</p>
+<div class="warning">این صفحه فقط داده‌های همگام‌شدهٔ مجاز را نشان می‌دهد. تا زمان تأیید همگام‌سازی کامل، ممکن است تماس‌های جدید هنوز اینجا نباشند.</div>
+<div class="card">
+<div class="table-wrap"><table>
+<thead><tr><th>شمارهٔ داخلی</th><th>تاریخ</th><th>اپراتور</th><th>جهت تماس</th><th>نوع</th><th>وضعیت AI</th><th>امتیاز AI</th><th>نسخه‌های تحلیل</th><th>عملیات</th></tr></thead>
+<tbody>
+{% for call in calls %}
+<tr>
+<td class="mono">{{call.call_id}}</td>
+<td dir="ltr" class="mono">{{call.call_date}}</td>
+<td class="mono">{{call.operator_id}}</td>
+<td>{{call.tellside or '—'}}</td>
+<td>{{call.tellstate or '—'}}</td>
+<td><span class="status">{{call.aicallinfostate or 'نامشخص'}}</span></td>
+<td>{{call.ai_sales_score if call.ai_sales_score is not none else '—'}}</td>
+<td>{{call.source_row_count}}</td>
+<td class="actions">
+ <a href="/local/calls/{{call.call_id}}" rel="nofollow">خلاصه</a>
+ {% if can_sensitive %}<a href="/local/sensitive/calls/{{call.call_id}}" rel="nofollow">جزئیات کامل</a>{% endif %}
+</td>
+</tr>
+{% else %}
+<tr><td colspan="9" class="empty">هیچ تماس مجازی پیدا نشد. دسترسی اپراتورها باید مستقلاً توسط مدیر تأیید شود.</td></tr>
+{% endfor %}
+</tbody></table></div>
+<div class="footer"><span class="muted">نمایش حداکثر ۵۰ تماس در هر صفحه</span>
+{% if next_after_id is not none and calls|length == 50 %}
+<a href="/local/dashboard?after_id={{next_after_id}}">صفحهٔ بعد ←</a>
+{% endif %}
+</div>
+</div></main></body></html>
