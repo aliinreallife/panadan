@@ -24,8 +24,8 @@ from . import odoo_sync_pilot as guarded
 from .platform_ingest import SourceEvent, _validate_events, checkpoint, ingest_batch
 
 WIRE_VERSION = 1
-MAX_CALLS = 25
-MAX_WIRE_BYTES = 55_000_000
+MAX_CALLS = 100  # maximum source view rows per manually supervised page
+MAX_WIRE_BYTES = 55_000_000  # hard wire limit; large pages fail closed
 _KEYS = {"version", "source_key", "after_id", "limit",
          "source_rows", "more", "events"}
 _ALLOWED = _KEYS | {"sha256"}
@@ -55,6 +55,11 @@ def make_packet(source, *, after_id: int, limit: int) -> dict:
     events, more, rows = full.read_snapshot_page(
         source, after_id=after_id, limit=limit)
     _validate_events(events)
+    # Reject oversized page payloads before building the full wire envelope.
+    # The 55 MB wire limit stays unchanged even when the page budget rises.
+    estimated_bytes = sum(len(_canonical(event.payload)) for event in events)
+    if estimated_bytes > MAX_WIRE_BYTES - 100_000:
+        raise ValueError("Export exceeds staging transfer size")
     packet = {
         "version": WIRE_VERSION,
         "source_key": pilot.SOURCE_KEY,
