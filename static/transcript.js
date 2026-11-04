@@ -73,15 +73,8 @@ export function parseTranscript(input) {
     pending = false;
   };
   for (const line of lines) {
-    const hit = matchSpeaker(line);
-    if (hit) {
-      push();
-      speaker = hit.speaker;
-      labelsFound += 1;
-      pending = true;
-      if (hit.body.trim()) body.push(hit.body.trim());
-      continue;
-    }
+    // Parse multi-speaker paragraphs first: a leading "مشتری؟" or
+    // "اپراتور:" also matches a conventional single-line role label.
     const embedded = inlineSpeakers(line);
     if (embedded) {
       inlineLines += 1;
@@ -97,6 +90,15 @@ export function parseTranscript(input) {
       }
       const trailing = line.slice(offset).trim();
       if (trailing) body.push(trailing);
+      continue;
+    }
+    const hit = matchSpeaker(line);
+    if (hit) {
+      push();
+      speaker = hit.speaker;
+      labelsFound += 1;
+      pending = true;
+      if (hit.body.trim()) body.push(hit.body.trim());
       continue;
     }
     if (line.trim() && !pending && speaker === 'نامشخص') unattributed += 1;
