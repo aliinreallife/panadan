@@ -96,3 +96,13 @@ def test_verified_numeric_operator_scopes_require_admin_attestation(tmp_path):
         st.authorize_operator_scope(
             admin_id=admin, user_id=user_a, operator_id=11,
             source_identity_verified=True)
+    with st.db() as c:
+        audit = c.execute(
+            "SELECT target_user_id,operator_id,action FROM operator_scope_audit "
+            "ORDER BY event_id"
+        ).fetchall()
+    assert [row['action'] for row in audit] == [
+        'grant', 'grant', 'grant', 'revoke', 'reset', 'reset']
+    assert [(row['target_user_id'], row['operator_id']) for row in audit[-2:]] == [
+        (user_b, 22), (user_a, 12)]
+
