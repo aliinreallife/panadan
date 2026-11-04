@@ -62,6 +62,14 @@ This **replaces the earlier proposed seven-day/limited-field production target**
 
 **Release gate:** No production source enablement, cursor seeding, full-field copy, automatic scheduling, auth migration or dashboard cutover from merging this document alone. Obtain explicit approvals for source semantics, full-field sensitive-data storage, retention/erasure governance, approved rollout/rollback and production runtime changes. Record any consciously accepted backup risk.
 
+## Implemented on draft PR #97 (not deployed)
+
+- New isolated `server/odoo_full_mirror_adapter.py` explicitly describes **all 37 observed view fields** and performs strict schema/order/type checks before any full-field read.
+- It supports bounded keyset ID pages, `(write_date,id)` update pages, raw call metadata including sensitive names, phones and transcripts, JSONB, date, timestamp and float types. Unrecognized types fail closed; it **does not truncate** transcripts or propagate source disappearance as deletion.
+- New `tests/test_odoo_full_mirror_adapter.py` uses synthetic data only. Its local focused test suite passed in a minimal stub harness (18 cases), but actual repository CI/integration testing is still required.
+- **Crucially, this is only a reader module**, not a production-import-ready worker. No live code path, scheduler or database write has been wired to it; the existing restricted eight-field pilot remains unchanged.
+- Actual full-field writes still need payload-size handling (existing `server/platform_ingest.py` limit: 2,000,000 JSON bytes/record), new guarded worker, parity/recovery tests, authorization, and approved deployment.
+
 ## Existing implementation gaps (reviewed 2026-11-04)
 
 - `server/odoo_sync_adapter.py` only selects eight restricted fields plus one update marker; it excludes names, phones, transcripts and most reporting metadata.
