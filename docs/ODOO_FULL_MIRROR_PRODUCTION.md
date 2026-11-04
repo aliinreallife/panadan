@@ -66,6 +66,20 @@ The operator ran a full-view, read-only count against `public.vw_danix_call_info
 
 Next read-only diagnostic: identify the duplicate ID internally without printing it, fetch only its two rows, and output *column names that differ* plus whether the rows are byte-for-byte equivalent at the Python field-value level. Never output any source ID, name, phone number, transcript or raw field values. If they differ, investigate JOIN/cardinality and request a unique, stable source key or view fix from the Odoo DBA. If they are identical, determine why the source emits duplicate rows before selecting a source-side canonicalization strategy. Prove the final uniqueness guarantee globally and regress pagination across a duplicate page boundary before approval.
 
+## Read-only duplicate investigation result — 2026-11-04
+
+The operator used a forward-only, read-only ID scan of the active view and found:
+
+- **95,510 rows scanned** at that later point in time (the earlier aggregate saw 95,495; source is live and snapshots were taken at different times).
+- **Exactly one duplicate ID** observed in that scan.
+- Two rows returned for that ID; **the rows are not identical**.
+- The two rows share the same `call_id` and, because only two fields differ, the same `write_date`.
+- Only `possibility_of_sale_ai` and `tell_state_desc` differ between them.
+
+This rules out treating the two occurrences as byte-identical duplicates. Neither `id` nor `call_id` nor `(write_date,id)` can uniquely represent these view rows. The likely explanation is view join multiplicity or multiple source detail rows, **not proven** without the view's owner examining join cardinality.
+
+**Decision: keep all production sync disabled; do not silently choose the first row, MAX(), DISTINCT ON, or merge conflicting fields.** Ask the Odoo DBA/view owner to identify which relation creates this fan-out and either (a) correct the view to return exactly one authoritative row per call with deterministic, documented AI-field aggregation, or (b) expose a stable per-row unique key and an update marker that covers joined-row changes. Confirm that resolution never discards genuinely independent records. After the fix, rerun a global identity audit and verify incremental pagination under same-timestamp ties.
+
 ## Staged delivery / acceptance criteria
 
 1. **Audit + test-first implementation:** Collect live metadata and safe size statistics; verify source IDs and update semantics; add full-field adapter, schema-drift guard, type preservation, >2MB handling and tests with synthetic sensitive data.
