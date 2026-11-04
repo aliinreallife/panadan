@@ -110,3 +110,69 @@ def test_staging_launcher_drops_remote_peers_before_any_auth_or_pg_query():
             assert result.status_code == 401
             assert result.headers["cache-control"] == "no-store"
             assert private.get("/openapi.json").status_code == 404
+
+
+
+def test_staging_mcp_requires_scoped_token_and_only_advertises_sanitized_tools():
+    import json
+
+    with tempfile.TemporaryDirectory(
+        prefix="panadan-mirror-staging-", dir="/tmp",
+    ) as directory:
+        env = _prepared(Path(directory))
+        store = Store(env["PANADAN_LOCAL_MIRROR_STAGING_AUTH_DB"])
+        store.bootstrap("mcpadmin", "a-long-synthetic-admin-password")
+        admin = store.verify_login("mcpadmin", "a-long-synthetic-admin-password")
+        _, token = store.create_token(
+            "synthetic-mcp", "mcp:read", 7, owner_id=admin)
+        app = create_staging_app(env)
+
+        headers = {
+            "accept": "application/json, text/event-stream",
+            "content-type": "application/json",
+        }
+
+        def post(client, method, token_value, request_id=1, params=None):
+            return client.post(
+                "/mcp/", headers=headers | {
+                    "Authorization": "Bearer " + token_value,
+                },
+                json={
+                    "jsonrpc": "2.0", "id": request_id,
+                    "method": method, "params": params or {},
+                },
+            )
+
+        with TestClient(app, base_url="http://localhost:19087",
+                        client=("127.0.0.1", 1234)) as client:
+            assert post(client, "tools/list", "wrong").status_code == 401
+            initialized = post(client, "initialize", token, params={
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "Synthetic local mirror smoke", "version": "1.0",
+                },
+            })
+            assert initialized.status_code == 200
+            listed = post(client, "tools/list", token, request_id=2)
+            assert listed.status_code == 200
+            data = listed.json()
+            tools = data["result"]["tools"]
+            assert {tool["name"] for tool in tools} == {
+                "list_mirror_calls",
+                "get_mirror_call_summary",
+                "count_mirror_calls",
+            }
+            assert all(tool["annotations"]["readOnlyHint"] for tool in tools)
+            assert not any("transcript" in tool["name"] for tool in tools)
+
+            # Fake 55432 has NO PostgreSQL. A valid MCP token must not
+            # accidentally fall back to production Odoo or return raw data.
+            result = post(client, "tools/call", token, request_id=3,
+                          params={"name": "count_mirror_calls", "arguments": {}})
+            assert result.status_code == 200
+            result_data = result.json()["result"]
+            assert "local_mirror_unavailable" in json.dumps(result_data)
+
+            store.revoke(store.list_tokens()[0]["id"])
+            assert post(client, "tools/list", token, request_id=4).status_code == 401
