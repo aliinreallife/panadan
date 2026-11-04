@@ -674,3 +674,54 @@ def test_full_mirror_pilot_pg18_insert_update_replay_and_missing_row_retention(p
     assert len(stored[1]['payload']['source_rows']) == 2
     assert all(len(r) == 37 for r in stored[1]['payload']['source_rows'])
     assert pilot.local_status(pg)['local_revisions'] == 4
+
+
+
+def test_mirror_scoped_processor_does_not_dequeue_other_sources(pg):
+    """A supervised full-mirror tick never drains unrelated pending jobs."""
+    from server.platform_processing import process_next
+    from server.odoo_full_mirror_pilot import SOURCE_KEY
+
+    other_key = "scoped_processor_unrelated"
+    _enable(pg, other_key)
+    register_source(pg, source_key=SOURCE_KEY, kind="database",
+                    label="Synthetic isolated processor mirror")
+    pg.execute(
+        "UPDATE panadan_ingest.sources SET enabled=TRUE WHERE source_key=%s",
+        (SOURCE_KEY,),
+    )
+    ingest_batch(
+        pg, source_key=other_key, stream="queue",
+        events=[SourceEvent("unrelated", "upsert", {"tellside": "IntoOut"})],
+        expected_cursor=None, next_cursor={"id": 1},
+    )
+    ingest_batch(
+        pg, source_key=SOURCE_KEY, stream="scoped_fixture",
+        events=[SourceEvent("880", "upsert", {
+            "id": 880, "source_schema": "odoo_view_37_v1",
+            "source_rows": [{
+                "id": 880, "tellside": "OutToIn",
+                "customername": "SYNTHETIC ONLY",
+                "transcription": "PRIVATE SYNTHETIC TRANSCRIPT",
+            }],
+        })],
+        expected_cursor=None, next_cursor={"pass": 1, "last_id": 880},
+    )
+
+    assert process_next(pg, source_key=SOURCE_KEY)
+    assert not process_next(pg, source_key=SOURCE_KEY)
+    with pytest.raises(ValueError, match="reviewed full mirror"):
+        process_next(pg, source_key=other_key)
+    statuses = pg.execute(
+        """SELECT r.source_key, j.status
+           FROM panadan_ingest.processing_jobs AS j
+           JOIN panadan_ingest.raw_revisions AS r
+             ON r.revision_id=j.revision_id
+           WHERE (r.source_key=%s AND r.external_id='880')
+              OR (r.source_key=%s AND r.external_id='unrelated')
+           ORDER BY r.source_key""",
+        (SOURCE_KEY, other_key),
+    ).fetchall()
+    assert {r["source_key"]: r["status"] for r in statuses} == {
+        SOURCE_KEY: "succeeded", other_key: "pending",
+    }
