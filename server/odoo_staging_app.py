@@ -26,6 +26,7 @@ from .odoo_mirror_mcp import create_mirror_mcp
 
 from .security import Store
 from .odoo_staging_api import create_router
+from .odoo_staging_dashboard import create_dashboard_router
 
 REPORT_ROLE = "panadan_report_reader"
 SENSITIVE_ROLE = "panadan_mirror_sensitive_reader"
@@ -191,6 +192,9 @@ def create_staging_app(environ: Mapping[str, str] | None = None) -> FastAPI:
         return response
 
     instance.include_router(create_router(
+        auth_store, open_reporting=open_report, open_sensitive=open_sensitive,
+    ))
+    instance.include_router(create_dashboard_router(
         auth_store, open_reporting=open_report, open_sensitive=open_sensitive,
     ))
     # Only private loopback clients and a valid mcp:read user may reach SDK.
