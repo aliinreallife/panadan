@@ -243,3 +243,65 @@ def test_100_row_wire_ceiling_is_not_increased():
     assert transfer.MAX_CALLS == 100
     packet = transfer.make_packet(Source([fake_row(1)]), after_id=0, limit=100)
     assert len(transfer._canonical(packet)) < transfer.MAX_WIRE_BYTES
+
+
+@pytest.mark.parametrize("more,expected_cursor,expected_pass_complete", [
+    (True, {"pass": 2, "last_id": 100}, False),
+    (False, {"pass": 3, "last_id": 0}, True),
+])
+def test_second_pass_replays_complete_groups_with_atomic_cursor(
+    monkeypatch, more, expected_cursor, expected_pass_complete
+):
+    """Idempotent content replay uses the same original envelope and CAS."""
+    rows = [fake_row(i) for i in range(1, 102 if more else 3)]
+    packet = transfer.make_packet(Source(rows), after_id=0, limit=100)
+    assert packet["more"] is more
+    observed = []
+
+    class Stage:
+        def execute(self, sql, params=None):
+            if "FROM panadan_ingest.sources" in sql:
+                return Result(row={"enabled": True})
+            raise AssertionError("Unexpected stage SQL")
+
+    @contextmanager
+    def owned():
+        yield Stage()
+
+    @contextmanager
+    def exclusive(_):
+        yield
+
+    def read_cursor(_stage, *, source_key, stream):
+        assert source_key == pilot.SOURCE_KEY
+        if stream == pilot.SNAPSHOT_STREAM:
+            return {"pass": 2, "last_id": 0}
+        return None
+
+    def ingest(_stage, **kwargs):
+        observed.append(kwargs)
+        return SimpleNamespace(
+            examined=len(packet["events"]), upserted=1,
+            unchanged=len(packet["events"]) - 1,
+        )
+
+    monkeypatch.setattr(transfer.target, "validate_staging_writer_config",
+                        lambda: "isolated-staging")
+    monkeypatch.setattr(transfer.target, "owned_connection", owned)
+    monkeypatch.setattr(transfer.guarded, "exclusive_pilot", exclusive)
+    monkeypatch.setattr(transfer, "checkpoint", read_cursor)
+    monkeypatch.setattr(transfer.pilot, "_check_identity_reuse",
+                        lambda *_args: None)
+    monkeypatch.setattr(transfer, "ingest_batch", ingest)
+
+    result = transfer.import_page(
+        packet, expected_limit=100, approvals=approvals(batch_size=100))
+    assert result["pass"] == 2
+    assert result["pass_complete"] is expected_pass_complete
+    assert result["changed"] == 1
+    assert result["unchanged"] == len(packet["events"]) - 1
+    assert len(observed) == 1
+    assert observed[0]["expected_cursor"] == {"pass": 2, "last_id": 0}
+    assert observed[0]["next_cursor"] == expected_cursor
+    assert observed[0]["stream"] == pilot.SNAPSHOT_STREAM
+    assert observed[0]["source_key"] == pilot.SOURCE_KEY
