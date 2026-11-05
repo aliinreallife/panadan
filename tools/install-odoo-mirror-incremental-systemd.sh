@@ -151,10 +151,19 @@ sudo -n systemd-analyze verify "$SERVICE" "$TIMER" || {
   exit 2
 }
 
+# Smoke-test the actual root-owned SYSTEMD service, not only a manual
+# invocation under the operator's cached sudo ticket. A service failure must
+# leave the recurring timer disabled until explicitly resolved.
+echo "=== Smoke-test pinned systemd service before scheduling ==="
+if ! sudo -n systemctl start panadan-mirror-incremental.service; then
+  echo "STOP: Pinned service smoke test failed; timer NOT enabled" >&2
+  exit 2
+fi
 # This action explicitly authorizes activation in isolated STAGING. Neither
 # the live web service nor production data source is restarted.
 sudo -n systemctl enable --now panadan-mirror-incremental.timer
 
+echo "PASS: Staging systemd service smoke test succeeded"
 echo "PASS: Five-minute isolated-staging incremental timer enabled"
 echo "PASS: Runtime pinned to approved git revision $REV"
 echo "Inspect: systemctl status panadan-mirror-incremental.timer"
