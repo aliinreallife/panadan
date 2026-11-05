@@ -62,8 +62,14 @@ stage_state="$(sudo -n docker exec "$STAGE" psql -X -Atq -v ON_ERROR_STOP=1 \
           (SELECT cursor->>'last_id' FROM panadan_ingest.sync_checkpoints
            WHERE source_key='odoo_calls_full_v1'
              AND stream='view_reconciliation_v1');")"
-[[ "$stage_state" == 95912\|false\|2\|0 ]] || {
-  echo "STOP: Audit requires verified 95,912-row completed pass-1 baseline" >&2
+IFS='|' read -r staged_count source_enabled completed_pass last_id <<< "$stage_state"
+[[ "$staged_count" =~ ^[0-9]+$ &&
+   "$staged_count" -ge 95912 &&
+   "$source_enabled" == false &&
+   "$completed_pass" =~ ^[0-9]+$ &&
+   "$completed_pass" -ge 2 &&
+   "$last_id" == 0 ]] || {
+  echo "STOP: Audit requires a completed reconciliation checkpoint and disabled source" >&2
   exit 2
 }
 IMAGE="$(sudo -n docker inspect panadan-web-1 --format '{{.Image}}')"
