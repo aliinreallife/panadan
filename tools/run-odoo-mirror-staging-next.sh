@@ -31,6 +31,14 @@ SOURCE_ENV="$HOME/panadan/.env.db"
 DB="panadan-mirror-staging-pg18"
 SOURCE="odoo_calls_full_v1"
 PAGES=3
+# A supervisor may request 1 or 2 pages to finish an interrupted
+# 300-row recovery interval. Never permit more than the reviewed 3.
+if [[ -n "${PANADAN_MIRROR_PAGE_LIMIT:-}" ]]; then
+  case "$PANADAN_MIRROR_PAGE_LIMIT" in
+    1|2|3) PAGES="$PANADAN_MIRROR_PAGE_LIMIT" ;;
+    *) echo "Only 1, 2 or 3 staging pages are permitted" >&2; exit 2 ;;
+  esac
+fi
 PAGE_SIZE=100
 ENABLED=0
 
