@@ -129,8 +129,12 @@ def verify_pages() -> dict:
                 raise ValueError("Staging source must be disabled")
             before = checkpoint(
                 conn, source_key=pilot.SOURCE_KEY, stream=pilot.SNAPSHOT_STREAM)
-            if before != {"pass": 2, "last_id": 0}:
-                raise ValueError("First-pass checkpoint must be complete")
+            if (not isinstance(before, dict)
+                    or set(before) != {"pass", "last_id"}
+                    or type(before["pass"]) is not int or before["pass"] < 2
+                    or type(before["last_id"]) is not int
+                    or before["last_id"] != 0):
+                raise ValueError("Completed reconciliation checkpoint required")
             if (checkpoint(conn, source_key=pilot.SOURCE_KEY,
                            stream=pilot.BACKFILL_STREAM) is not None
                     or checkpoint(conn, source_key=pilot.SOURCE_KEY,
