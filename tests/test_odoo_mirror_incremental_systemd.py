@@ -42,6 +42,9 @@ def test_installer_never_executes_user_writable_repo_as_root():
     assert "Persistent=true" in s
     assert "panadan-mirror-incremental.timer" in s
     assert "systemctl enable --now" in s
+    assert "systemctl start panadan-mirror-incremental.service" in s
+    assert s.index("systemctl start panadan-mirror-incremental.service") < s.index("systemctl enable --now")
+    assert "timer NOT enabled" in s
     assert "STAGE=panadan-mirror-staging-pg18" in s
     assert "127.0.0.1:55432" in s
     assert "source_key='odoo_calls_full_v1'" in s
