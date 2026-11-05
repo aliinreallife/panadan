@@ -3,7 +3,6 @@
 The tests use synthetic shell checks only: never access Odoo or PG18.
 """
 from pathlib import Path
-import os
 import subprocess
 
 import pytest
