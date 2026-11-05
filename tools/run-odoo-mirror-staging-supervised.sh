@@ -32,6 +32,10 @@ CONFIG="$HOME/.config/panadan-mirror-staging"
 # First supervised pilot is intentionally short and interactive (not a daemon).
 CHUNKS=3
 ROWS_PER_CHUNK=300
+BASE_PAGES=24
+TARGET_PAGES=$((BASE_PAGES + CHUNKS * 3))
+RECOVERY_PAGES=3
+PROGRESS_FILE="$CONFIG/supervised-progress.state"
 MIN_AVAILABLE_KIB=$((6 * 1024 * 1024))
 START_MIN=825
 COMMITTED_MIN=24
@@ -75,10 +79,11 @@ sudo -n install -d -m 700 "$BACKUPS"
 
 # If the operator interrupts between pages, the child's EXIT trap disables
 # ingestion. This outer trap is a staging-only second line of defense.
+active_import=0
 emergency_disable() {
   local rc=$?
   trap - EXIT
-  if (( rc != 0 )); then
+  if (( rc != 0 && active_import )); then
     echo "STOP: Supervisor interrupted or failed; checking staging source" >&2
     if ! sudo -n docker exec "$DB" psql -X -Atq -v ON_ERROR_STOP=1 \
       -U panadan_stage_owner -d panadan_ci -c \
@@ -137,7 +142,7 @@ read_state() {
      "$pass" == 1 && "$cursor" =~ ^[0-9]+$ &&
      "$max_id" =~ ^[0-9]+$ && "$cursor" == "$max_id" &&
      "$records" -ge "$START_MIN" && "$revisions" == "$records" &&
-     "$pages" -ge "$COMMITTED_MIN" ]] || {
+     "$pages" -ge "$COMMITTED_MIN" && "$pages" -le "$TARGET_PAGES" ]] || {
     echo "FAIL: Unexpected staging state or pass-1 cursor" >&2
     exit 2
   }
@@ -165,6 +170,8 @@ integrity_check() {
       AND current_digest=digest AND current_digest ~ '^[0-9a-f]{64}$'
       AND payload->>'source_schema'='odoo_view_37_v1'
       AND jsonb_typeof(payload->'source_rows')='array'
+      AND jsonb_array_length(payload->'source_rows')>=1
+      AND payload->>'id'=external_id
     ) FROM current) IS TRUE
     AND NOT EXISTS (
       SELECT 1 FROM current c
@@ -190,7 +197,7 @@ integrity_check() {
 find_prior_backup() {
   local prior
   prior="$(sudo -n find "$BACKUPS" -maxdepth 1 -type f \
-    -name "odoo-mirror-$records-*.dump.age" \
+    -name "odoo-mirror-$backed_records-*.dump.age" \
     -printf '%T@ %p\n' | sort -nr | sed -n '1s/^[^ ]* //p')"
   [[ -n "$prior" ]] && sudo -n test -s "$prior" && \
     [[ "$(sudo -n stat -c %a "$prior")" == 600 ]] || {
@@ -199,7 +206,7 @@ find_prior_backup() {
   }
   sudo -n age -d -i "$KEY" "$prior" |
     sudo -n docker exec -i "$DB" pg_restore -l >/dev/null
-  echo "PASS: Encrypted recovery archive present for $records records"
+  echo "PASS: Encrypted recovery archive present for $backed_records records"
 }
 
 create_backup() {
@@ -219,19 +226,28 @@ create_backup() {
   fi
   sudo -n age -d -i "$KEY" "$output" |
     sudo -n docker exec -i "$DB" pg_restore -l >/dev/null
+  LATEST_BACKUP_BASENAME="$(basename "$output")"
   echo "PASS: New encrypted backup validated for $records records"
+}
+
+write_progress() {
+  local tmp
+  tmp="$(mktemp "$CONFIG/.supervised-progress.XXXXXXXX")"
+  printf '%s|%s|%s\n' "$pages" "$records" "$LATEST_BACKUP_BASENAME" > "$tmp"
+  chmod 600 "$tmp"
+  mv -f -- "$tmp" "$PROGRESS_FILE"
+  backed_pages="$pages"
+  backed_records="$records"
+  echo "PASS: Recovery marker updated ($backed_pages pages backed up)"
 }
 
 echo "=== Verify isolated staging starting state ==="
 free_disk_check
 read_state
-[[ "$records" == 825 && "$pages" == 24 ]] || {
-  echo "FAIL: First supervised pilot requires the verified 825-row / 24-page baseline" >&2
-  exit 2
-}
 integrity_check
-find_prior_backup
-# Confirm independent recovery of the known baseline, not just an archive TOC.
+
+# Always retain the verified independent 825-record baseline. Never remove it
+# or interpret a verified archive's TOC as a full independent restore drill.
 restored="$(sudo -n docker exec "$RESTORE" \
   psql -X -Atq -v ON_ERROR_STOP=1 \
   -U panadan_stage_owner -d panadan_restore_825 -c \
@@ -239,35 +255,102 @@ restored="$(sudo -n docker exec "$RESTORE" \
            WHERE source_key='$SOURCE')::text || '|' ||
           (SELECT count(*) FROM panadan_ingest.raw_revisions
            WHERE source_key='$SOURCE')::text;")"
-[[ "$restored" == 825\|825 ]] || {
+[[ "$restored" == '825|825' ]] || {
   echo "FAIL: Independent 825-record recovery point unavailable" >&2
   exit 2
 }
-echo "PASS: Independent restore checkpoint verified"
+echo "PASS: Independent 825-record restore remains intact"
 
-for ((chunk=1; chunk<=CHUNKS; chunk++)); do
-  free_disk_check
-  read_state
-  before_records="$records"
-  before_pages="$pages"
-  echo "=== Supervised chunk $chunk/$CHUNKS (up to $ROWS_PER_CHUNK source rows) ==="
-  bash "$ROOT/tools/run-odoo-mirror-staging-next.sh" \
-    next-batch --ack-source-contract --ack-retention \
-    --ack-copy --ack-sensitive-data
-  read_state
-  (( records > before_records && records <= before_records + ROWS_PER_CHUNK )) || {
-    echo "FAIL: Unexpected staged record increment" >&2
+backed_pages=24
+backed_records=825
+if [[ -e "$PROGRESS_FILE" || -L "$PROGRESS_FILE" ]]; then
+  [[ -f "$PROGRESS_FILE" && ! -L "$PROGRESS_FILE" &&
+     "$(stat -c %a "$PROGRESS_FILE")" == 600 ]] || {
+    echo "FAIL: Private supervisor recovery marker required" >&2
     exit 2
   }
-  (( pages > before_pages && pages <= before_pages + 3 )) || {
-    echo "FAIL: Unexpected committed page increment" >&2
+  IFS='|' read -r backed_pages backed_records backed_filename < "$PROGRESS_FILE"
+  [[ "$backed_pages" =~ ^(27|30|33)$ &&
+     "$backed_records" =~ ^[0-9]+$ &&
+     "$backed_filename" =~ ^odoo-mirror-[0-9]+-[0-9TZ]+\.dump\.age$ &&
+     "$backed_filename" == odoo-mirror-"$backed_records"-* &&
+     "$backed_records" -ge "$START_MIN" &&
+     "$pages" -ge "$backed_pages" ]] || {
+    echo "FAIL: Invalid supervisor recovery marker" >&2
+    exit 2
+  }
+  prior="$BACKUPS/$backed_filename"
+  [[ -n "$backed_filename" ]] && sudo -n test -s "$prior" &&
+    [[ "$(sudo -n stat -c %a "$prior")" == 600 ]] || {
+    echo "FAIL: Recovery marker backup is missing" >&2
+    exit 2
+  }
+  sudo -n age -d -i "$KEY" "$prior" |
+    sudo -n docker exec -i "$DB" pg_restore -l >/dev/null
+  echo "PASS: Verified marked encrypted backup for $backed_records records"
+else
+  find_prior_backup
+fi
+
+[[ "$pages" -ge "$backed_pages" &&
+   "$pages" -le $(( backed_pages + RECOVERY_PAGES )) &&
+   "$records" -ge "$backed_records" &&
+   "$records" -le $(( backed_records + ROWS_PER_CHUNK )) ]] || {
+  echo "FAIL: Unbacked staging progress exceeds one supervised chunk" >&2
+  exit 2
+}
+
+# A killed operator shell may have committed its last page just before
+# archiving. In that case create the missing encrypted recovery point first.
+if (( pages == backed_pages + RECOVERY_PAGES )); then
+  echo "=== Recover completed, not-yet-backed-up chunk ==="
+  create_backup
+  write_progress
+fi
+
+while (( pages < TARGET_PAGES )); do
+  free_disk_check
+  read_state
+  delta=$(( pages - backed_pages ))
+  (( delta >= 0 && delta < RECOVERY_PAGES )) || {
+    echo "FAIL: Invalid checkpoint recovery interval" >&2
+    exit 2
+  }
+  pages_to_run=$(( RECOVERY_PAGES - delta ))
+  remaining=$(( TARGET_PAGES - pages ))
+  if (( pages_to_run > remaining )); then pages_to_run="$remaining"; fi
+  before_records="$records"
+  before_pages="$pages"
+
+  echo "=== Supervised continuation: $pages_to_run x 100 source rows ==="
+  active_import=1
+  PANADAN_MIRROR_PAGE_LIMIT="$pages_to_run" \
+    bash "$ROOT/tools/run-odoo-mirror-staging-next.sh" \
+      next-batch --ack-source-contract --ack-retention \
+      --ack-copy --ack-sensitive-data
+  active_import=0
+
+  read_state
+  (( pages > before_pages && pages <= before_pages + pages_to_run )) || {
+    echo "FAIL: Unexpected page count after import" >&2
+    exit 2
+  }
+  (( records > before_records &&
+     records <= before_records + pages_to_run * 100 )) || {
+    echo "FAIL: Unexpected record count after import" >&2
     exit 2
   }
   integrity_check
-  create_backup
-  echo "PASS: Chunk $chunk committed, checked and encrypted"
+  if (( pages == backed_pages + RECOVERY_PAGES || pages == TARGET_PAGES )); then
+    create_backup
+    write_progress
+  fi
 done
 
 read_state
+[[ "$backed_pages" == "$pages" && "$backed_records" == "$records" ]] || {
+  echo "FAIL: Final checkpoint has not been backed up" >&2
+  exit 2
+}
 echo "SUPERVISED STAGING PILOT COMPLETE: records=$records revisions=$revisions pages=$pages"
-echo "Staging source disabled; maximum $((CHUNKS * ROWS_PER_CHUNK)) new source rows"
+echo "Staging source disabled; up to $((CHUNKS * ROWS_PER_CHUNK)) source rows beyond the 825-row baseline"
