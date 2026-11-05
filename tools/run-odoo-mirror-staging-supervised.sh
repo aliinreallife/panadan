@@ -325,6 +325,7 @@ while (( pages < TARGET_PAGES )); do
   echo "=== Supervised continuation: $pages_to_run x 100 source rows ==="
   active_import=1
   PANADAN_MIRROR_PAGE_LIMIT="$pages_to_run" \
+  PANADAN_MIRROR_MIN_AVAILABLE_KIB="$MIN_AVAILABLE_KIB" \
     bash "$ROOT/tools/run-odoo-mirror-staging-next.sh" \
       next-batch --ack-source-contract --ack-retention \
       --ack-copy --ack-sensitive-data
