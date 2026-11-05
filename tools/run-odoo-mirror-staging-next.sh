@@ -40,6 +40,16 @@ if [[ -n "${PANADAN_MIRROR_PAGE_LIMIT:-}" ]]; then
   esac
 fi
 PAGE_SIZE=100
+# Pass 1 remains the default for legacy scripts. Pass 2 requires a separate
+# explicit opt-in and may start with a zero cursor (the completed first pass).
+PASS_TO_RUN=1
+if [[ -n "${PANADAN_MIRROR_EXPECTED_PASS:-}" ]]; then
+  case "$PANADAN_MIRROR_EXPECTED_PASS" in
+    2) PASS_TO_RUN=2 ;;
+    *) echo "Only reconciliation pass 2 is a valid explicit override" >&2; exit 2 ;;
+  esac
+fi
+NEXT_PASS=$((PASS_TO_RUN + 1))
 ENABLED=0
 
 command -v flock >/dev/null
@@ -117,7 +127,8 @@ read_state() {
      "$revisions" =~ ^[0-9]+$ && "$pass" =~ ^[0-9]+$ &&
      "$cursor" =~ ^[0-9]+$ && "$max_id" =~ ^[0-9]+$ &&
      "$records" -ge 275 && "$revisions" -ge "$records" &&
-     ( "$pass" != 1 || "$cursor" == "$max_id" ) ]] || {
+     ( "$pass" != 1 || "$cursor" == "$max_id" ) &&
+     ( "$pass" != 2 || "$cursor" -le "$max_id" ) ]] || {
     echo "Unexpected staging checkpoint or source state" >&2
     exit 2
   }
@@ -144,21 +155,29 @@ check_disk_floor() {
 }
 
 read_state
-[[ "$pass" == 1 && "$cursor" -gt 0 ]] || {
-  echo "Expected an active pass-1 checkpoint; refusing new reconciliation pass" >&2
-  exit 2
-}
-echo "PASS: Existing pass-1 checkpoint detected; staging source disabled"
+if (( PASS_TO_RUN == 1 )); then
+  [[ "$pass" == 1 && "$cursor" -gt 0 ]] || {
+    echo "Expected an active pass-1 checkpoint; refusing new reconciliation pass" >&2
+    exit 2
+  }
+else
+  [[ "$pass" == 2 && "$cursor" -ge 0 ]] || {
+    echo "Expected a pass-2 checkpoint; refusing any other reconciliation pass" >&2
+    exit 2
+  }
+fi
+echo "PASS: Existing pass-$PASS_TO_RUN checkpoint detected; staging source disabled"
 echo "=== Resume for up to $PAGES pages x $PAGE_SIZE source rows ==="
 
 for ((i=1; i<=PAGES; i++)); do
   check_disk_floor
   read_state
-  if [[ "$pass" == 2 && "$cursor" == 0 ]]; then
-    echo "PASS: Source reconciliation pass completed"
+  if [[ "$pass" == "$NEXT_PASS" && "$cursor" == 0 ]]; then
+    echo "PASS: Source reconciliation pass $PASS_TO_RUN completed"
     break
   fi
-  [[ "$pass" == 1 && "$cursor" -gt 0 ]] || {
+  [[ "$pass" == "$PASS_TO_RUN" &&
+     ( "$PASS_TO_RUN" == 2 || "$cursor" -gt 0 ) ]] || {
     echo "Unexpected reconciliation checkpoint" >&2; exit 2;
   }
   before="$cursor"
@@ -202,11 +221,11 @@ for ((i=1; i<=PAGES; i++)); do
   disable || { echo "Could not disable staging source" >&2; exit 2; }
   ENABLED=0
   read_state
-  if [[ "$pass" == 2 && "$cursor" == 0 ]]; then
-    echo "PASS: Completed first reconciliation pass"
+  if [[ "$pass" == "$NEXT_PASS" && "$cursor" == 0 ]]; then
+    echo "PASS: Completed reconciliation pass $PASS_TO_RUN"
     break
   fi
-  [[ "$pass" == 1 && "$cursor" -gt "$before" ]] || {
+  [[ "$pass" == "$PASS_TO_RUN" && "$cursor" -gt "$before" ]] || {
     echo "Checkpoint failed to advance" >&2; exit 2;
   }
 done
