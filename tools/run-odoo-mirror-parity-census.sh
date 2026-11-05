@@ -72,7 +72,7 @@ sudo -n docker image inspect "$IMAGE" >/dev/null
 echo "=== Whole-view read-only parity scan; no source/staging writes ==="
 echo "=== Comparing all 37 source fields with stored SHA-256 digests ==="
 
-# Important: no tee of this pipe, no -t pseudo-terminal, no container logging.
+# Important: private pipe only; no stream duplication, pseudo-terminal or Docker logging.
 # Docker source stdout contains personal data and goes ONLY to the verifier.
 sudo -n docker run --rm \
   --name panadan-parity-census-source \
