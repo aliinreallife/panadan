@@ -414,3 +414,67 @@ floor, and backups remain VPS-local rather than off-host. Do not declare a
 production release without explicit approvals for sensitive-data access,
 retention/erasure, Odoo joined-field update semantics, operator scoping, and
 reversible cutover.
+
+
+## Incremental staging synchronization: create_date and write_date only (2026-11-05)
+
+**Operator's updated discovery contract:** The authorized Odoo reporting VIEW
+exposes write_date as its only known update marker; create_date can also
+identify newly created calls. The joined view's id is NOT assumed to be a
+monotonically increasing creation watermark. Never poll new calls using
+id > last_seen_id, and never run scheduled whole-view parity/reconciliation.
+
+Implementation:
+- server/odoo_mirror_incremental.py selects candidate IDs ONLY when
+  write_date OR create_date falls in a bounded source-clock window.
+  It groups candidates by id, sorting by timestamp and id as a tie-breaker.
+  Then it fetches all 37 columns and all joined-row variants ONLY for
+  selected IDs in one read-only repeatable-read source transaction.
+- The initial scan looks back 24 hours, uses a 60-second settling delay,
+  and replays a 15-minute overlap between completed windows. Separate
+  created_or_modified_v1 checkpoints store frozen windows and a
+  (last timestamp, last ID) page cursor, committed atomically with revisions.
+  Up to 80 candidate call IDs and 100 joined view rows are allowed per
+  bounded 55 MB pipe transfer. A call payload is capped at 2 MB.
+  Oversized/ambiguous events fail closed; nothing is truncated.
+- The verified 96,022-record pass-3 staging checkpoint remains unchanged.
+  Every changed group retains all joined-row variants. The previously
+  reviewed (call_id,create_date) anchor detects reuse of an existing ID;
+  changed data appends a revision, unchanged data does not.
+  Missing-at-source calls are not deleted.
+- tools/run-odoo-mirror-incremental-cycle.sh runs up to ten pages per
+  invocation, sharing the manual importer's continuation lock. Source
+  activation is page-scoped, with fail-closed cleanup and orphaned-source
+  recovery only after the exclusive lock is held. The 6 GiB disk floor
+  remains mandatory. No backup, restore, or full-view parity is performed.
+- tools/install-odoo-mirror-incremental-systemd.sh is a separate
+  operator-triggered, create-only installer. It copies a pinned Git revision
+  of tracked source files into a root-owned immutable release under /opt.
+  A five-minute systemd timer runs this isolated-staging service from
+  the root-owned release, never a user-writable checkout. The root system
+  service accesses the existing Docker socket; disposable source and
+  importer containers use the unprivileged panafor UID with read-only
+  filesystem, dropped capabilities and disabled Docker logging.
+  Explicit --ack-scheduled-sensitive-sync approval is mandatory.
+
+Accepted limitations:
+- A joined field that changes without write_date advancing cannot be
+  detected by this timestamp-only approach. A call newly exposed by a JOIN
+  with preexisting old create_date/write_date may also be missed.
+- Source id is only a local grouping/association key and a timestamp
+  tie-breaker; we have not proven that it cannot change when joins change.
+  If an existing ID maps to a different call_id/create_date anchor, ingestion
+  fails closed. Changed IDs may appear as new calls and leave stale ones.
+  We will not promote call_id to the primary key without independent proof.
+- Naive source timestamps are assumed UTC until independently verified.
+  This is a series of snapshot-consistent pages, not one immutable view.
+  More than 30 days of timestamp backlog fails closed for operator review.
+- No mandatory backups are made per the operator's explicit choice.
+  Prior encrypted archives are not deleted, and data loss may require a
+  full rebuild following host/storage failure.
+
+This adds no scheduled full-field comparison or complete view replay.
+It does NOT change the Odoo source, current production dashboard/API/MCP,
+authentication, VPN topology, network routes, or production PostgreSQL.
+The five-minute timer is staging-only until explicitly approved for
+production cutover after authorization and runtime acceptance tests.
