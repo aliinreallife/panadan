@@ -1,7 +1,10 @@
 """Synthetic-only read-only Odoo vs staging parity census tests."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import date, datetime
+from types import SimpleNamespace
+import io
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -163,3 +166,88 @@ def test_inspection_shell_has_no_persistent_plaintext_or_writes():
     assert "tee " not in s
     assert "TRUNCATE " not in s
     assert "DELETE FROM" not in s
+
+
+@pytest.mark.parametrize("completed_pass", [2, 3, 4])
+def test_parity_census_accepts_only_completed_checkpoints(
+    monkeypatch, completed_pass
+):
+    from server import odoo_full_mirror_pilot as pilot
+
+    query_log = []
+
+    class Stage:
+        def transaction(self):
+            @contextmanager
+            def transaction():
+                yield
+            return transaction()
+
+        def execute(self, sql, params=None):
+            query_log.append(sql)
+            if sql == "SET TRANSACTION READ ONLY":
+                return Result()
+            if "FROM panadan_ingest.sources" in sql:
+                return Result(row={"enabled": False})
+            if "FROM panadan_ingest.source_records" in sql:
+                return Result(rows=[{
+                    "external_id": "42",
+                    "current_digest": "f" * 64,
+                    "is_deleted": False,
+                }])
+            raise AssertionError("Unexpected stage SQL")
+
+    @contextmanager
+    def owned():
+        yield Stage()
+
+    marker = {"pass": completed_pass, "last_id": 0}
+
+    def read_checkpoint(_conn, *, source_key, stream):
+        assert source_key == pilot.SOURCE_KEY
+        return marker if stream == pilot.SNAPSHOT_STREAM else None
+
+    monkeypatch.setattr(parity.target, "validate_staging_writer_config",
+                        lambda: "isolated-staging")
+    monkeypatch.setattr(parity.target, "owned_connection", owned)
+    monkeypatch.setattr(parity, "checkpoint", read_checkpoint)
+    monkeypatch.setattr(parity, "compare_packets",
+                        lambda _lines, _stored: {"matched": 1})
+    monkeypatch.setattr(parity.sys, "stdin",
+                        SimpleNamespace(buffer=io.BytesIO(b"ignored")))
+
+    result = parity.verify_pages()
+    assert result["matched"] == 1
+    assert result["staged_call_groups"] == 1
+    assert result["checkpoint_unchanged"] is True
+    assert result["staging_read_only"] is True
+    assert "SET TRANSACTION READ ONLY" in query_log
+
+
+def test_parity_census_refuses_incomplete_second_pass(monkeypatch):
+    @contextmanager
+    def owned():
+        class Stage:
+            def transaction(self):
+                @contextmanager
+                def transaction():
+                    yield
+                return transaction()
+            def execute(self, sql, params=None):
+                if sql == "SET TRANSACTION READ ONLY":
+                    return Result()
+                if "FROM panadan_ingest.sources" in sql:
+                    return Result(row={"enabled": False})
+                return Result(rows=[])
+        yield Stage()
+
+    monkeypatch.setattr(parity.target, "validate_staging_writer_config",
+                        lambda: None)
+    monkeypatch.setattr(parity.target, "owned_connection", owned)
+    monkeypatch.setattr(
+        parity, "checkpoint",
+        lambda _conn, *, source_key, stream:
+            {"pass": 2, "last_id": 123} if stream == "view_reconciliation_v1" else None,
+    )
+    with pytest.raises(ValueError, match="Completed reconciliation"):
+        parity.verify_pages()
