@@ -245,3 +245,58 @@ CI have passed. Recheck the staging source is disabled after the batch, then
 run integrity / independent encrypted restore / fresh source parity again.
 Production dashboard, Web, VPN topology, and MCP stay unchanged. Local backup
 remains insufficient as a production disaster recovery plan.
+
+
+## Supervised, recoverable staging backfill pilot after 825 calls (2026-11-05)
+
+The 825-row milestone completed: 825 current records and revisions; 24
+committed pages; complete 37-field payloads; source disabled. The local
+encrypted archive was independently restored inside a network-isolated PG18
+container with byte-for-byte payload checks, and the latest 100 calls matched
+a fresh read from the read-only Odoo reporting view.
+
+The first *supervised* pilot is deliberately finite: `tools/run-odoo-mirror-staging-supervised.sh`
+runs no more than **9 further pages x 100 source rows** (up to 900 view
+rows) starting from the 825/24 baseline. It uses the already-reviewed
+VPN-to-local temporary-container pipe importer; nothing installs a scheduler,
+daemon, production DB connection or persistent plaintext transfer file.
+
+Before any write, the supervisor verifies: named isolated staging endpoint
+`127.0.0.1:55432`, networkless restore container, healthy existing VPN,
+source disabled, pass-1 checkpoint equal to the maximum staged ID, matching
+record/revision counts, all 37 fields, digest consistency, 24+ recorded
+sync pages, a private decryptable encrypted backup, and the prior independent
+825-row restore drill. A malformed state fails closed.
+
+The supervisor permits **three 300-row recovery intervals**. It checks that
+free disk space is at least **6 GiB before every page**, and makes a NEW
+`age`-encrypted `pg_dump -Fc` recovery point after each interval. It
+decrypts and validates the archive catalog but does **not** claim that a
+catalog check is an independent restore: perform a full independent restore
+after the pilot. It retains old encrypted archives and the required private
+identity key on the VPS; this is not off-site or production recovery.
+
+Interruptions retain the committed DB cursor. A mode-0600 local progress marker
+records the most recently validated encrypted recovery point without customer
+data. If a chunk stops after 1 or 2 pages, the next invocation uses a strictly
+bounded 1- or 2-page helper to finish the incomplete interval. If the final
+page committed but archiving was interrupted, the supervisor encrypts that
+current checkpoint before any additional writes. It refuses unbacked progress
+outside one 300-row interval. The supervisor itself is re-runnable only within
+this **first 825-to-at-most-1725** test envelope; it is not a perpetual full
+mirror scheduler.
+
+Each page runs inside a disposable container. Source credentials remain
+READ ONLY inside the existing VPN namespace; the importer uses a separate
+0600 staging-only writer DSN and preserves raw source values and duplicate
+analyses without preprocessing. Customer data is passed via an anonymous pipe
+with Docker stdout logging disabled. The source enablement flag is turned off
+after every page and on trapped failures. A failed import, source drift, schema
+drift, stale cursor, low disk, encrypted backup failure, unexpected count, or
+data-integrity failure stops the pilot.
+
+Run only after CI passes and the operator has reviewed the specific pinned
+commit. This is staging and explicitly must not switch the production dashboard,
+REST, MCP or VPN topology to the mirror. A full source reconciliation and
+fresh-source parity are still needed: bounded page parity alone is insufficient
+for production cutover.
