@@ -123,6 +123,26 @@ read_state() {
   }
 }
 
+# The supervised pilot sets a fixed 6 GiB floor. Check it BEFORE
+# every source activation, not only between three-page chunks.
+check_disk_floor() {
+  [[ -n "${PANADAN_MIRROR_MIN_AVAILABLE_KIB:-}" ]] || return 0
+  [[ "$PANADAN_MIRROR_MIN_AVAILABLE_KIB" == 6291456 ]] || {
+    echo "Unsupported staging disk floor" >&2
+    exit 2
+  }
+  local available
+  available="$(df -Pk /var/lib/panadan-mirror-staging | awk 'NR==2 {print $4}')"
+  [[ "$available" =~ ^[0-9]+$ ]] || {
+    echo "Could not check staging disk space" >&2
+    exit 2
+  }
+  if (( available < PANADAN_MIRROR_MIN_AVAILABLE_KIB )); then
+    echo "STOP: Staging disk below supervised 6 GiB floor" >&2
+    exit 2
+  fi
+}
+
 read_state
 [[ "$pass" == 1 && "$cursor" -gt 0 ]] || {
   echo "Expected an active pass-1 checkpoint; refusing new reconciliation pass" >&2
@@ -132,6 +152,7 @@ echo "PASS: Existing pass-1 checkpoint detected; staging source disabled"
 echo "=== Resume for up to $PAGES pages x $PAGE_SIZE source rows ==="
 
 for ((i=1; i<=PAGES; i++)); do
+  check_disk_floor
   read_state
   if [[ "$pass" == 2 && "$cursor" == 0 ]]; then
     echo "PASS: Source reconciliation pass completed"
