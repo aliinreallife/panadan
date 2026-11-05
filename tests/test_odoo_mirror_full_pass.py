@@ -3,6 +3,7 @@
 The tests use synthetic shell checks only: never access Odoo or PG18.
 """
 from pathlib import Path
+import shlex
 import subprocess
 
 import pytest
@@ -81,3 +82,29 @@ def test_child_transfer_has_per_page_disk_gate_and_restricted_credentials():
     assert "PANADAN_FULL_MIRROR_TARGET_MODE=isolated-staging" in s
     assert "PANADAN_FULL_MIRROR_STAGING_ISOLATED=YES" in s
     assert "trap on_exit EXIT" in s
+
+
+def test_encrypted_backup_verification_drains_complete_stream():
+    # pg_restore -l reads the catalog and may return before the full dump
+    # reaches it. A consumer must keep draining stdin to avoid SIGPIPE from
+    # the age decryptor (a false failure for valid larger archives).
+    script = SCRIPT.read_text()
+    assert "pg_restore -l >/dev/null && cat >/dev/null" in script
+    assert "Archive decryption or catalog validation failed" in script
+    assert "set -euo pipefail" in script
+    assert "sudo -n age -d -i" in script
+
+    # Synthetic, no database or encrypted real-world files. The first
+    # consumer takes only the beginning; cat must consume the remainder.
+    producer = (
+        "import sys; sys.stdout.buffer.write(b'X' * (2 * 1024 * 1024))"
+    )
+    code = (
+        "set -o pipefail; "
+        "python3 -c " + shlex.quote(producer) +
+        " | sh -c 'head -c 128 >/dev/null && cat >/dev/null'"
+    )
+    result = subprocess.run(
+        ["bash", "-c", code], capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
