@@ -67,3 +67,21 @@ def test_cycle_has_no_implicit_full_replay_or_privileged_host_code_dependency():
     assert "odoo_mirror_parity_stream" not in s
     assert "pg_dump" not in s
     assert "PANADAN_MIRROR_EXPECTED_PASS" not in s
+
+
+def test_status_is_read_only_and_contains_no_sensitive_fields():
+    status = Path("tools/check-odoo-mirror-incremental-status.sh")
+    result = subprocess.run(["bash", "-n", str(status)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    source = status.read_text()
+    assert "created_or_modified_v1" in source
+    assert "view_reconciliation_v1" in source
+    assert "panadan-mirror-staging-pg18" in source
+    assert "source_enabled=" in source
+    assert "incremental_checkpoint=" in source
+    assert "last_incremental_commit=" in source
+    assert "customername" not in source
+    assert "transcription" not in source
+    assert "DELETE FROM" not in source
+    assert "pg_dump" not in source
