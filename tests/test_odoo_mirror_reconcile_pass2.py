@@ -3,6 +3,7 @@
 Never access Odoo, staging, credentials or production infrastructure.
 """
 from pathlib import Path
+import os
 import subprocess
 
 import pytest
@@ -89,3 +90,36 @@ def test_child_requires_explicit_pass_2_override_and_stops_at_pass_3():
     assert s.count("--log-driver=none") == 2
     assert "--network container:panadan-vpn-1" in s
     assert "PANADAN_FULL_MIRROR_TARGET_MODE=isolated-staging" in s
+
+
+def test_valid_approvals_reach_sudo_gate_without_touching_databases(tmp_path):
+    """Catch the former escaped ${1:-} bug with a real shell invocation.
+
+    A fake sudo blocks execution before any Docker/database operation.
+    No repository secrets, real Odoo source, or staging are used.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name in ("age", "age-keygen", "sudo"):
+        command = bin_dir / name
+        command.write_text("#!/bin/sh\\nexit 73\\n".replace("\\n", "\n"))
+        command.chmod(0o700)
+
+    env = dict(os.environ)
+    env["HOME"] = str(tmp_path)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    run = subprocess.run(
+        ["bash", str(RUNNER), "reconcile-pass-2", *ACKS],
+        capture_output=True, text=True, env=env, timeout=10,
+    )
+    assert run.returncode == 73, (run.stdout, run.stderr)
+    assert "Usage:" not in run.stderr
+    assert "FAIL: Exactly four" not in run.stderr
+
+
+def test_reconciliation_bash_expansions_are_not_escaped():
+    s = RUNNER.read_text(encoding="utf-8")
+    assert "\\${" not in s
+    assert '"${1:-}" != reconcile-pass-2' in s
+    assert '"${BASH_SOURCE[0]}"' in s
+    assert '"${1:-0}"' in s
