@@ -361,3 +361,56 @@ handling removed/changed rows. This runner never silently begins pass 2.
 The backup encryption identity and archives remain on the same VPS and are
 not off-site disaster recovery. No production database, deployment, dashboard,
 REST, MCP, scheduled worker or VPN configuration is modified by the script.
+
+
+## Full-view source parity and pass-2 replay (2026-11-05)
+
+The complete first pass and independent encrypted restore both verified
+**95,912 current call groups, 95,912 revisions and 975 committed pages**;
+staging checkpoint is `{"pass":2,"last_id":0}`. The full read-only 37-field
+source parity census subsequently observed **95,996 source call groups** from
+**95,997 view rows** (one duplicate-row group): **95,755 unchanged**,
+**157 changed**, **84 new/missing at staging**, and **0 locally stored groups
+absent from that source scan**. These are observations from a mutable view,
+not a frozen snapshot. Only aggregate counts, never sensitive fields or
+source identifiers, are printed.
+
+`tools/run-odoo-mirror-staging-reconcile-pass2.sh` is an explicitly
+operator-triggered **complete second source pass** in isolated PG18 staging.
+It calls the already reviewed 100-source-row transport through
+`run-odoo-mirror-staging-next.sh` using the explicit
+`PANADAN_MIRROR_EXPECTED_PASS=2` capability (the legacy default still
+accepts pass 1 only). On replay, unchanged source payloads are idempotent;
+changes append new immutable revisions and update the local current digest;
+new stable call IDs create records; missing-at-source records are **retained**,
+not automatically deleted. The existing identity-anchor and full 37-column
+schema/digest validation still fail closed on source ID reuse or view drift.
+
+The new supervisor requires the verified independent 95,912-row restore,
+pass-2 checkpoint, registered *disabled* staging source, private source and
+target credentials, a healthy read-only VPN, isolated staging port
+`127.0.0.1:55432`, and networkless restore container. It creates a fresh
+`age`-encrypted archive of the current database *before any writes*,
+then periodically at **300 committed pages** and upon completion, decrypting
+and reading the entire archive stream to verify encryption/catalog integrity.
+Every source page requires at least **6 GiB free disk**, and each backup
+requires that plus 128 MiB of temporary reserve. Existing backups are kept.
+
+The 2,600-page ceiling protects against nonterminating loops; it is not the
+intended import size. The supervisor stops at the completed pass-2 cursor
+`{"pass":3,"last_id":0}` and **will not automatically start pass 3**.
+No cron, production service changes, Odoo writes, dashboard/API/MCP read-path
+switch, Docker networking changes, or plaintext backup files are created.
+Use a persistent terminal (tmux), since lost SSH sessions can leave a source
+flag enabled if interrupted mid-page; inspect and disable the source before
+relaunching. The supervisor is resumable from the last committed CAS cursor.
+
+After pass 2, run the read-only *entire-view* parity census again and inspect
+aggregated changed/new/no-longer-visible counts. A successful pass 2 and a
+new encrypted archive are **not** an independent restore drill; verify the
+latest recovery point separately before approving scheduled synchronization.
+The current approximately 7.1 GiB free disk headroom is close to the 6 GiB
+floor, and backups remain VPS-local rather than off-host. Do not declare a
+production release without explicit approvals for sensitive-data access,
+retention/erasure, Odoo joined-field update semantics, operator scoping, and
+reversible cutover.
