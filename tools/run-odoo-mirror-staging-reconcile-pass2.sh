@@ -6,7 +6,7 @@ set -euo pipefail
 set +x
 umask 077
 
-if [[ "\${1:-}" != reconcile-pass-2 || $# != 5 ]]; then
+if [[ "${1:-}" != reconcile-pass-2 || $# != 5 ]]; then
   echo "Usage: $0 reconcile-pass-2 --ack-source-contract --ack-retention --ack-copy --ack-sensitive-data" >&2
   exit 2
 fi
@@ -20,7 +20,7 @@ for approval in --ack-source-contract --ack-retention --ack-copy --ack-sensitive
   fi
 done
 
-ROOT="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STAGE=panadan-mirror-staging-pg18
 RESTORE=panadan-mirror-data-restore-drill-pg18
 SOURCE=odoo_calls_full_v1
@@ -70,7 +70,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 check_disk() {
-  local reserve="\${1:-0}" free
+  local reserve="${1:-0}" free
   free="$(df -Pk /var/lib/panadan-mirror-staging | awk 'NR==2 {print $4}')"
   [[ "$free" =~ ^[0-9]+$ ]] || {
     echo "FAIL: Cannot measure staging disk" >&2; return 2;
