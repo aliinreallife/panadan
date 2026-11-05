@@ -300,3 +300,64 @@ commit. This is staging and explicitly must not switch the production dashboard,
 REST, MCP or VPN topology to the mirror. A full source reconciliation and
 fresh-source parity are still needed: bounded page parity alone is insufficient
 for production cutover.
+
+
+## Operator-initiated full first-pass staging backfill (2026-11-05)
+
+The first supervised 300-row interval progressed from 825 to **1,125 calls,
+1,125 revisions and 27 pages**, with the staging ingestion source disabled.
+The old limited supervisor exited after printing the disk-space check at the
+first encrypted backup; a new 1,125-row recovery point has **not** yet been
+confirmed. Do not assume a backup exists merely because the import committed.
+This is why a new *full first-pass* driver performs an explicit backup of the
+current state **before** importing anything more.
+
+`tools/run-odoo-mirror-staging-full-pass.sh` executes a complete **first**
+source-view pass, beginning at the current committed checkpoint (>=825), until
+the Odoo view announces the end and staging checkpoint becomes
+`{"pass": 2, "last_id": 0}`. It neither resets the cursor nor starts the
+second pass, and it never calls the legacy backfill/update streams. No
+fixed 900-row or 300-row import ceiling remains. A 2,000-page budget is a
+runaway-loop safety cap, not a target. For the reported approximately 95,510
+Odoo source-view rows, 2,000 pages of up to 100 source rows is sufficient.
+Source-group variants are stored together; distinct calls may be fewer than
+source rows.
+
+The operator must invoke the full-pass command explicitly with all four
+existing acknowledgements. The runner reuses the proven pipe-based exporter
+and importer in 3-page batches, with no persistent plaintext transfer files.
+Source remains READ ONLY in the existing VPN container namespace, and the
+target only receives the isolated PG18 staging writer credentials. The source
+flag is disabled after every page and on a trapped failure. If the shell or
+network interrupts, committed pages and checkpoint remain in PostgreSQL and
+the operator can rerun the same command after inspecting failure output.
+
+The runner checks the staging DB identity/version, isolated port
+`127.0.0.1:55432`, required separate networkless restore container,
+healthy source VPN, source disabled, cursor/max-ID consistency, current/revision
+counts, complete 37-field payload structure, current and revision digests,
+and a previously validated independent restore of the 825-row baseline.
+It checks **>=6 GiB available disk space before every source page** and
+**>=6 GiB plus 128 MiB of reserve before each encrypted backup**.
+
+It creates and verifies a **new age-encrypted PostgreSQL archive at startup**
+(covering the unarchived 1,125-row checkpoint), then whenever about **5,000
+more records** have been imported, and at completion. Each archive is mode
+0600, unique (no overwrites), decrypted and inspected with `pg_restore -l`,
+and preceded by a full staging payload/digest/schema check. Empty or changed
+source reads, stale checkpoints, disk pressure, schema/identity drift, and
+archive failures fail closed. A successful archive catalog check does not
+prove full disaster recovery; a fresh independent restore drill of the final
+large dataset remains mandatory before any production rollout.
+
+Crucial limitation: the Odoo reporting view is read by a succession of
+read-only page transactions, not one cross-page repeatable-read transaction.
+Source rows updated during the initial scan may become stale in staging.
+Completion of pass 1 is therefore a **staging first-copy milestone**, not
+proof of ongoing synchronization or whole-view parity. A later deliberate
+reconciliation pass and fresh-source checks are needed for correctness and
+handling removed/changed rows. This runner never silently begins pass 2.
+
+The backup encryption identity and archives remain on the same VPS and are
+not off-site disaster recovery. No production database, deployment, dashboard,
+REST, MCP, scheduled worker or VPN configuration is modified by the script.
