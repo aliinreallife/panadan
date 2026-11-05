@@ -187,9 +187,16 @@ backup_checkpoint() {
     sudo -n rm -f -- "$archive"
     return 2
   fi
+  # pg_restore -l can stop reading stdin once the TOC is parsed.
+  # If age is still streaming the encrypted dump, it then receives SIGPIPE:
+  # a VALID archive looks like a verification failure with pipefail.
+  # Keep stdin open and drain the entire decrypted stream with cat so that
+  # age completes authentication, while pg_restore still validates the TOC.
+  # Neither command writes decrypted bytes to disk or to container logs.
   if ! (sudo -n age -d -i "$KEY" "$archive" |
-        sudo -n docker exec -i "$DB" pg_restore -l >/dev/null); then
-    echo "FAIL: Encrypted archive cannot be decrypted and indexed" >&2
+        sudo -n docker exec -i "$DB" sh -c \
+          'pg_restore -l >/dev/null && cat >/dev/null'); then
+    echo "FAIL: Archive decryption or catalog validation failed (fully drained stream)" >&2
     return 2
   fi
   [[ "$(sudo -n stat -c %a "$archive")" == 600 ]] || {
