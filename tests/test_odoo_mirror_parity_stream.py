@@ -80,10 +80,9 @@ def stream_from_rows(rows, page_size=100):
 
 
 def digest_for(row):
-    event = wire.make_packet(Source([row]), after_id=0, limit=100)["events"][0]
+    packet = wire.make_packet(Source([row]), after_id=0, limit=100)
     return _validate_events(wire.validate_packet(
-        wire.make_packet(Source([row]), after_id=0, limit=100),
-        expected_limit=100, expected_after_id=0,
+        packet, expected_limit=100, expected_after_id=0,
     ))[0][1]
 
 
