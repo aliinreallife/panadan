@@ -397,6 +397,20 @@ bounded keyset backfill, transactional upsert checkpoints, reliable
 edit/delete detection, stale-data handling and when Redis is useful.
 No mirror or scheduler is enabled by this command.
 
+## Odoo reporting mirror: five-minute timestamp synchronization (staging)
+
+The isolated PostgreSQL 18 staging mirror has a separate, explicitly installed
+systemd timer that uses **`create_date` and `write_date`** to discover new
+and changed Odoo reporting calls. Each selected call is imported with all 37
+fields; there is **no scheduled full-view comparison** and no mandatory new
+backup. The dashboard, REST API and MCP still use their existing production
+read path.
+
+See the [practical setup, reboot and VPN recovery guide](docs/ODOO_MIRROR_INCREMENTAL_OPERATIONS.md)
+for the existing VPS, daily status commands, outage handling, limitations and
+service controls. A new empty server still needs separate staging provisioning
+and the initial data import; this is not a turnkey fresh-server installer.
+
 ## Audit unknown source fields safely
 
 The reporting view has 36 known columns, but not every column is reliable or
