@@ -10,6 +10,40 @@ Panadan exposes **read-only** MCP tools. It has two mutually exclusive auth mode
 The REST API and browser session authentication do not change when MCP switches modes.
 Raw transcripts are **not** exposed. A separate explicitly granted `calls:transcript:read` capability can enable redacted, paginated excerpts via `get_redacted_call_transcript`. Arbitrary SQL and write operations remain unavailable.
 
+## How MCP relates to a Panadan user's permissions
+
+MCP is **not an independent superuser permission**. Panadan verifies the
+authenticated owner of a manual MCP token, or the approved local account
+linked to an OAuth subject, **at each HTTP request**.
+
+Current implementation (before any future per-tool scoping):
+
+| MCP tool | Required effective user grants |
+| --- | --- |
+| Recent calls, call summary, call metrics, available call states | `mcp:use`, `calls:read`, `metrics:read` |
+| Redacted transcript excerpts | The three grants above **plus** `calls:transcript:read` and a successful access audit |
+| Full sensitive customer fields | **Not available** through the normal MCP tools, even when `calls:sensitive` is granted |
+| Account / token administration | **Not available** through MCP |
+
+In particular, `calls:sensitive` does not automatically make MCP disclose
+sensitive contact data. Transcript access has its own explicit capability,
+revalidates the actor and records the disclosure.
+
+**Important limitation:** the base MCP gate currently requires both the call
+and metrics permissions. A user with just `metrics:read` + `mcp:use` cannot
+connect to only the metrics tool. Likewise, a call-only account cannot
+connect solely for call summaries. **Per-tool MCP authorization is not yet
+implemented**; do not promise that behavior from the new permission-group UI.
+Restrict or disable MCP instead of granting unnecessary data access just to
+enable an integration. This is an intentional separate security change.
+
+The five draft group templates and their risk categories are documented in
+[ACCESS_PERMISSION_GROUPS.md](ACCESS_PERMISSION_GROUPS.md). Presets copy
+explicit grants to one account; they do not bypass the server checks.
+Legacy manual MCP tokens and OAuth bindings are separate from ordinary
+browser sessions. On account permission changes, existing sessions, tokens
+and OAuth bindings are revoked, and integrations must be reauthorized.
+
 ## 1. Local setup without a domain (default)
 
 Leave `PANADAN_MCP_AUTH_MODE=legacy` in your private `.env.app`.
