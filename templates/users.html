@@ -32,6 +32,24 @@
     {% endfor %}
   </div>
 {% endmacro %}
+{% macro field_picker(selected) %}
+  <input type="hidden" name="fields_present" value="true">
+  <fieldset class="access-editor-grants access-field-grants">
+    <legend>ستون‌های قابل مشاهده برای این کاربر</legend>
+    <p class="access-category-help">هر ستون به‌طور مستقل کنترل می‌شود. دسترسی MCP فقط می‌تواند زیرمجموعه‌ای از این ستون‌ها را دریافت کند.</p>
+    <div class="access-field-grid">
+      {% for column in field_catalog %}
+      <label class="access-field-option">
+        <input type="checkbox" name="fields" value="{{column.id}}"
+               {% if column.id in selected %}checked{% endif %}>
+        <span><strong>{{column.label}}</strong>
+          <small dir="ltr">{{column.id}}</small></span>
+        <span class="access-field-risk">{{'محرمانه' if column.category=='confidential' else 'داخلی'}}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+{% endmacro %}
 <div class="shell">
   <aside class="sidebar">
     <a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
@@ -105,6 +123,7 @@
             <span class="access-grant-count" data-grant-count>—</span>
           </div>
           {{grant_picker(['calls:read','metrics:read','mcp:use'])}}
+          {{field_picker(default_fields)}}
           <p class="access-risk-note" data-risk-note hidden>این حساب به اطلاعات محرمانه دسترسی خواهد داشت. پیش از ذخیره، نیاز کاری را بررسی کنید.</p>
         </div>
         <button class="primary" type="submit">ساخت حساب کاربری</button>
@@ -167,6 +186,7 @@
               <legend>مجوزهای دقیق</legend>
               <span class="access-grant-count" data-grant-count>—</span>
               {{grant_picker(user_caps[user.id])}}
+              {{field_picker(user_fields[user.id])}}
               <p class="access-risk-note" data-risk-note hidden>دسترسی محرمانه فعال است؛ نیاز کاری این کاربر را بررسی کنید.</p>
             </fieldset>
             <div class="user-edit-footer">
@@ -184,6 +204,7 @@
 <script id="access-group-catalog" type="application/json">{{permission_groups|tojson}}</script>
 <script id="access-role-defaults" type="application/json">{{recommended_groups|tojson}}</script>
 <script src="/static/users.js" defer></script>
+<script src="/static/fields.js" defer></script>
 <script type="module">import {enhanceSelects} from "/static/selects.js";enhanceSelects();</script>
 <script src="/static/mobile-nav.js" defer></script>
 </body>
