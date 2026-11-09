@@ -159,7 +159,10 @@ def test_mcp_real_transport_enforces_calls_only_metrics_only_and_columns(
             })
         calls=post(call_token,"list_recent_calls",seq=1)
         assert calls.status_code==200, calls.text
-        assert unwrap(calls)==[{"id":93,"CALLDATE":"2026-11-09"}]
+        # MCP SDK serializes a tool-returned list into individual content
+        # blocks. With one row, unwrap() therefore returns that row's dict,
+        # rather than an enclosing Python list. Check the entire payload too.
+        assert unwrap(calls)=={"id":93,"CALLDATE":"2026-11-09"}
         assert secret not in calls.text
         assert unwrap(post(call_token,"get_call_metrics",seq=2))["error"]=="permission_denied"
         self_access=unwrap(post(call_token,"get_my_access",seq=3))
