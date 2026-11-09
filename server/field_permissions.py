@@ -44,7 +44,7 @@ REPORT_DESCRIPTIONS = {
     "outcome": ("نتیجه تماس", "confidential"),
     "ai_recommendation": ("پیشنهاد هوش مصنوعی", "confidential"),
     "summary": ("خلاصه تماس", "confidential"),
-    "transcription": ("متن خام مکالمه", "confidential"),
+    "transcription": ("بخش ویرایش‌شدهٔ متن مکالمه", "confidential"),
     "tell_state_desc": ("شرح وضعیت تماس", "confidential"),
     "create_date": ("زمان ثبت", "confidential"),
 }
@@ -55,7 +55,7 @@ def capability_fields(caps: set[str] | frozenset[str]) -> frozenset[str]:
     if "calls:read" in caps:
         result.update(PUBLIC_COLUMNS + DETAIL_COLUMNS)
     if "calls:read" in caps and "calls:sensitive" in caps:
-        result.update(SENSITIVE_COLUMNS)
+        result.update(set(SENSITIVE_COLUMNS) - {"transcription"})
     if "calls:read" in caps and "calls:transcript:read" in caps:
         result.add("transcription")  # redacted transcript tool only; never raw MCP
     if "metrics:read" in caps:
@@ -91,7 +91,10 @@ def effective_fields(caps: set[str] | frozenset[str], stored: str | None) -> fro
 def project_call(row: dict | None, fields: frozenset[str] | set[str]) -> dict | None:
     if row is None:
         return None
-    return {k: value for k, value in row.items() if k in fields and k in FIELD_SET}
+    # Full raw transcription can contain personal data beyond best-effort
+    # redaction. Expose it ONLY through the separately audited excerpt API.
+    return {k: value for k, value in row.items()
+            if k in fields and k in FIELD_SET and k != "transcription"}
 
 
 def project_metrics(row: dict, fields: frozenset[str] | set[str]) -> dict:
@@ -116,8 +119,9 @@ def field_catalog() -> list[dict]:
     return [
         {"id": name, "label": REPORT_DESCRIPTIONS[name][0],
          "category": REPORT_DESCRIPTIONS[name][1],
-         "requires": "calls:sensitive" if name in PRIVATE_FIELDS
-                     else "calls:read or metrics:read"}
+         "requires": ("calls:transcript:read" if name == "transcription" else
+                      "calls:sensitive" if name in PRIVATE_FIELDS else
+                      "calls:read or metrics:read")}
         for name in REPORT_FIELDS
     ]
 
