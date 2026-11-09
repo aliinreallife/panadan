@@ -8,7 +8,7 @@ const publicFields = new Set([
 ]);
 const sensitiveFields = new Set([
   'call_id','customername','customertell','outcome','ai_recommendation',
-  'summary','transcription','tell_state_desc','create_date'
+  'summary','tell_state_desc','create_date'
 ]);
 const metricFields = new Set([
   'id','aicallinfostate','possibility_of_sale_ai','voice_length'
@@ -30,6 +30,7 @@ for (const form of document.querySelectorAll('form[data-access-editor]')) {
       if (caps.has('calls:sensitive')) {
         for (const name of sensitiveFields) result.add(name);
       }
+      // Transcription means an audited, redacted excerpt only.
       if (caps.has('calls:transcript:read')) result.add('transcription');
     }
     if (caps.has('metrics:read')) {
