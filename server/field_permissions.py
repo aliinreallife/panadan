@@ -56,6 +56,8 @@ def capability_fields(caps: set[str] | frozenset[str]) -> frozenset[str]:
         result.update(PUBLIC_COLUMNS + DETAIL_COLUMNS)
     if "calls:read" in caps and "calls:sensitive" in caps:
         result.update(SENSITIVE_COLUMNS)
+    if "calls:read" in caps and "calls:transcript:read" in caps:
+        result.add("transcription")  # redacted transcript tool only; never raw MCP
     if "metrics:read" in caps:
         result.update(METRIC_FIELDS)
     return frozenset(result & FIELD_SET)
