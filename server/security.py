@@ -514,6 +514,8 @@ class Store:
         selected = validate_fields(fields, access['capabilities'])
         if not set(selected) <= access['fields']:
             raise ValueError('Delegated fields exceed user access')
+        if not set(selected) <= capability_fields(set(caps)):
+            raise ValueError('Delegated fields require matching approved capability')
         with self.db() as c:
             c.execute(
                 'INSERT INTO mcp_client_grants(user_id,client_id,capabilities,fields,approved_at) '
