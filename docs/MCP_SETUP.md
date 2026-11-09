@@ -44,6 +44,17 @@ Legacy manual MCP tokens and OAuth bindings are separate from ordinary
 browser sessions. On account permission changes, existing sessions, tokens
 and OAuth bindings are revoked, and integrations must be reauthorized.
 
+### Planned per-field permissions and discoverable access (not implemented)
+
+The [unified authorization contract](UNIFIED_AUTHORIZATION_MCP.md) proposes
+field-level access shared by browser, REST and MCP, a per-application OAuth
+subset chosen by the user, plus a read-only `get_my_access` MCP tool and a
+safe `explain_access` permission advisor. When data is unavailable, the AI
+should distinguish **requires admin grant** from **requires user re-consent**
+without disclosing a restricted person or record. This is not supported by
+the existing MCP bearer gate or OAuth consent implementation yet. Do not
+mistake it for an available endpoint or tool.
+
 ## 1. Local setup without a domain (default)
 
 Leave `PANADAN_MCP_AUTH_MODE=legacy` in your private `.env.app`.
