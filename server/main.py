@@ -787,13 +787,13 @@ def read_my_access(request: Request):
     """Self-only metadata, never arbitrary user-id lookup or customer payload."""
     if not hasattr(store, 'user_access'):
         raise HTTPException(503, 'Field authorization unavailable')
-    session = logged_in(request)
+    auth = request.headers.get('authorization', '')
+    session = logged_in(request) if not auth else None
     if session:
         access = store.user_access(session['user_id'])
         caps = access['capabilities'] if access else frozenset()
         fields = access['fields'] if access else frozenset()
     else:
-        auth = request.headers.get('authorization', '')
         raw = auth[7:] if auth.startswith('Bearer ') else ''
         actor = (store.actor_for_token(raw, 'api:read') or
                  store.actor_for_token(raw, 'api:sensitive') or
