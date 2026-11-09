@@ -131,7 +131,8 @@ def list_recent_calls(ctx: Context, limit: int = 10, offset: int = 0,
     rows = database.list_calls(
         limit, offset, date.fromisoformat(after) if after else None,
         date.fromisoformat(before) if before else None,
-        state or None, operator=operator or None, operator_names=names)
+        state or None, operator=operator or None, operator_names=names,
+        sort_by_date='CALLDATE' in access['fields'])
     visible = permitted_fields_for_capability(access["fields"], "calls:read")
     return [project_call(row, visible) for row in rows]
 
