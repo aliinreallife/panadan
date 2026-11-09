@@ -116,3 +116,65 @@ def test_real_mcp_http_authorization_and_transcript_audit(tmp_path, monkeypatch)
             'name':'get_redacted_call_transcript','arguments':{'call_id':81}
         },request_id=5)
         assert blocked.status_code==401, blocked.text
+
+
+
+def test_mcp_real_transport_enforces_calls_only_metrics_only_and_columns(
+    tmp_path, monkeypatch
+):
+    """Exercise injected HTTP request Context, not an untrusted tool-user ID."""
+    monkeypatch.setenv("PANADAN_AUTH_DB",str(tmp_path/"scoped-mcp.sqlite"))
+    monkeypatch.setenv("PANADAN_ADMIN_PASSWORD","test-admin-password-very-long")
+    monkeypatch.setenv("PANADAN_MCP_AUTH_MODE","legacy")
+    monkeypatch.setenv("PANADAN_COOKIE_SECURE","false")
+    import server.main as main
+    main=importlib.reload(main)
+    secret="SENSITIVE-MUST-NOT-LEAK"
+    row={"id": 93, "CALLDATE": "2026-11-09",
+         "aicallinfostate":"Unchecked", "customertell":secret,
+         "customername":secret, "summary":secret}
+    monkeypatch.setattr(main.database,"list_calls",lambda *a, **kw:[row])
+    monkeypatch.setattr(main.database,"get_call",lambda *a, **kw:row)
+    monkeypatch.setattr(main.database,"stats",lambda *a, **kw:{
+        "total":1, "sold_out":0, "scored_calls":1, "avg_ai_score":70,
+        "avg_voice_length":15
+    })
+    with TestClient(main.app,base_url="http://localhost:8508") as client:
+        owner=main.store.create_user(
+            "scopedcalls","password-for-scopedcalls","reader",
+            ["calls:read","mcp:use"],fields=["id","CALLDATE"])
+        analyst=main.store.create_user(
+            "scopedmetrics","password-for-scopedmetrics","metrics",
+            ["metrics:read","mcp:use"],fields=["id","aicallinfostate"])
+        _,call_token=main.store.create_token("calls","mcp:read",7,owner)
+        _,metric_token=main.store.create_token("metrics","mcp:read",7,analyst)
+        def post(token,name,arguments=None,seq=3):
+            return client.post("/mcp/",headers={
+                "accept":"application/json, text/event-stream",
+                "content-type":"application/json",
+                "authorization":"Bearer "+token,
+            },json={
+                "jsonrpc":"2.0", "id":seq, "method":"tools/call",
+                "params":{"name":name,"arguments":arguments or {}}
+            })
+        calls=post(call_token,"list_recent_calls",seq=1)
+        assert calls.status_code==200, calls.text
+        assert unwrap(calls)==[{"id":93,"CALLDATE":"2026-11-09"}]
+        assert secret not in calls.text
+        assert unwrap(post(call_token,"get_call_metrics",seq=2))["error"]=="permission_denied"
+        self_access=unwrap(post(call_token,"get_my_access",seq=3))
+        assert {x["id"] for x in self_access["columns"]}=={"id","CALLDATE"}
+        assert "customername" not in str(self_access["columns"])
+        denied=unwrap(post(call_token,"explain_access",{
+            "field":"customertell"},seq=4))
+        assert denied["reason"]=="needs_admin_grant"
+        assert secret not in str(denied)
+        scoped=post(metric_token,"get_call_metrics",seq=5)
+        assert scoped.status_code==200, scoped.text
+        assert unwrap(scoped)=={"total":1,"sold_out":0}
+        restricted=unwrap(post(metric_token,"get_call_summary",{
+            "call_id":93},seq=6))
+        assert restricted["error"]=="permission_denied"
+        assert secret not in str(restricted)
+        assert unwrap(post(metric_token,"get_available_states",seq=7)) != {
+            "error":"permission_denied","field":"aicallinfostate"}
