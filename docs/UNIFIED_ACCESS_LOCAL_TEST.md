@@ -14,8 +14,13 @@ mirror cutover or PR #98's admin mirror-health UI deployment.
 - The admin user editor supports narrowing individual fields (and can choose
   a default group first).
 - The browser dashboard and REST call list/details are projected down to
-  the user's field selection. Status lists, filter values and supported
-  aggregates are gated by their underlying field permissions.
+  the user's field selection. Per-record queries also require an explicit
+  call ID field grant. Call-list ordering uses only permitted date/ID fields;
+  status lists, filters and supported aggregates are gated by their inputs.
+- **Raw transcription is excluded from generic call JSON**, including when
+  calls:sensitive is granted. Transcripts require a separate explicitly
+  authorized, audited, best-effort-redacted excerpt operation; no masking
+  technique guarantees anonymization.
 - Standard MCP tools recheck the current user, token or client grant, then
   enforce per-tool capabilities and project returned call fields. Metrics-only
   or calls-only MCP clients are supported by the new policy.
