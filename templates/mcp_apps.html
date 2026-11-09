@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>دسترسی برنامه‌های هوش مصنوعی | پانادان</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/vendor/panadan-bundle.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{% macro approval_form(client, current_caps, current_fields, is_new=False) %}
+<form class="mcp-consent-form" method="post" action="/dashboard/mcp-apps/approve">
+<input name="csrf" type="hidden" value="{{csrf}}">
+{% if is_new %}
+<label>شناسهٔ معتبر برنامه در ارائه‌دهندهٔ OAuth
+  <input name="client_id" dir="ltr" lang="en" maxlength="160" minlength="1"
+         autocomplete="off" required placeholder="OAuth client_id"></label>
+{% else %}
+<input name="client_id" type="hidden" value="{{client}}">
+<p>شناسهٔ برنامه: <bdi dir="ltr"><code>{{client}}</code></bdi></p>
+{% endif %}
+<fieldset><legend>قابلیت‌های واگذارشده</legend>
+<div class="access-consent-grid">
+{% for cap, label in [('calls:read','فهرست تماس‌ها'),('metrics:read','آمار'),
+                      ('calls:transcript:read','متن ویرایش‌شدهٔ مکالمات')] %}
+{% if cap in capabilities %}
+<label><input type="checkbox" name="capabilities" value="{{cap}}"
+              {% if cap in current_caps %}checked{% endif %}>
+  {{label}}</label>
+{% endif %}{% endfor %}
+</div></fieldset>
+<fieldset><legend>ستون‌های قابل مشاهده در MCP</legend>
+<div class="access-consent-grid access-consent-cols">
+{% for col in field_catalog if col.id in fields %}
+<label><input type="checkbox" name="fields" value="{{col.id}}"
+              {% if col.id in current_fields %}checked{% endif %}>
+  <span>{{col.label}} <small dir="ltr">{{col.id}}</small></span></label>
+{% endfor %}
+</div></fieldset>
+<p class="description">مجوزهای این برنامه نمی‌توانند بیشتر از دسترسی فعلی حساب شما باشند. تغییر مجوزهای مدیر بلافاصله دسترسی برنامه را محدود می‌کند.</p>
+<button type="submit" class="primary">{{'تأیید دسترسی برنامه' if is_new else 'ذخیره محدودهٔ دسترسی'}}</button>
+</form>
+{% endmacro %}
+<div class="shell">
+<aside class="sidebar">
+  <a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
+  <nav>
+  <a href="/dashboard">▦ گزارش تماس‌ها</a>
+  <a href="/dashboard/connect">◈ اتصال هوش مصنوعی</a>
+  <a href="/dashboard/mcp-apps" class="active" aria-current="page">◉ برنامه‌های متصل من</a>
+  {% if 'users:manage' in capabilities %}
+  <a href="/dashboard/users">♙ مدیریت کاربران</a>{% endif %}
+  </nav>
+  <div class="side-footer"><form method="post" action="/logout">
+  <input name="csrf" type="hidden" value="{{csrf}}">
+  <button class="link-button">خروج</button></form></div>
+</aside>
+<main class="content access-content">
+<header class="page-head"><div>
+<span class="eyebrow">دسترسی‌های واگذارشده</span>
+<h1>برنامه‌های هوش مصنوعی من</h1>
+<p class="muted">مشخص کنید هر برنامه کدام بخش از اطلاعاتی را که مجاز به دیدنشان هستید دریافت کند.</p>
+</div><span class="tag">فقط حساب شما</span></header>
+<section class="panel">
+<div class="panel-head"><h2>تأیید برنامهٔ جدید</h2></div>
+<p>مجوزهای مجاز فعلی شما به‌صورت پیش‌فرض انتخاب شده‌اند. می‌توانید پیش از تأیید، هر کدام را بردارید.</p>
+{% if oauth_mode != 'oauth' %}
+<p class="access-risk-note">اکنون سرور در حالت توکن دستی است. این فرم برای مجوز OAuth آماده است، اما تا زمان راه‌اندازی تأییدشدهٔ OAuth، اتصال خودکار برنامه‌های ChatGPT/Claude فعال نمی‌شود.</p>
+{% endif %}
+{% if 'mcp:use' in capabilities %}
+{{approval_form('', capabilities, fields, True)}}
+{% else %}
+<p class="muted">برای اتصال MCP، مدیر سیستم ابتدا باید مجوز MCP و دسترسی گزارش‌گیری مناسب را به حساب شما بدهد.</p>
+{% endif %}
+</section>
+<section class="panel">
+<div class="panel-head"><h2>برنامه‌های تأییدشده</h2><span class="tag">{{client_grants|length}} مورد</span></div>
+{% for app in client_grants %}
+<details class="user-card">
+<summary class="user-card-summary"><strong dir="ltr">{{app.client_id}}</strong>
+<span>ویرایش مجوزهای این برنامه</span></summary>
+{{approval_form(app.client_id, app.capabilities, app.fields)}}
+<form method="post" action="/dashboard/mcp-apps/revoke" class="mcp-consent-revoke"
+      onsubmit="return confirm('دسترسی این برنامه قطع شود؟')">
+<input type="hidden" name="csrf" value="{{csrf}}">
+<input type="hidden" name="client_id" value="{{app.client_id}}">
+<button type="submit" class="danger-outline">لغو دسترسی این برنامه</button>
+</form>
+</details>
+{% else %}
+<p class="muted">هنوز هیچ برنامه‌ای را برای OAuth تأیید نکرده‌اید.</p>
+{% endfor %}
+</section>
+<p class="source-note">این صفحه مجوزهای شما را تغییر نمی‌دهد. برای دریافت دسترسی جدید، درخواستتان را به مدیر پانادان بدهید. شناسهٔ برنامه باید با شناسهٔ امضاشدهٔ توکن OAuth مطابقت داشته باشد.</p>
+</main></div>
+<script src="/static/mcp-apps.js" defer></script>
+<script src="/static/mobile-nav.js" defer></script>
+</body></html>
