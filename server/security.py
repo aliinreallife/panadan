@@ -451,9 +451,10 @@ class Store:
         now = int(time.time())
         with self.db() as c:
             c.execute('BEGIN IMMEDIATE')
-            row = c.execute('SELECT role,grants,is_active FROM users WHERE id=?',(user_id,)).fetchone()
+            row = c.execute('SELECT role,grants,field_grants,is_active FROM users WHERE id=?',(user_id,)).fetchone()
             caps = permissions(row['role'], row['grants']) if row and row['is_active'] else set()
-            if not {'calls:read', 'calls:transcript:read'} <= caps:
+            if (not {'calls:read', 'calls:transcript:read'} <= caps or
+                    'transcription' not in effective_fields(caps, row['field_grants'])):
                 return False
             c.execute(
                 'INSERT INTO transcript_access_audit(user_id,surface,call_id,char_limit,created_at) VALUES(?,?,?,?,?)',
