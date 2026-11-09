@@ -21,6 +21,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette import status
 
 from . import database
+from . import mirror_health
 from .ingress import allowed_hosts, external_base_url, read_public_origin, valid_form_origin
 from .reporting_retries import read_with_retry
 from .transcript_ai import transcript_for_ai, MAX_TRANSCRIPT_CHARS
@@ -91,6 +92,7 @@ async def audit_http_activity(request: Request, call_next):
         '/dashboard/filter-options', '/dashboard/api', '/dashboard/users',
         '/dashboard/tokens', '/dashboard/connect', '/dashboard/oauth',
         '/dashboard/activity', '/dashboard/activity/data',
+        '/dashboard/mirror-health',
         '/dashboard/operator', '/dashboard/operators', '/dashboard/operators/assign',
         '/dashboard/operator-scopes'
     }
@@ -333,6 +335,15 @@ def dashboard(request: Request):
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
         'selected_operator':None, 'operator_title':None, 'operator_meta':{},
     })
+
+
+@app.get('/dashboard/mirror-health', include_in_schema=False)
+def dashboard_mirror_health(session: dict = Depends(current_session)):
+    # Aggregate, read-only telemetry is visible to authenticated admins only.
+    # Do NOT grant staging DB credentials to the web process.
+    admin_only(session)
+    return JSONResponse(mirror_health.load_admin_mirror_health(),
+                        headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/dashboard/operator', response_class=HTMLResponse, include_in_schema=False)
