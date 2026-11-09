@@ -538,3 +538,55 @@ def test_dashboard_does_not_retry_invalid_sql_or_validation_errors(client, monke
     assert response.status_code == 503
     assert len(calls) == 1
     assert c.get('/dashboard/data?after=not-a-date').status_code == 422
+
+def test_mirror_health_is_admin_only_and_does_not_expose_customer_data(client, monkeypatch):
+    c, main = client
+    observed = []
+    fake = {
+        "state": "catching_up", "records": 97038, "revisions": 98719,
+        "pages": 58, "lag_seconds": 7200,
+        "completed_through": "2026-11-09T05:56:46+00:00",
+        "last_processed": "2026-11-09T06:00:00+00:00",
+        "window_upper": "2026-11-09T08:00:00+00:00",
+        "last_commit": "2026-11-09T06:05:24Z",
+        "generated_at": "2026-11-09T06:06:00Z",
+        "vpn_healthy": True, "timer_active": True,
+        "disk_free_bytes": 6800000000, "source_enabled": False,
+        "detail": "telemetry_only",
+    }
+
+    def load():
+        observed.append(True)
+        return fake
+
+    monkeypatch.setattr(main.mirror_health, "load_admin_mirror_health", load)
+    assert c.get("/dashboard/mirror-health").status_code == 401
+    assert not observed
+
+    user_id = main.store.create_user(
+        "mirror_reader", "another-long-password", "reader", ["calls:read"])
+    raw, _ = main.store.create_session(user_id)
+    c.cookies.set("panadan_session", raw)
+    assert c.get("/dashboard/mirror-health").status_code == 403
+    assert "mirror-health-panel" not in c.get("/dashboard").text
+    assert not observed
+
+    admin_id = main.store.verify_login(
+        "admin", "a-long-safe-testing-password")
+    raw, _ = main.store.create_session(admin_id)
+    c.cookies.set("panadan_session", raw)
+    page = c.get("/dashboard")
+    assert page.status_code == 200
+    assert "mirror-health-panel" in page.text
+    assert "/static/mirror-health.js" in page.text
+    assert c.get("/dashboard/operator?name=Test%20Op").status_code == 200
+    assert "mirror-health-panel" not in c.get(
+        "/dashboard/operator?name=Test%20Op").text
+
+    result = c.get("/dashboard/mirror-health")
+    assert result.status_code == 200
+    assert result.headers["Cache-Control"] == "no-store"
+    assert result.json() == fake
+    assert observed == [True]
+    assert "customername" not in result.text
+    assert "transcription" not in result.text
