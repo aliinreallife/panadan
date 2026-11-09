@@ -118,3 +118,19 @@ def test_permission_discovery_reason_codes_are_self_only():
     assert explain_field('CALLDATE',user,approved,effective)['reason'] == 'needs_user_consent'
     assert explain_field('customertell',user,approved,effective)['reason'] == 'needs_admin_grant'
     assert explain_field('not_a_field',user,approved,effective)['reason'] == 'unknown_or_unavailable'
+
+
+
+def test_raw_transcripts_never_leak_through_general_call_json():
+    from server.field_permissions import project_call, capability_fields
+    caps = {"calls:read", "calls:sensitive", "calls:transcript:read"}
+    assert "transcription" in capability_fields(caps)  # audited tool only
+    full = {"id": 1, "transcription": "RAW-PERSONAL-SECRET",
+            "summary": "safe summary", "customername": "Jane"}
+    data = project_call(full, capability_fields(caps))
+    assert "transcription" not in data
+    assert "RAW-PERSONAL-SECRET" not in str(data)
+    assert data["summary"] == "safe summary"
+    assert "transcription" not in capability_fields(
+        {"calls:read", "calls:sensitive"}
+    )
