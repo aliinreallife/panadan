@@ -483,7 +483,8 @@ def dashboard_data(request: Request, limit: int = Query(20, ge=1, le=100),
         rows = read_with_retry(lambda: database.list_calls(
             limit, offset, after, before, None, created_after, created_before,
             operator=operator, filter_mode='any', selected_facets=selected,
-            any_operator_groups=groups))
+            any_operator_groups=groups,
+            sort_by_date='CALLDATE' in fields))
         return {'items': [project_call(item, fields) for item in rows]}
     except Exception as e: json_failure(e)
 
@@ -594,7 +595,8 @@ def api_calls(request: Request, limit: int = Query(20,ge=1,le=100), offset: int 
     try:
         rows = database.list_calls(limit,offset,after,before,state,call_type=call_type,
                                    operator=operator,
-                                   operator_names=directory_operator_names(destination,team))
+                                   operator_names=directory_operator_names(destination,team),
+                                   sort_by_date='CALLDATE' in fields)
         return {'items':[project_call(row, fields) for row in rows]}
     except Exception as e: json_failure(e)
 
