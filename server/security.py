@@ -72,7 +72,7 @@ def permissions(role: str, overrides: str | None = None) -> set[str]:
             granted = set(parsed) & set(CAPABILITIES) - {'users:manage', 'tokens:manage'}
             # Existing inconsistent rows cannot advertise effective MCP
             # permission until explicitly fixed by an administrator.
-            if 'mcp:use' in granted and not MCP_PREREQUISITES <= granted:
+            if 'mcp:use' in granted and not (MCP_PREREQUISITES & granted):
                 granted.discard('mcp:use')
             if 'calls:read' not in granted:
                 granted.discard('calls:sensitive')
@@ -511,6 +511,8 @@ class Store:
             raise ValueError('Invalid delegated capabilities')
         if 'mcp:use' not in caps:
             raise ValueError('Client requires MCP consent')
+        if 'calls:transcript:read' in caps and 'calls:read' not in caps:
+            raise ValueError('Transcript delegation requires calls:read')
         selected = validate_fields(fields, access['capabilities'])
         if not set(selected) <= access['fields']:
             raise ValueError('Delegated fields exceed user access')
