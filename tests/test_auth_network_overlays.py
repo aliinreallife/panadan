@@ -20,7 +20,25 @@ def _compose(tmp_path, files, env=None):
         text=True,capture_output=True,timeout=20,
     )
     if p.returncode!=0:
-        pytest.fail(f"Docker Compose offline config failed: {p.stderr[:1200]}")
+        # Do not dump stdout: rendered Compose output can contain
+        # interpolated passwords, even when the test expects synthetic env.
+        # Docker Desktop/WSL failures sometimes exit without any stderr.
+        try:
+            version = subprocess.run(
+                ["docker", "compose", "version"], cwd=tmp_path,
+                text=True, capture_output=True, timeout=10,
+            )
+            diagnostic = (
+                f"; compose_version_exit={version.returncode}"
+                f"; compose_version={version.stdout.strip()[:120] if version.returncode == 0 else 'unavailable'}"
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            diagnostic = f"; compose_version_check={type(exc).__name__}"
+        pytest.fail(
+            f"Docker Compose offline config failed: exit={p.returncode}"
+            f"; stdout_bytes={len(p.stdout)}"
+            f"; stderr={p.stderr[:400]!r}{diagnostic}"
+        )
     return json.loads(p.stdout)
 
 
