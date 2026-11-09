@@ -141,9 +141,9 @@ def list_recent_calls(ctx: Context, limit: int = 10, offset: int = 0,
 @mcp.tool(title="Call summary", annotations=REPORT_READ_ONLY)
 def get_call_summary(call_id: int, ctx: Context) -> dict:
     """A call's non-sensitive fields, further limited to delegated columns."""
-    access = _allowed(ctx, "calls:read")
+    access = _allowed(ctx, "calls:read", "id")
     if access is None:
-        return {"error": "permission_denied", "capability": "calls:read"}
+        return {"error": "permission_denied", "capability": "calls:read", "field": "id"}
     row = database.get_call(call_id, sensitive=False)
     if not row:
         return {"error": "not_found"}
@@ -186,7 +186,7 @@ def get_redacted_call_transcript(call_id: int, ctx: Context, offset: int = 0) ->
     if type(call_id) is not int or call_id < 1 or type(offset) is not int or not 0 <= offset <= 2147483646:
         return {"error": "invalid_call_id"}
     access = _allowed(ctx, "calls:transcript:read", "transcription")
-    if access is None or "calls:read" not in access["capabilities"]:
+    if access is None or "calls:read" not in access["capabilities"] or "id" not in access["fields"]:
         return {"error": "permission_denied"}
 
     from .main import store, oauth_config, oauth_verifier
