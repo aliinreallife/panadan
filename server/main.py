@@ -664,6 +664,11 @@ def users_page(request: Request, session: dict = Depends(current_session)):
         },
         'permission_categories': PERMISSION_CATEGORIES,
         'permission_groups': group_options(),
+        'field_catalog': field_catalog(),
+        'default_fields': capability_fields(set(ROLE_GRANTS['analyst'])),
+        'user_fields': {user['id']: effective_fields(
+            permissions(user['role'],user['grants']),user['field_grants'])
+            for user in users},
         'recommended_groups': ROLE_RECOMMENDED_GROUP,
         'admin_only_caps': ADMIN_ONLY,
         'cap_labels': {
@@ -684,10 +689,12 @@ def users_page(request: Request, session: dict = Depends(current_session)):
 @app.post('/dashboard/users', include_in_schema=False)
 def add_user(request: Request, username: str = Form(...), password: str = Form(...),
              role: str = Form(...), csrf: str = Form(...),
-             grants: list[str] = Form([]), session: dict = Depends(current_session)):
+             grants: list[str] = Form([]), fields: list[str] = Form([]),
+             fields_present: bool = Form(False), session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     admin_only(session)
-    try: store.create_user(username.strip(),password,role,grants if role != 'admin' else None)
+    try: store.create_user(username.strip(),password,role,grants if role != 'admin' else None,
+                           fields=fields if fields_present else None)
     except (ValueError, __import__('sqlite3').IntegrityError) as exc:
         raise HTTPException(400, 'Invalid user options or username already exists') from exc
     return RedirectResponse('/dashboard/users',status_code=303)
@@ -696,10 +703,12 @@ def add_user(request: Request, username: str = Form(...), password: str = Form(.
 @app.post('/dashboard/users/{uid}/update', include_in_schema=False)
 def update_user(request: Request, uid: int, role: str = Form(...), csrf: str = Form(...),
                 is_active: bool = Form(False), grants: list[str] = Form([]),
+                fields: list[str] = Form([]), fields_present: bool = Form(False),
                 session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     admin_only(session)
-    try: store.update_user(uid,role,grants if role != 'admin' else None,is_active,session['user_id'])
+    try: store.update_user(uid,role,grants if role != 'admin' else None,is_active,session['user_id'],
+                           fields=fields if fields_present else None)
     except ValueError as exc: raise HTTPException(400,str(exc)) from exc
     return RedirectResponse('/dashboard/users',status_code=303)
 
