@@ -1343,3 +1343,17 @@ doran-datepicker::part(dialog){
 @media(max-width:1100px){.access-guide-levels{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:720px){.access-guide-levels{grid-template-columns:repeat(2,minmax(0,1fr))}.access-category-grid{grid-template-columns:1fr}.access-role-group{grid-template-columns:1fr}}
 @media(max-width:470px){.access-guide-levels{grid-template-columns:1fr}.access-guide,.access-category{padding:12px}.access-permission-row{padding:9px}}
+
+/* Granular report fields: intentionally neutral, high density and RTL. */
+.access-field-grants{margin-top:13px;padding:13px}
+.access-field-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.access-field-option{display:flex!important;align-items:center;gap:9px;padding:10px;border:1px solid var(--border,#e0e4e9);border-radius:9px;cursor:pointer;min-width:0}
+.access-field-option:focus-within{outline:2px solid var(--accent,#527d9c);outline-offset:2px}
+.access-field-option input{flex:0 0 auto;accent-color:var(--accent,#527d9c)}
+.access-field-option>span:first-of-type{display:grid;min-width:0;gap:3px;flex:1}
+.access-field-option strong{font-size:12px;font-weight:650}
+.access-field-option small{font-size:10px;word-break:break-all;color:var(--muted,#778390)}
+.access-field-risk{font-size:10px;color:var(--muted,#778390)}
+.access-field-disabled{opacity:.46;cursor:not-allowed}
+@media(max-width:1000px){.access-field-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:550px){.access-field-grid{grid-template-columns:1fr}}
