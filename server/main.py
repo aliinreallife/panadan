@@ -517,8 +517,8 @@ def browser_ai_transcript(call_id: int, offset: int = Query(0,ge=0,le=2147483646
     """Authorized WebMCP retrieval: redacted, bounded, auditable and read-only."""
     required(session,'calls:read')
     required(session,'calls:transcript:read')
-    if 'transcription' not in user_field_access(session):
-        raise HTTPException(403, 'Transcript field not granted')
+    if not {'id','transcription'} <= user_field_access(session):
+        raise HTTPException(403, 'Transcript requires call ID and transcript grants')
     if call_id <= 0:
         raise HTTPException(400, 'Invalid call ID')
     allowed = store.audit_transcript_request(
@@ -539,6 +539,8 @@ def dashboard_public_call_overview(call_id: int, session: dict = Depends(current
     """Metadata-only lookup for browser agents; never fetch sensitive columns."""
     required(session, 'calls:read')
     fields = user_field_access(session)
+    if 'id' not in fields:
+        raise HTTPException(403, 'Call ID field required for individual lookup')
     try: result = read_with_retry(lambda: database.get_call(call_id, sensitive=False))
     except Exception as e: json_failure(e)
     if not result: raise HTTPException(404, 'Call not found')
@@ -549,6 +551,8 @@ def dashboard_public_call_overview(call_id: int, session: dict = Depends(current
 def dashboard_detail(call_id: int, session: dict = Depends(current_session)):
     required(session,'calls:read')
     fields = user_field_access(session)
+    if 'id' not in fields:
+        raise HTTPException(403, 'Call ID field required for individual lookup')
     try: result = read_with_retry(lambda: database.get_call(call_id, sensitive=has_capability(session,'calls:sensitive')))
     except Exception as e: json_failure(e)
     if not result: raise HTTPException(404, 'Call not found')
@@ -607,6 +611,8 @@ def api_calls(request: Request, limit: int = Query(20,ge=1,le=100), offset: int 
 def api_call(call_id: int, request: Request, include_sensitive: bool = False):
     if include_sensitive: api_auth(request, sensitive=True)
     fields = api_field_access(request, 'api:sensitive' if include_sensitive else 'api:read')
+    if 'id' not in fields:
+        raise HTTPException(403, 'Call ID field required for individual lookup')
     try: result = database.get_call(call_id, sensitive=include_sensitive)
     except Exception as e: json_failure(e)
     if not result: raise HTTPException(404, 'Call not found')
