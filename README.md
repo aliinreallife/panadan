@@ -204,6 +204,8 @@ the one-click OAuth consent experience.
 
 **Unified field-access implementation (experimental branch):** [Local testing and release safeguards](docs/UNIFIED_ACCESS_LOCAL_TEST.md) cover the actual draft SQLite field grants, browser/REST/MCP projection, self access discovery and client-bound OAuth approval page. This code is **not tested for production, not deployed**, and does not activate the remaining 18 mirror-only columns or live OAuth service.
 
+**Unified per-column access and MCP delegation implementation (draft PR #100):** The [local test and rollout gates](docs/UNIFIED_ACCESS_LOCAL_TEST.md) describe the new per-user reporting fields, per-app signed OAuth client approvals, and self-only MCP permission discovery tools. It is **not deployed or validated**, and requires full local security tests without GitHub Actions before merge.
+
 **Future unified per-column access and MCP consent:** The [authorization and access-discovery design](docs/UNIFIED_AUTHORIZATION_MCP.md) specifies individual field permissions shared across browser/REST/MCP, per-app approved subsets, safe `get_my_access`/`explain_access` tooling, and administrator access requests. This is **a proposed security design, not currently implemented**.
 
 **Permission groups redesign (PR #99):** The [access-category and preset guide](docs/ACCESS_PERMISSION_GROUPS.md) describes the new Persian administrator editor and security limitations. [MCP setup](docs/MCP_SETUP.md#how-mcp-relates-to-a-panadan-users-permissions) explains how effective user capabilities gate connections and the transcript tool. This is a draft UI/security change, not a deployed access migration.
