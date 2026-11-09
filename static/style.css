@@ -1296,3 +1296,27 @@ doran-datepicker::part(dialog){
 .calls-panel .report-empty-state button{
   display:block;margin:11px auto 0;min-height:40px;padding:8px 14px;
 }
+
+
+/* Admin-only incremental mirror telemetry — deliberately separate from the
+   existing Odoo reporting source-health indicator. Responsive, RTL-friendly. */
+.mirror-health-panel{margin:18px 0 24px;padding:22px;border-radius:16px}
+.mirror-health-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.mirror-health-head h2{margin:4px 0 7px}
+.mirror-health-state{display:inline-flex;align-items:center;gap:7px;white-space:normal;padding:7px 12px;border-radius:50px;font-size:13px;font-weight:700;background:var(--surface,#f1f3f5);color:inherit;border:1px solid var(--border,#e0e4e8)}
+.mirror-health-state:before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:0 0 auto}
+.mirror-health-state[data-state="ok"]{color:#247647;background:#e9f6ed;border-color:#bee2c8}
+.mirror-health-state[data-state="syncing"]{color:#286b9e;background:#e8f2fc;border-color:#bcdbf4}
+.mirror-health-state[data-state="warning"]{color:#a65f13;background:#fff5e6;border-color:#f2d8ad}
+.mirror-health-state[data-state="muted"]{color:#67717e;background:#f3f4f6;border-color:#e2e5e9}
+.mirror-health-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.mirror-health-stat{border:1px solid var(--border,#e8eaee);border-radius:12px;padding:14px;background:var(--surface,#fafbfc);display:flex;flex-direction:column;gap:9px;min-width:0}
+.mirror-health-stat span{font-size:12px;color:var(--muted,#697583)}
+.mirror-health-stat strong{font-size:17px;font-weight:750;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.mirror-health-detail{margin-top:13px;padding:12px 14px;display:flex;gap:10px;flex-wrap:wrap;border-radius:10px;background:rgba(42,129,204,.07);align-items:center;font-size:13px}
+.mirror-health-detail[hidden]{display:none}
+.mirror-health-detail strong{font-weight:650;unicode-bidi:isolate}
+.mirror-health-footer{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px;font-size:12px;color:var(--muted,#697583)}
+.mirror-health-footer button{margin-inline-start:auto}
+@media(max-width:950px){.mirror-health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.mirror-health-panel{padding:15px}.mirror-health-grid{gap:8px}.mirror-health-stat{padding:11px}.mirror-health-stat strong{font-size:15px}.mirror-health-footer button{width:100%;margin:0}}
