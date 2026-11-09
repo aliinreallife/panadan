@@ -38,6 +38,8 @@ def validate_user_grants(role: str, caps: list[str] | None) -> None:
         raise ValueError('Invalid user privileges')
     if role != 'admin' and 'mcp:use' in selected and not MCP_PREREQUISITES <= selected:
         raise ValueError('MCP requires calls and metrics permissions')
+    if role != 'admin' and (selected & {'calls:sensitive', 'calls:transcript:read'}) and 'calls:read' not in selected:
+        raise ValueError('Sensitive call details and transcript require calls:read')
 
 
 
@@ -65,11 +67,14 @@ def permissions(role: str, overrides: str | None = None) -> set[str]:
     try:
         if overrides is not None:
             parsed = json.loads(overrides)
-            granted = set(parsed) & set(CAPABILITIES) - {'users:manage'}
+            granted = set(parsed) & set(CAPABILITIES) - {'users:manage', 'tokens:manage'}
             # Existing inconsistent rows cannot advertise effective MCP
             # permission until explicitly fixed by an administrator.
             if 'mcp:use' in granted and not MCP_PREREQUISITES <= granted:
                 granted.discard('mcp:use')
+            if 'calls:read' not in granted:
+                granted.discard('calls:sensitive')
+                granted.discard('calls:transcript:read')
             return granted
     except (ValueError, TypeError):
         pass
