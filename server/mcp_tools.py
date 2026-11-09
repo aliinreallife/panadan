@@ -183,7 +183,7 @@ def get_redacted_call_transcript(call_id: int, ctx: Context, offset: int = 0) ->
         return {"error": "invalid_call_id"}
     access = _allowed(ctx, "calls:transcript:read", "transcription")
     if access is None or "calls:read" not in access["capabilities"]:
-        return {"error": "permission_denied", "field": "transcription"}
+        return {"error": "permission_denied"}
 
     from .main import store, oauth_config, oauth_verifier
     from .transcript_ai import transcript_for_ai, MAX_TRANSCRIPT_CHARS
