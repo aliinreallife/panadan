@@ -804,24 +804,36 @@ def read_my_access(request: Request):
         fields = access['fields'] if access else frozenset()
     else:
         raw = auth[7:] if auth.startswith('Bearer ') else ''
-        actor = (store.actor_for_token(raw, 'api:read') or
-                 store.actor_for_token(raw, 'api:sensitive') or
-                 store.actor_for_token(raw, 'mcp:read'))
-        if actor is None:
-            raise HTTPException(401, 'Authentication required')
-        user = store.user_access(actor)
-        if user is None:
-            raise HTTPException(403, 'Account disabled')
-        if store.actor_for_token(raw, 'mcp:read'):
-            delegated = store.mcp_access(actor, legacy_token=raw)
+        if oauth_config.mode == 'oauth':
+            details = oauth_verifier.verify_details(raw) if oauth_verifier else None
+            if not details or not details.get('client_id'):
+                raise HTTPException(401, 'Verified OAuth client required')
+            actor = store.actor_for_oauth(oauth_config.issuer, details['subject'])
+            if actor is None:
+                raise HTTPException(401, 'OAuth account is not linked')
+            delegated = store.mcp_access(actor, oauth_client=details['client_id'])
             if delegated is None:
                 raise HTTPException(403, 'MCP authorization unavailable')
-            caps = delegated['capabilities']
-            fields = delegated['fields']
+            caps, fields = delegated['capabilities'], delegated['fields']
         else:
-            caps, fields = user['capabilities'], user['fields']
-            if not store.actor_for_token(raw, 'api:sensitive'):
-                fields = fields - set(database.SENSITIVE_COLUMNS)
+            actor = (store.actor_for_token(raw, 'api:read') or
+                     store.actor_for_token(raw, 'api:sensitive') or
+                     store.actor_for_token(raw, 'mcp:read'))
+            if actor is None:
+                raise HTTPException(401, 'Authentication required')
+            user = store.user_access(actor)
+            if user is None:
+                raise HTTPException(403, 'Account disabled')
+            if store.actor_for_token(raw, 'mcp:read'):
+                delegated = store.mcp_access(actor, legacy_token=raw)
+                if delegated is None:
+                    raise HTTPException(403, 'MCP authorization unavailable')
+                caps = delegated['capabilities']
+                fields = delegated['fields']
+            else:
+                caps, fields = user['capabilities'], user['fields']
+                if not store.actor_for_token(raw, 'api:sensitive'):
+                    fields = fields - set(database.SENSITIVE_COLUMNS)
     if not caps:
         raise HTTPException(403, 'Account has no active access')
     return JSONResponse({
