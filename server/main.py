@@ -625,7 +625,9 @@ def api_stats(request: Request, after: date | None = None, before: date | None =
 
 
 @app.get('/api/v1/states', dependencies=[Depends(require_metrics_api)], tags=['Analytics'])
-def api_states():
+def api_states(request: Request):
+    if 'aicallinfostate' not in api_field_access(request):
+        raise HTTPException(403, 'Status field not available')
     try: return {'states':database.statuses()}
     except Exception as e: json_failure(e)
 
