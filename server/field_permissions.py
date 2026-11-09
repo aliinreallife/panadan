@@ -46,7 +46,7 @@ REPORT_DESCRIPTIONS = {
     "summary": ("خلاصه تماس", "confidential"),
     "transcription": ("متن خام مکالمه", "confidential"),
     "tell_state_desc": ("شرح وضعیت تماس", "confidential"),
-    "create_date": ("زمان ثبت", "internal"),
+    "create_date": ("زمان ثبت", "confidential"),
 }
 # Current capabilities have established defaults. Explicit field choices can
 # REDUCE them, never expand them.
