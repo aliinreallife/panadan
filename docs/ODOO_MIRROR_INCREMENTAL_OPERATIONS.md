@@ -174,3 +174,89 @@ production authorization, or networking. It does not automatically alert on
 sync lag, long VPN downtime, source identity changes or low disk space. The
 operator has declined new mandatory backups. A disk/host failure can require
 rebuilding the staging mirror.
+
+
+## Admin dashboard: catch-up and VPN health (separate opt-in rollout)
+
+The admin-only Panadan dashboard now includes a "وضعیت نسخهٔ محلی Odoo"
+panel on the main /dashboard page, backed by GET /dashboard/mirror-health.
+Only authenticated admins with users:manage can read it. Non-admin accounts
+never see the panel; the response uses Cache-Control: no-store.
+
+The panel shows: caught up/catching up/behind/paused/VPN down/service failed/
+low disk/unavailable; stored call/revision counts; completed sync timestamp;
+lag; in-flight catch-up last_processed and window_upper; published time;
+VPN and timer state; manual refresh and automatic refresh every 60 seconds.
+
+This is **control-plane metadata**, NOT access to the 37-field mirror.
+Production dashboard/API/MCP reads are still served by the existing
+reporting path, independently from this staging mirror health indicator.
+
+### Architecture and deployment boundary
+
+The production web container must NEVER receive the staging writer DSN,
+Docker socket, Odoo VPN configuration or direct network access to isolated
+localhost PostgreSQL staging. The host-only publisher
+(tools/publish-odoo-mirror-admin-health.py) queries only fixed aggregate
+PostgreSQL control metadata plus systemd and Docker VPN health. It never
+reads customer records or payloads.
+
+It atomically publishes a small JSON file at:
+
+~~~text
+/var/lib/panadan-mirror-staging/health/mirror-health.json
+~~~
+
+A separate one-minute systemd timer refreshes this aggregate telemetry
+without changing the existing five-minute sync timer. To install **only**
+the host publisher on an approved clean checkout:
+
+~~~bash
+bash ~/panadan-mirror-runner/tools/install-odoo-mirror-admin-health-systemd.sh \
+  install --ack-admin-health-publisher
+
+sudo systemctl status panadan-mirror-health-publisher.timer --no-pager
+sudo journalctl -u panadan-mirror-health-publisher.service -n 30 --no-pager
+~~~
+
+This create-only installer pins a reviewed Git revision in root-owned /opt,
+and refuses to overwrite existing units. It neither modifies the production
+web container nor changes the sync worker.
+
+For the admin UI to receive live telemetry, a separately approved
+**web-only** production deploy must mount the health DIRECTORY read-only:
+
+~~~yaml
+services:
+  web:
+    volumes:
+      - /var/lib/panadan-mirror-staging/health:/run/panadan:ro
+~~~
+
+**Mount the directory, not just the JSON file.** Atomic file replacement
+changes the inode; a Docker bind of the single file can remain stuck on
+the previous inode and show stale information forever.
+
+The reviewed web image must contain server/mirror_health.py,
+static/mirror-health.js, the updated server/main.py, dashboard template
+and CSS. Deploy with the hardened VPS web-only deployment controller,
+preserving private Compose overlays, SQLite auth volume, HTTPS gateway
+and Plane proxy. Do not run the base panadan.sh up command or recreate
+production ingress. This mount provides only aggregate read-only telemetry.
+
+Until BOTH the new web image AND the read-only directory mount are in place,
+the old admin UI will not show the new card, or a new UI will show
+"not configured". No production deployment was performed by PR edits.
+
+### Acceptance checks
+
+- No session: GET /dashboard/mirror-health returns 401.
+- Non-admin session: returns 403; no status card in dashboard HTML.
+- Admin: only aggregate counts/timestamps/booleans, no customer rows/IDs,
+  Cache-Control: no-store.
+- In-flight catch-up: shows last_processed and frozen window_upper.
+  Do not fabricate a percent from timestamp position.
+- VPN failure: warning while publisher is fresh. Publisher absent or older
+  than 3 minutes: unavailable, never a stale green success.
+- Below 6 GiB disk: warning; worker stops safely without deleting data.
+- No changes to 5-minute worker, production reports, API, MCP or Odoo.
