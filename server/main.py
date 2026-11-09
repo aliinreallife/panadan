@@ -744,6 +744,7 @@ def my_connected_ai_apps(request: Request, session: dict = Depends(current_sessi
             'mcp:use','calls:read','metrics:read','calls:transcript:read'}),
         'field_catalog': field_catalog(),
         'client_grants': client_rows,
+        'can_manage': 'users:manage' in access['capabilities'],
         'oauth_mode': oauth_config.mode,
     }, headers={'Cache-Control':'no-store'})
 
