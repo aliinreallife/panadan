@@ -141,7 +141,7 @@
             </span>
             <span class="user-card-edit">ویرایش <span aria-hidden="true">⌄</span></span>
           </summary>
-          <form method="post" action="/dashboard/users/{{user.id}}/update" class="user-edit-form access-editor" data-access-editor="edit">
+          <form method="post" action="/dashboard/users/{{user.id}}/update" class="user-edit-form" data-access-editor="edit">
             <input name="csrf" type="hidden" value="{{csrf}}">
             <div class="access-role-group">
               <label class="user-edit-role">نقش حساب
