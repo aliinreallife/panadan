@@ -47,7 +47,7 @@
   <a href="/dashboard">▦ گزارش تماس‌ها</a>
   <a href="/dashboard/connect">◈ اتصال هوش مصنوعی</a>
   <a href="/dashboard/mcp-apps" class="active" aria-current="page">◉ برنامه‌های متصل من</a>
-  {% if 'users:manage' in capabilities %}
+  {% if can_manage %}
   <a href="/dashboard/users">♙ مدیریت کاربران</a>{% endif %}
   </nav>
   <div class="side-footer"><form method="post" action="/logout">
