@@ -88,6 +88,7 @@ def get_my_access(ctx: Context) -> dict:
         ],
         "note": "This is this AI's effective access, not every permission owned by the user.",
         "can_request_more_access": True,
+        "my_consent_page": "/dashboard/mcp-apps",
     }
 
 
@@ -112,6 +113,8 @@ def explain_access(field: str, ctx: Context) -> dict:
         "allowed": "This field is available to the connected application.",
     }
     result["next_step"] = next_step[result["reason"]]
+    if result["reason"] == "needs_user_consent":
+        result["my_consent_page"] = "/dashboard/mcp-apps"
     return result
 
 
