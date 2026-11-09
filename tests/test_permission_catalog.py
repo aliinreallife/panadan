@@ -82,7 +82,9 @@ def test_legacy_corrupt_grants_do_not_escalate_access():
         "tokens:manage", "users:manage", "calls:sensitive",
         "calls:transcript:read", "metrics:read", "mcp:use",
     ])
-    assert permissions("reader", bad) == {"metrics:read"}
+    # Invalid admin/confidential grants must be stripped, while the
+    # explicit metrics+MCP pair remains valid under per-tool authorization.
+    assert permissions("reader", bad) == {"metrics:read", "mcp:use"}
     assert permissions("admin", bad) == set(CAPABILITIES)
 
 
