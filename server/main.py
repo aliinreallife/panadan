@@ -736,7 +736,8 @@ def my_connected_ai_apps(request: Request, session: dict = Depends(current_sessi
         'session': session, 'csrf': session['csrf'],
         'capabilities': access['capabilities'] & {
             'calls:read','metrics:read','calls:transcript:read','mcp:use'},
-        'fields': access['fields'],
+        'fields': access['fields'] & capability_fields(access['capabilities'] & {
+            'mcp:use','calls:read','metrics:read','calls:transcript:read'}),
         'field_catalog': field_catalog(),
         'client_grants': client_rows,
         'oauth_mode': oauth_config.mode,
