@@ -135,6 +135,9 @@ def test_mcp_real_transport_enforces_calls_only_metrics_only_and_columns(
          "customername":secret, "summary":secret}
     monkeypatch.setattr(main.database,"list_calls",lambda *a, **kw:[row])
     monkeypatch.setattr(main.database,"get_call",lambda *a, **kw:row)
+    # Metrics-only MCP may legitimately call this tool. Keep this integration
+    # test hermetic instead of touching Odoo when that permission is allowed.
+    monkeypatch.setattr(main.database,"statuses",lambda:["Unchecked"])
     monkeypatch.setattr(main.database,"stats",lambda *a, **kw:{
         "total":1, "sold_out":0, "scored_calls":1, "avg_ai_score":70,
         "avg_voice_length":15
@@ -179,5 +182,14 @@ def test_mcp_real_transport_enforces_calls_only_metrics_only_and_columns(
             "call_id":93},seq=6))
         assert restricted["error"]=="permission_denied"
         assert secret not in str(restricted)
-        assert unwrap(post(metric_token,"get_available_states",seq=7)) != {
+        status_result=post(metric_token,"get_available_states",seq=7)
+        assert status_result.status_code==200, status_result.text
+        rpc_result=status_result.json()["result"]
+        assert rpc_result.get("isError") is not True, rpc_result
+        # SDK v2 may serialize list entries into separate MCP content blocks.
+        # Assert the approved value is present and no secret escaped.
+        assert "Unchecked" in json.dumps(rpc_result)
+        assert secret not in status_result.text
+        denied_states=unwrap(post(call_token,"get_available_states",seq=8))
+        assert denied_states == {
             "error":"permission_denied","field":"aicallinfostate"}
