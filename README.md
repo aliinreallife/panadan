@@ -202,6 +202,8 @@ The source reporting database remains strictly **read-only at the application
 level**. An external IdP and HTTPS endpoint are still required to complete
 the one-click OAuth consent experience.
 
+**Permission groups redesign (PR #99):** The [access-category and preset guide](docs/ACCESS_PERMISSION_GROUPS.md) describes the new Persian administrator editor and security limitations. [MCP setup](docs/MCP_SETUP.md#how-mcp-relates-to-a-panadan-users-permissions) explains how effective user capabilities gate connections and the transcript tool. This is a draft UI/security change, not a deployed access migration.
+
 ## Data access and security
 
 - Dashboard/API/MCP can query only explicit read-only PostgreSQL transactions and allowlisted reporting columns; they cannot execute arbitrary user SQL or modify the reporting database.
