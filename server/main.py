@@ -713,6 +713,116 @@ def update_user(request: Request, uid: int, role: str = Form(...), csrf: str = F
     return RedirectResponse('/dashboard/users',status_code=303)
 
 
+@app.get('/dashboard/mcp-apps', response_class=HTMLResponse, include_in_schema=False)
+def my_connected_ai_apps(request: Request, session: dict = Depends(current_session)):
+    """Self-service client-bound consent; not an OAuth authorization server."""
+    if not hasattr(store, 'user_access') or not hasattr(store, 'list_mcp_clients'):
+        raise HTTPException(503, 'Consent store unavailable')
+    access = store.user_access(session['user_id'])
+    if access is None:
+        raise HTTPException(403, 'Account disabled')
+    client_rows = []
+    for record in store.list_mcp_clients(session['user_id']):
+        try:
+            client_rows.append({
+                'client_id': record['client_id'],
+                'capabilities': set(json.loads(record['capabilities'])),
+                'fields': set(json.loads(record['fields'])),
+                'approved_at': record['approved_at']
+            })
+        except (TypeError, ValueError, KeyError):
+            continue
+    return templates.TemplateResponse(request, 'mcp_apps.html', {
+        'session': session, 'csrf': session['csrf'],
+        'capabilities': access['capabilities'] & {
+            'calls:read','metrics:read','calls:transcript:read','mcp:use'},
+        'fields': access['fields'],
+        'field_catalog': field_catalog(),
+        'client_grants': client_rows,
+        'oauth_mode': oauth_config.mode,
+    }, headers={'Cache-Control':'no-store'})
+
+
+@app.post('/dashboard/mcp-apps/approve', include_in_schema=False)
+def approve_my_ai_app(request: Request, csrf: str = Form(...),
+                      client_id: str = Form(...),
+                      capabilities: list[str] = Form([]),
+                      fields: list[str] = Form([]),
+                      session: dict = Depends(current_session)):
+    csrf_check(request, csrf, session)
+    if not hasattr(store, 'approve_mcp_client'):
+        raise HTTPException(503, 'Consent store unavailable')
+    try:
+        store.approve_mcp_client(session['user_id'], client_id,
+                                 ['mcp:use', *capabilities], fields)
+        store.record_activity(user_id=session['user_id'], surface='auth',
+                              action='MCP client consent updated',
+                              http_status=200, duration_ms=0)
+    except ValueError as exc:
+        raise HTTPException(400, 'Invalid client or delegated permissions') from exc
+    return RedirectResponse('/dashboard/mcp-apps', status_code=303)
+
+
+@app.post('/dashboard/mcp-apps/revoke', include_in_schema=False)
+def revoke_my_ai_app(request: Request, csrf: str = Form(...),
+                     client_id: str = Form(...),
+                     session: dict = Depends(current_session)):
+    csrf_check(request, csrf, session)
+    if not hasattr(store, 'revoke_mcp_client'):
+        raise HTTPException(503, 'Consent store unavailable')
+    store.revoke_mcp_client(session['user_id'], client_id)
+    store.record_activity(user_id=session['user_id'], surface='auth',
+                          action='MCP client consent revoked',
+                          http_status=200, duration_ms=0)
+    return RedirectResponse('/dashboard/mcp-apps', status_code=303)
+
+
+@app.get('/api/v1/me/access', tags=['Authorization'])
+def read_my_access(request: Request):
+    """Self-only metadata, never arbitrary user-id lookup or customer payload."""
+    if not hasattr(store, 'user_access'):
+        raise HTTPException(503, 'Field authorization unavailable')
+    session = logged_in(request)
+    if session:
+        access = store.user_access(session['user_id'])
+        caps = access['capabilities'] if access else frozenset()
+        fields = access['fields'] if access else frozenset()
+    else:
+        auth = request.headers.get('authorization', '')
+        raw = auth[7:] if auth.startswith('Bearer ') else ''
+        actor = (store.actor_for_token(raw, 'api:read') or
+                 store.actor_for_token(raw, 'api:sensitive') or
+                 store.actor_for_token(raw, 'mcp:read'))
+        if actor is None:
+            raise HTTPException(401, 'Authentication required')
+        user = store.user_access(actor)
+        if user is None:
+            raise HTTPException(403, 'Account disabled')
+        if store.actor_for_token(raw, 'mcp:read'):
+            delegated = store.mcp_access(actor, legacy_token=raw)
+            if delegated is None:
+                raise HTTPException(403, 'MCP authorization unavailable')
+            caps = delegated['capabilities']
+            fields = delegated['fields']
+        else:
+            caps, fields = user['capabilities'], user['fields']
+            if not store.actor_for_token(raw, 'api:sensitive'):
+                fields = fields - set(database.SENSITIVE_COLUMNS)
+    if not caps:
+        raise HTTPException(403, 'Account has no active access')
+    return JSONResponse({
+        'schema_version': 1, 'actor': 'self',
+        'capabilities': sorted(caps & {'calls:read','metrics:read',
+                                      'calls:transcript:read','mcp:use'}),
+        'fields': [
+            {'id': item['id'], 'label': item['label'],
+             'category': item['category']}
+            for item in field_catalog() if item['id'] in fields
+        ],
+        'hint': 'To change user grants ask an administrator; AI clients need separate consent.',
+    }, headers={'Cache-Control':'no-store'})
+
+
 @app.get('/dashboard/activity', response_class=HTMLResponse, include_in_schema=False)
 def activity_page(request: Request, session: dict = Depends(current_session)):
     admin_only(session)
