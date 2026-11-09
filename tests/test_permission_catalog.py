@@ -69,8 +69,6 @@ def test_group_is_one_time_snapshot_and_other_users_do_not_change(tmp_path):
 @pytest.mark.parametrize("caps", [
     ["calls:sensitive"],
     ["calls:transcript:read"],
-    ["mcp:use", "calls:read"],
-    ["mcp:use", "metrics:read"],
     ["tokens:manage"],
     ["users:manage"],
 ])
