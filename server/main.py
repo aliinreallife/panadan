@@ -21,6 +21,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette import status
 
 from . import database
+from .field_permissions import (capability_fields, effective_fields,
+    field_catalog, project_call, project_metrics)
 from .permission_catalog import (
     PERMISSION_CATEGORIES, ADMIN_ONLY, ROLE_RECOMMENDED_GROUP,
     group_options, matching_group,
@@ -159,6 +161,42 @@ def required(session: dict, capability: str):
 
 def admin_only(session: dict):
     return required(session, 'users:manage')
+
+
+def user_field_access(session: dict) -> frozenset[str]:
+    access = store.user_access(session['user_id']) if hasattr(store, 'user_access') else None
+    if access is None:
+        raise HTTPException(403, 'Field authorization unavailable')
+    return access['fields']
+
+
+def api_field_access(request: Request, scope: str = 'api:read') -> frozenset[str]:
+    auth = request.headers.get('authorization', '')
+    raw = auth[7:] if auth.startswith('Bearer ') else ''
+    actor = store.actor_for_token(raw, scope)
+    if actor is None or not hasattr(store, 'user_access'):
+        raise HTTPException(401, 'Unauthorized reporting identity')
+    policy = store.user_access(actor)
+    if policy is None:
+        raise HTTPException(403, 'Reporting permission revoked')
+    return policy['fields']
+
+
+def require_field_filters(fields: frozenset[str], *, after=None, before=None,
+                          created_after=None, created_before=None, state=None,
+                          call_type=None, direction=None, operator=None,
+                          operators=None, destination=None, team=None):
+    constraints = (
+        ((after is not None or before is not None), 'CALLDATE'),
+        ((created_after is not None or created_before is not None), 'create_date'),
+        (bool(state), 'aicallinfostate'),
+        (bool(call_type), 'tellstate'),
+        (bool(direction), 'tellside'),
+        (bool(operator) or bool(operators) or bool(destination) or bool(team),
+         'vw_danix_base_info_users_name'),
+    )
+    if any(on and field not in fields for on,field in constraints):
+        raise HTTPException(403, 'Filter requires an unauthorized field')
 
 
 def api_auth(request: Request, sensitive: bool = False, capability: str = "calls:read"):
@@ -338,6 +376,8 @@ def dashboard(request: Request):
 def operator_profile(request: Request, name: str = Query(...,min_length=1,max_length=180),
                      session: dict = Depends(current_session)):
     required(session,'calls:read')
+    if 'vw_danix_base_info_users_name' not in user_field_access(session):
+        raise HTTPException(403, 'Operator field unavailable')
     return templates.TemplateResponse(request,'dashboard.html',{
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
@@ -349,6 +389,8 @@ def operator_profile(request: Request, name: str = Query(...,min_length=1,max_le
 @app.get('/dashboard/operators', response_class=HTMLResponse, include_in_schema=False)
 def operators_page(request: Request, session: dict = Depends(current_session)):
     required(session,'calls:read')
+    if 'vw_danix_base_info_users_name' not in user_field_access(session):
+        raise HTTPException(403, 'Operator field unavailable')
     try: names=read_with_retry(database.operators)
     except Exception as e: json_failure(e)
     assignments=store.operator_assignments()
@@ -430,30 +472,38 @@ def dashboard_data(request: Request, limit: int = Query(20, ge=1, le=100),
                    created_after: datetime | None = None, created_before: datetime | None = None,
                    session: dict = Depends(current_session)):
     required(session, 'calls:read')
+    fields = user_field_access(session)
+    require_field_filters(fields, after=after, before=before, created_after=created_after,
+                          created_before=created_before, operator=operator,
+                          operators=operators, state=state, call_type=call_type,
+                          direction=direction, destination=destination, team=team)
     try:
         selected, groups = dashboard_multi_facets(
             operators, state, call_type, direction, destination, team)
-        return {'items': read_with_retry(lambda: database.list_calls(
+        rows = read_with_retry(lambda: database.list_calls(
             limit, offset, after, before, None, created_after, created_before,
             operator=operator, filter_mode='any', selected_facets=selected,
-            any_operator_groups=groups))}
+            any_operator_groups=groups))
+        return {'items': [project_call(item, fields) for item in rows]}
     except Exception as e: json_failure(e)
 
 @app.get('/dashboard/filter-options', include_in_schema=False)
 def dashboard_filter_options(session: dict = Depends(current_session)):
     required(session, 'calls:read')
+    fields = user_field_access(session)
     try:
         names=database.operators()
         assignments=store.operator_assignments()
         return {
-            'states': read_with_retry(database.statuses), 'call_types': read_with_retry(database.call_types),
-            'directions': read_with_retry(database.directions),
+            'states': read_with_retry(database.statuses) if 'aicallinfostate' in fields else [],
+            'call_types': read_with_retry(database.call_types) if 'tellstate' in fields else [],
+            'directions': read_with_retry(database.directions) if 'tellside' in fields else [],
             'operators':[{'value':name,'label':operator_display(name),
                           'destination':assignments.get(name,{}).get('destination','نامشخص'),
                           'team':assignments.get(name,{}).get('team','نامشخص')}
-                         for name in names],
-            'destinations':sorted({'نامشخص',*(row['destination'] for row in assignments.values())}),
-            'teams':sorted({'نامشخص',*(row['team'] for row in assignments.values())}),
+                         for name in names] if 'vw_danix_base_info_users_name' in fields else [],
+            'destinations':sorted({'نامشخص',*(row['destination'] for row in assignments.values())}) if 'vw_danix_base_info_users_name' in fields else [],
+            'teams':sorted({'نامشخص',*(row['team'] for row in assignments.values())}) if 'vw_danix_base_info_users_name' in fields else [],
         }
     except Exception as e: json_failure(e)
 
@@ -465,6 +515,8 @@ def browser_ai_transcript(call_id: int, offset: int = Query(0,ge=0,le=2147483646
     """Authorized WebMCP retrieval: redacted, bounded, auditable and read-only."""
     required(session,'calls:read')
     required(session,'calls:transcript:read')
+    if 'transcription' not in user_field_access(session):
+        raise HTTPException(403, 'Transcript field not granted')
     if call_id <= 0:
         raise HTTPException(400, 'Invalid call ID')
     allowed = store.audit_transcript_request(
@@ -484,19 +536,21 @@ def browser_ai_transcript(call_id: int, offset: int = Query(0,ge=0,le=2147483646
 def dashboard_public_call_overview(call_id: int, session: dict = Depends(current_session)):
     """Metadata-only lookup for browser agents; never fetch sensitive columns."""
     required(session, 'calls:read')
+    fields = user_field_access(session)
     try: result = read_with_retry(lambda: database.get_call(call_id, sensitive=False))
     except Exception as e: json_failure(e)
     if not result: raise HTTPException(404, 'Call not found')
-    return JSONResponse(result, headers={'Cache-Control': 'no-store'})
+    return JSONResponse(project_call(result, fields), headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/dashboard/data/{call_id}', include_in_schema=False)
 def dashboard_detail(call_id: int, session: dict = Depends(current_session)):
     required(session,'calls:read')
+    fields = user_field_access(session)
     try: result = read_with_retry(lambda: database.get_call(call_id, sensitive=has_capability(session,'calls:sensitive')))
     except Exception as e: json_failure(e)
     if not result: raise HTTPException(404, 'Call not found')
-    return JSONResponse(result, headers={'Cache-Control':'no-store'})
+    return JSONResponse(project_call(result, fields), headers={'Cache-Control':'no-store'})
 
 
 @app.get('/dashboard/metrics', include_in_schema=False)
@@ -511,13 +565,19 @@ def dashboard_metrics(after: date | None = None, before: date | None = None,
                       direction: list[str] | None = Query(None),
                       session: dict = Depends(current_session)):
     required(session,'metrics:read')
+    fields = user_field_access(session)
+    require_field_filters(fields, after=after, before=before, created_after=created_after,
+                          created_before=created_before, operator=operator,
+                          operators=operators, state=state, call_type=call_type,
+                          direction=direction, destination=destination, team=team)
     try:
         selected, groups = dashboard_multi_facets(
             operators, state, call_type, direction, destination, team)
-        return read_with_retry(lambda: database.stats(
+        data = read_with_retry(lambda: database.stats(
             after, before, created_after, created_before, operator,
             state=None, filter_mode='any', selected_facets=selected,
             any_operator_groups=groups))
+        return project_metrics(data, fields)
     except Exception as e: json_failure(e)
 
 @app.get('/api/v1/calls', dependencies=[Depends(require_api)], tags=['Calls'])
