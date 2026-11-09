@@ -172,7 +172,9 @@ def get_call_metrics(ctx: Context, after: str = "", before: str = "",
 @mcp.tool(title="Available call states", annotations=REPORT_READ_ONLY)
 def get_available_states(ctx: Context):
     """Enumerate status categories only when delegated the status field."""
-    if _allowed(ctx, "calls:read", "aicallinfostate") is None:
+    access = _access(ctx)
+    if (not access or "aicallinfostate" not in access["fields"]
+            or not ({"calls:read", "metrics:read"} & access["capabilities"])):
         return {"error": "permission_denied", "field": "aicallinfostate"}
     return database.statuses()
 
