@@ -581,35 +581,46 @@ def dashboard_metrics(after: date | None = None, before: date | None = None,
     except Exception as e: json_failure(e)
 
 @app.get('/api/v1/calls', dependencies=[Depends(require_api)], tags=['Calls'])
-def api_calls(limit: int = Query(20,ge=1,le=100), offset: int = Query(0,ge=0,le=10000),
+def api_calls(request: Request, limit: int = Query(20,ge=1,le=100), offset: int = Query(0,ge=0,le=10000),
               after: date | None = None, before: date | None = None, state: str | None = None,
               call_type: str | None = None,
               operator: str | None = Query(None,max_length=180),
               destination: str | None = Query(None,max_length=80),
               team: str | None = Query(None,max_length=80)):
+    fields = api_field_access(request)
+    require_field_filters(fields, after=after, before=before, state=state,
+                          call_type=call_type, operator=operator,
+                          destination=destination, team=team)
     try:
-        return {'items':database.list_calls(limit,offset,after,before,state,call_type=call_type,
-                                            operator=operator,
-                                            operator_names=directory_operator_names(destination,team))}
+        rows = database.list_calls(limit,offset,after,before,state,call_type=call_type,
+                                   operator=operator,
+                                   operator_names=directory_operator_names(destination,team))
+        return {'items':[project_call(row, fields) for row in rows]}
     except Exception as e: json_failure(e)
 
 
 @app.get('/api/v1/calls/{call_id}', dependencies=[Depends(require_api)], tags=['Calls'])
 def api_call(call_id: int, request: Request, include_sensitive: bool = False):
     if include_sensitive: api_auth(request, sensitive=True)
+    fields = api_field_access(request, 'api:sensitive' if include_sensitive else 'api:read')
     try: result = database.get_call(call_id, sensitive=include_sensitive)
     except Exception as e: json_failure(e)
     if not result: raise HTTPException(404, 'Call not found')
-    return JSONResponse(result, headers={'Cache-Control':'no-store'})
+    return JSONResponse(project_call(result, fields), headers={'Cache-Control':'no-store'})
 
 
 @app.get('/api/v1/stats', dependencies=[Depends(require_metrics_api)], tags=['Analytics'])
-def api_stats(after: date | None = None, before: date | None = None,
+def api_stats(request: Request, after: date | None = None, before: date | None = None,
               operator: str | None = Query(None,max_length=180),
               destination: str | None = Query(None,max_length=80),
               team: str | None = Query(None,max_length=80)):
-    try: return database.stats(after,before,operator=operator,
-                               operator_names=directory_operator_names(destination,team))
+    fields = api_field_access(request)
+    require_field_filters(fields, after=after, before=before, operator=operator,
+                          destination=destination, team=team)
+    try:
+        result = database.stats(after,before,operator=operator,
+                                operator_names=directory_operator_names(destination,team))
+        return project_metrics(result, fields)
     except Exception as e: json_failure(e)
 
 
