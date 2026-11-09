@@ -47,6 +47,35 @@ their current sessions, tokens and OAuth bindings.
 - The current data source, source VPN, mirror, scheduled jobs, API/MCP scopes
   and reporting backend remain unchanged.
 
+## MCP should inherit the user's individual permissions (follow-up requirement)
+
+The current implementation uses one coarse MCP gate requiring the active
+user to hold all of: mcp:use, calls:read and metrics:read. This is a
+**confirmed current limitation**, not a feature delivered by this PR.
+
+For a future narrowly scoped per-tool implementation, use this policy:
+
+| Tool | Proposed user grant requirement |
+| --- | --- |
+| Recent calls, call summary, call states | mcp:use and calls:read |
+| Call metrics | mcp:use and metrics:read |
+| Redacted transcript | mcp:use, calls:read, calls:transcript:read and an access audit |
+| Sensitive record detail | No MCP tool presently offers this; require a separate reviewed approval to add one |
+| User/token management | Not available to MCP |
+
+MCP still needs a valid, locally bound legacy bearer token or approved OAuth
+user. Filter tools/list based on **that authenticated user's current
+permissions**, and reject unauthorized tools/call independently, not just
+in the UI or advertised tool list. Recheck active user/grants at every call;
+revocation must take effect immediately. Preserve existing transcript
+redaction, paging and disclosures. Do not accept a user ID or permissions
+from model-supplied arguments or tool metadata.
+
+This specification is a desired follow-up only. Do not relax the existing
+MCP prerequisites or advertise per-tool enforcement until it is implemented
+and tested across legacy MCP, OAuth, unauthorized direct calls, tool discovery,
+revocation and concurrent requests.
+
 ## Future dynamic group membership
 
 Group inheritance that updates many users automatically is a SEPARATE
