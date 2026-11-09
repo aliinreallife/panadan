@@ -174,7 +174,7 @@ def list_calls(limit: int = 20, offset: int = 0, after: date | None = None,
                direction: str | None = None, filter_mode: str = 'all',
                any_operator_groups: list[list[str]] | None = None,
                selected_facets: dict[str, list[str]] | None = None,
-               sort_by_date: bool = True):
+               sort_by_date: bool = True, sort_by_id: bool = True):
     limit = max(1, min(int(limit), 100))
     offset = max(0, min(int(offset), 10000))
     if after and before and after > before: raise ValueError('Invalid date range')
@@ -187,7 +187,7 @@ def list_calls(limit: int = 20, offset: int = 0, after: date | None = None,
                             direction=direction, filter_mode=filter_mode, any_operator_groups=any_operator_groups,
                             selected_facets=selected_facets)
     order = (' ORDER BY "CALLDATE" DESC NULLS LAST, id DESC' if sort_by_date
-             else ' ORDER BY id DESC')
+             else ' ORDER BY id DESC' if sort_by_id else '')
     q = ('SELECT ' + ','.join('"' + c + '"' for c in PUBLIC_COLUMNS) +
          ' FROM ' + VIEW + where + order + ' LIMIT %s OFFSET %s')
     with connect() as c:
