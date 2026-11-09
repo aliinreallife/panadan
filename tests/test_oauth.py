@@ -189,3 +189,23 @@ def test_resource_metadata_disabled_without_oauth(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         main.oauth_protected_resource_metadata()
     assert exc.value.status_code == 404
+
+
+
+def test_oauth_verifier_accepts_only_signed_consistent_client_identity(signer):
+    """The IdP must sign the client ID; MCP tools never trust model arguments."""
+    verifier, mint = signer
+    result = verifier.verify_details(mint(azp="approved-app"))
+    assert result == {"subject": "provider-user-123", "client_id": "approved-app"}
+    assert verifier.verify_details(mint(client_id="approved-app")) == result
+    assert verifier.verify_details(
+        mint(azp="approved-app", client_id="other-app")) is None
+    assert verifier.verify_details(mint(client_id=91)) is None
+    assert verifier.verify_details(mint(azp="")) is None
+    assert verifier.verify_details(mint(
+        azp="approved-app", aud="https://other.example/mcp/")) is None
+    # A valid legacy OAuth identity token without a client ID may still
+    # identify the user, but it must not authorize application data access.
+    assert verifier.verify_details(mint()) == {
+        "subject": "provider-user-123", "client_id": None
+    }
