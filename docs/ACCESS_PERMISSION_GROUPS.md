@@ -76,6 +76,13 @@ MCP prerequisites or advertise per-tool enforcement until it is implemented
 and tested across legacy MCP, OAuth, unauthorized direct calls, tool discovery,
 revocation and concurrent requests.
 
+## Planned unified field permissions and AI-readable access explanations
+
+The intended per-column access model, OAuth application-specific subsets,
+read-only access-discovery API/MCP tools, and administrator request workflow
+are specified in [UNIFIED_AUTHORIZATION_MCP.md](UNIFIED_AUTHORIZATION_MCP.md).
+They are **not** implemented by the current categorized permissions UI.
+
 ## Future dynamic group membership
 
 Group inheritance that updates many users automatically is a SEPARATE
