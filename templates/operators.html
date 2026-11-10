@@ -3,7 +3,7 @@
 <aside class="sidebar"><a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
 <nav><a href="/dashboard">▦ گزارش تماس‌ها</a><a class="active" href="/dashboard/operators">♙ کارشناسان و مقاصد</a>
 {% if can_manage %}<a href="/dashboard/connect">◈ اتصال هوش مصنوعی</a><a href="/dashboard/tokens">♢ توکن‌های دسترسی</a><a href="/dashboard/api">⌘ راهنمای API</a><a href="/dashboard/oauth">◉ اتصال امن OAuth</a>{% endif %}
-{% if can_manage %}<a href="/dashboard/users">♙ کاربران و دسترسی‌ها</a><a href="/dashboard/activity">▤ فعالیت کاربران</a>{% endif %}</nav>
+{% if can_manage %}<a href="/dashboard/users">♙ کاربران و دسترسی‌ها</a><a href="/dashboard/activity">▤ فعالیت کاربران</a><a href="/dashboard/system">◷ وضعیت سیستم</a>{% endif %}</nav>
 <div class="side-footer"><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{csrf}}"><button class="link-button">خروج</button></form></div>
 </aside>
 <main class="content">

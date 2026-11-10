@@ -33,14 +33,30 @@
     service_failed: ['خطا در همگام‌سازی', 'warning'],
     disk_low: ['فضای ذخیره‌سازی کم است', 'warning'],
     unavailable: ['اطلاعات همگام‌سازی در دسترس نیست', 'warning'],
-    not_configured: ['نمایش وضعیت هنوز متصل نشده', 'muted'],
+    not_configured: ['همگام‌سازی محلی تنظیم نشده', 'muted'],
   };
   let busy = false;
   const show = data => {
     const [label, state] = states[data.state] || states.unavailable;
     const status = el('mirror-health-state');
-    status.textContent = label;
+    // Disabled source and missing publisher must not look like the same fault.
+    const disabled = data.state === 'not_configured' && data.source_enabled === false;
+    const missing = data.state === 'not_configured' && data.source_enabled !== false;
+    status.textContent = disabled ? 'همگام‌سازی نسخهٔ محلی غیرفعال است' :
+      missing ? 'اطلاعات پایش هنوز در دسترس نیست' : label;
     status.dataset.state = state;
+    const explanation = el('mirror-health-explanation');
+    if (explanation) {
+      explanation.textContent = disabled ?
+        'سرویس پایش پاسخ می‌دهد، اما انتقال داده از Odoo به نسخهٔ محلی فعال نشده است. گزارش‌های اصلی پانادان مستقل از این انتقال کار می‌کنند.' :
+        missing ?
+        'هنوز وضعیت قابل‌اعتمادی از سرویس پایش دریافت نشده است. اتصال فایل پایش و دسترسی خواندن آن را بررسی کنید.' :
+        data.state === 'caught_up' ?
+        'همگام‌سازی نسخهٔ محلی مطابق آخرین دادهٔ پایش به‌روز است؛ این وضعیت مستقل از مسیر گزارش‌های اصلی است.' :
+        data.state === 'unavailable' ?
+        'وضعیت همگام‌سازی قابل تأیید نیست. اطلاعات قدیمی یا نامعتبر به‌عنوان وضعیت سالم نمایش داده نمی‌شوند.' :
+        'وضعیت در حال تغییر است. جزئیات سرویس و زمان آخرین بررسی را در بخش پایین ببینید.';
+    }
     el('mirror-health-records').textContent = fa(data.records);
     el('mirror-health-revisions').textContent = fa(data.revisions);
     el('mirror-health-through').textContent = time(data.completed_through);

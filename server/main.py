@@ -336,6 +336,15 @@ def dashboard(request: Request):
     })
 
 
+@app.get('/dashboard/system', response_class=HTMLResponse, include_in_schema=False)
+def system_health_page(request: Request, session: dict = Depends(current_session)):
+    """Admin-only monitoring UI; no source database access on page render."""
+    admin_only(session)
+    return templates.TemplateResponse(request, 'system.html', {
+        'session': session, 'csrf': session['csrf'],
+    }, headers={'Cache-Control': 'no-store'})
+
+
 @app.get('/dashboard/mirror-health', include_in_schema=False)
 def dashboard_mirror_health(session: dict = Depends(current_session)):
     # Admin-only aggregate sync-health. No Odoo/staging DB access in web.

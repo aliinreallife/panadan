@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>وضعیت سیستم و همگام‌سازی | پانادان</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/vendor/panadan-bundle.css">
+<link rel="stylesheet" href="/static/style.css">
+</head><body><div class="shell">
+<aside class="sidebar"><a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
+<div class="nav-caption">مدیریت پانادان</div><nav>
+<a href="/dashboard">▦ گزارش تماس‌ها</a>
+<a href="/dashboard/operators">♙ کارشناسان و مقاصد</a>
+<a href="/dashboard/connect">◈ اتصال هوش مصنوعی</a>
+<a href="/dashboard/tokens">♢ توکن‌های دسترسی</a>
+<a href="/dashboard/api">⌘ راهنمای API</a>
+<a href="/dashboard/oauth">◉ اتصال امن OAuth</a>
+<a href="/dashboard/users">♙ کاربران و دسترسی‌ها</a>
+<a href="/dashboard/activity">▤ فعالیت کاربران</a>
+<a class="active" aria-current="page" href="/dashboard/system">◷ وضعیت سیستم</a>
+</nav><div class="side-footer"><span class="status"><span class="dot"></span> پایش فقط خواندنی</span>
+<form method="post" action="/logout"><input type="hidden" name="csrf" value="{{csrf}}"><button type="submit" class="link-button">خروج</button></form></div></aside>
+<main class="content system-health-content">
+<header class="page-head system-health-page-head"><div>
+<span class="eyebrow">مدیریت زیرساخت</span>
+<h1>وضعیت سیستم و همگام‌سازی</h1>
+<p class="muted">نمایش وضعیت نسخهٔ محلی Odoo؛ مستقل از گزارش‌های اصلی.</p>
+</div><a class="secondary" href="/dashboard">بازگشت به گزارش‌ها</a></header>
+<div class="system-source-context">
+<span class="system-source-icon" aria-hidden="true">i</span>
+<p><strong>دو مسیر مجزا:</strong> گزارش‌های فعلی پانادان از اتصال فقط‌خواندنی Odoo دریافت می‌شوند.
+این صفحه فقط وضعیت انتقال آزمایشی داده به نسخهٔ محلی را نشان می‌دهد.
+غیرفعال بودن انتقال به معنی قطع شدن گزارش‌های اصلی نیست.</p></div>
+<section class="panel mirror-health-panel" id="mirror-health-panel" aria-labelledby="mirror-health-title">
+  <div class="panel-head mirror-health-head">
+    <div>
+      <span class="eyebrow">نظارت مدیر · همگام‌سازی</span>
+      <h2 id="mirror-health-title">وضعیت نسخهٔ محلی Odoo</h2>
+      <p class="muted small-text">این بخش فقط وضعیت پایگاه دادهٔ آزمایشی را نشان می‌دهد؛ گزارش‌های فعلی هنوز از مسیر قبلی خوانده می‌شوند.</p>
+    </div>
+    <span class="mirror-health-state" id="mirror-health-state" role="status" aria-live="polite">در حال بررسی…</span>
+  </div>
+  <p class="mirror-health-explanation" id="mirror-health-explanation" role="status" aria-live="polite">در حال دریافت اطلاعات سرویس پایش…</p>
+  <div class="mirror-health-grid">
+    <div class="mirror-health-stat"><span>تماس‌های ذخیره‌شده</span><strong id="mirror-health-records">—</strong></div>
+    <div class="mirror-health-stat"><span>نسخه‌های ثبت‌شده</span><strong id="mirror-health-revisions">—</strong></div>
+    <div class="mirror-health-stat"><span>آخرین زمان همگام‌شده</span><strong id="mirror-health-through" dir="ltr">—</strong></div>
+    <div class="mirror-health-stat"><span>تأخیر نسبت به زمان فعلی</span><strong id="mirror-health-lag">—</strong></div>
+  </div>
+  <div class="mirror-health-detail" id="mirror-health-progress" hidden>
+    <span>در حال جبران عقب‌ماندگی</span>
+    <strong id="mirror-health-processed" dir="ltr">—</strong>
+    <span>تا</span>
+    <strong id="mirror-health-upper" dir="ltr">—</strong>
+  </div>
+  <div class="mirror-health-footer">
+    <span id="mirror-health-vpn">VPN: در حال بررسی</span>
+    <span id="mirror-health-timer">زمان‌بندی: در حال بررسی</span>
+    <span id="mirror-health-updated">آخرین بررسی: —</span>
+    <button type="button" class="secondary" id="mirror-health-refresh">↻ بررسی مجدد</button>
+  </div>
+</section>
+<p class="system-health-footnote">این صفحه فقط داده‌های تجمیعی پایش را نشان می‌دهد؛ فعال‌سازی همگام‌سازی یا انتقال اطلاعات تماس از اینجا انجام نمی‌شود.</p>
+</main></div>
+<script src="/static/mirror-health.js" defer></script>
+<script src="/static/mobile-nav.js" defer></script>
+</body></html>
