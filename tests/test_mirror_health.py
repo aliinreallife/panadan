@@ -50,7 +50,7 @@ def test_caught_up_and_catching_up_have_distinct_states():
 
 @pytest.mark.parametrize(("changes", "expected"), [
     ({"timer_active": False}, "paused"),
-    ({"source_enabled": False}, "not_configured"),
+    ({"source_enabled": False}, "scheduled_idle"),
     ({"source_enabled": None}, "not_configured"),
     ({"vpn_healthy": False}, "vpn_down"),
     ({"service_ok": False}, "service_failed"),
@@ -109,6 +109,19 @@ def test_consumer_does_not_claim_healthy_without_active_source():
         response = health.evaluate(sample(source_enabled=source_enabled), now=NOW)
         assert response["state"] != "caught_up"
         assert response["source_enabled"] is source_enabled
+    assert health.evaluate(sample(
+        source_enabled=False,
+        completed_through="2026-11-08T00:00:00Z",
+    ), now=NOW)["state"] == "behind"
+    assert health.evaluate(sample(
+        source_enabled=False, completed_through=None,
+    ), now=NOW)["state"] == "behind"
+    assert health.evaluate(sample(
+        source_enabled=False, timer_active=False,
+    ), now=NOW)["state"] == "paused"
+    assert health.evaluate(sample(
+        source_enabled=False, service_ok=False,
+    ), now=NOW)["state"] == "service_failed"
     # A stale publisher must never show green even when previously enabled.
     assert health.evaluate(
         sample(generated_at="2026-11-09T06:00:00+00:00"), now=NOW
@@ -138,4 +151,5 @@ def test_admin_js_never_interprets_remote_status_as_html():
     assert 'href="/dashboard/system"' in dashboard
     assert "وضعیت نسخهٔ محلی Odoo" in page
     assert "نمایش وضعیت هنوز متصل نشده" not in src
-    assert "همگام‌سازی نسخهٔ محلی غیرفعال است" in src
+    assert "زمان‌بندی فعال · بین دو اجرا" in src
+    assert "همگام‌سازی نسخهٔ محلی غیرفعال است" not in src

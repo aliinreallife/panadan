@@ -22,7 +22,7 @@ MAX_AGE_SECONDS = 180
 FRESH_THRESHOLD_SECONDS = 600
 STATUS_VALUES = frozenset({
     "caught_up", "catching_up", "vpn_down", "paused", "service_failed",
-    "disk_low", "unavailable", "behind", "not_configured",
+    "disk_low", "unavailable", "behind", "scheduled_idle", "not_configured",
 })
 _FIELDS = frozenset({
     "version", "generated_at", "database_ok", "timer_active",
@@ -98,14 +98,19 @@ def evaluate(snapshot, *, now=None):
         state = "disk_low"
     elif snapshot["service_ok"] is False:
         state = "service_failed"
-    elif snapshot["source_enabled"] is not True:
-        # A stopped/unconfigured source must never appear caught up merely
-        # because its last processed timestamp is recent.
+    elif snapshot["source_enabled"] is None:
+        # Missing source metadata is not permission to infer successful sync.
         state = "not_configured"
     elif upper is not None:
         state = "catching_up"
     elif lag is None or lag > FRESH_THRESHOLD_SECONDS:
         state = "behind"
+    elif snapshot["source_enabled"] is False:
+        # The guarded incremental runner disables source ingestion between
+        # scheduled executions. A fresh checkpoint plus a running timer and
+        # successful service is an idle interval, not a broken mirror. Keep
+        # it neutral rather than claiming the source is actively syncing.
+        state = "scheduled_idle"
     else:
         state = "caught_up"
     return {

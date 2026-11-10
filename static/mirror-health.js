@@ -27,6 +27,7 @@
   const states = {
     caught_up: ['به‌روز', 'ok'],
     catching_up: ['در حال جبران عقب‌ماندگی', 'syncing'],
+    scheduled_idle: ['زمان‌بندی فعال · بین دو اجرا', 'muted'],
     behind: ['عقب‌مانده', 'warning'],
     vpn_down: ['اتصال VPN قطع است', 'warning'],
     paused: ['زمان‌بندی متوقف است', 'warning'],
@@ -39,22 +40,26 @@
   const show = data => {
     const [label, state] = states[data.state] || states.unavailable;
     const status = el('mirror-health-state');
-    // Disabled source and missing publisher must not look like the same fault.
-    const disabled = data.state === 'not_configured' && data.source_enabled === false;
-    const missing = data.state === 'not_configured' && data.source_enabled !== false;
-    status.textContent = disabled ? 'همگام‌سازی نسخهٔ محلی غیرفعال است' :
+    // Guarded ingestion is disabled *between* scheduled runs by design.
+    // Never conflate the neutral scheduled interval with a missing publisher.
+    const scheduledIdle = data.state === 'scheduled_idle' &&
+      data.source_enabled === false && data.timer_active === true;
+    const missing = data.state === 'not_configured';
+    status.textContent = scheduledIdle ? 'زمان‌بندی فعال · بین دو اجرا' :
       missing ? 'اطلاعات پایش هنوز در دسترس نیست' : label;
     status.dataset.state = state;
     const explanation = el('mirror-health-explanation');
     if (explanation) {
-      explanation.textContent = disabled ?
-        'سرویس پایش پاسخ می‌دهد، اما انتقال داده از Odoo به نسخهٔ محلی فعال نشده است. گزارش‌های اصلی پانادان مستقل از این انتقال کار می‌کنند.' :
+      explanation.textContent = scheduledIdle ?
+        'زمان‌بندی همگام‌سازی فعال است. سرویس در فاصلهٔ بین اجراها ورود داده را به‌صورت موقت می‌بندد؛ آخرین نقطهٔ ثبت‌شده تازه است. گزارش‌های اصلی پانادان مستقل از نسخهٔ محلی کار می‌کنند.' :
         missing ?
         'هنوز وضعیت قابل‌اعتمادی از سرویس پایش دریافت نشده است. اتصال فایل پایش و دسترسی خواندن آن را بررسی کنید.' :
         data.state === 'caught_up' ?
         'همگام‌سازی نسخهٔ محلی مطابق آخرین دادهٔ پایش به‌روز است؛ این وضعیت مستقل از مسیر گزارش‌های اصلی است.' :
         data.state === 'unavailable' ?
         'وضعیت همگام‌سازی قابل تأیید نیست. اطلاعات قدیمی یا نامعتبر به‌عنوان وضعیت سالم نمایش داده نمی‌شوند.' :
+        data.state === 'behind' ?
+        'آخرین بازهٔ همگام‌شده قدیمی‌تر از حد انتظار است. زمان‌بندی و گزارش آخرین اجرای سرویس را بررسی کنید.' :
         'وضعیت در حال تغییر است. جزئیات سرویس و زمان آخرین بررسی را در بخش پایین ببینید.';
     }
     el('mirror-health-records').textContent = fa(data.records);
