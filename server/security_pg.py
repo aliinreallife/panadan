@@ -17,6 +17,7 @@ from .security import (
     LOGIN_THROTTLE_THRESHOLD, LOGIN_THROTTLE_MAX_DELAY, _DUMMY_HASH,
     digest, password_hash, password_check, permissions, validate_user_grants,
 )
+from .field_permissions import capability_fields, effective_fields, validate_fields
 
 
 class PgStore:
@@ -134,28 +135,30 @@ class PgStore:
     def list_users(self):
         with self.db() as con:
             return con.execute(
-                "SELECT id,username,role,grants,is_active FROM panadan_auth.users ORDER BY id"
+                "SELECT id,username,role,grants,field_grants,is_active FROM panadan_auth.users ORDER BY id"
             ).fetchall()
 
     def create_user(self, username: str, password: str, role: str,
-                    caps: list[str] | None = None):
+                    caps: list[str] | None = None, *, fields: list[str] | None = None):
         if not username or len(username)>80 or not username.replace("_","").replace("-","").isalnum():
             raise ValueError("Invalid username")
         if len(password)<14:
             raise ValueError("Password must be at least 14 characters")
         validate_user_grants(role, caps)
         grants=json.dumps(sorted(set(caps))) if caps is not None and role!="admin" else None
+        selected = validate_fields(fields, permissions(role, grants)) if fields is not None else None
         with self.db() as con:
             return int(con.execute(
                 """INSERT INTO panadan_auth.users
-                   (username,password_hash,role,grants,profile_id)
-                   VALUES (%s,%s,%s,%s,%s) RETURNING id""",
+                   (username,password_hash,role,grants,field_grants,profile_id)
+                   VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
                 (username,password_hash(password),role,grants,
+                 json.dumps(selected) if selected is not None else None,
                  "prf_"+secrets.token_urlsafe(24)),
             ).fetchone()["id"])
 
     def update_user(self, user_id: int, role: str, caps: list[str] | None,
-                    active: bool, actor_id: int):
+                    active: bool, actor_id: int, *, fields: list[str] | None = None):
         validate_user_grants(role, caps)
         if int(user_id)==actor_id and (not active or role!="admin"):
             raise ValueError("Cannot deactivate or demote your own admin account")
@@ -163,7 +166,7 @@ class PgStore:
         with self.db() as con:
             con.execute("SELECT pg_advisory_xact_lock(706018002)")
             user=con.execute(
-                "SELECT id,role,is_active FROM panadan_auth.users WHERE id=%s FOR UPDATE",
+                "SELECT id,role,is_active,field_grants FROM panadan_auth.users WHERE id=%s FOR UPDATE",
                 (user_id,),
             ).fetchone()
             if not user:
@@ -173,12 +176,19 @@ class PgStore:
             ).fetchone()["n"]
             if user["role"]=="admin" and user["is_active"] and count<=1 and (role!="admin" or not active):
                 raise ValueError("Cannot remove last active administrator")
+            new_caps = permissions(role, grants)
+            if fields is not None:
+                stored_fields = json.dumps(validate_fields(fields, new_caps))
+            elif user["field_grants"] is not None:
+                stored_fields = json.dumps(sorted(effective_fields(new_caps, user["field_grants"])))
+            else:
+                stored_fields = None
             con.execute(
-                "UPDATE panadan_auth.users SET role=%s,grants=%s,is_active=%s WHERE id=%s",
-                (role,grants,int(active),user_id),
+                "UPDATE panadan_auth.users SET role=%s,grants=%s,field_grants=%s,is_active=%s WHERE id=%s",
+                (role,grants,stored_fields,int(active),user_id),
             )
             for table,column in (("sessions","user_id"),("access_tokens","owner_id"),
-                                 ("oauth_identities","user_id")):
+                                 ("oauth_identities","user_id"),("mcp_client_grants","user_id")):
                 con.execute(f"DELETE FROM panadan_auth.{table} WHERE {column}=%s",(user_id,))
 
     def _token_user(self, con, raw: str):
@@ -186,7 +196,7 @@ class PgStore:
             return None
         return con.execute(
             """SELECT u.id,u.username,u.profile_id,u.role,u.grants,u.is_active,
-                      t.scope,t.id AS token_id
+                      t.scope,t.cap_grants,t.field_grants,t.id AS token_id
                FROM panadan_auth.access_tokens t JOIN panadan_auth.users u
                ON u.id=t.owner_id WHERE t.token_hash=%s AND t.expires_at>%s""",
             (digest(raw),int(time.time())),
@@ -207,7 +217,7 @@ class PgStore:
             if owner_id is None:
                 raise ValueError("No active token owner")
             owner=con.execute(
-                "SELECT role,grants,is_active FROM panadan_auth.users WHERE id=%s FOR UPDATE",
+                "SELECT role,grants,field_grants,is_active FROM panadan_auth.users WHERE id=%s FOR UPDATE",
                 (owner_id,),
             ).fetchone()
             if not owner or not owner["is_active"]:
@@ -216,15 +226,28 @@ class PgStore:
             required=(
                 {"calls:read","metrics:read"} if scope=="api:read" else
                 {"calls:read","calls:sensitive"} if scope=="api:sensitive" else
-                {"mcp:use","calls:read","metrics:read"}
+                {"mcp:use"}
             )
-            if not (bool(grants & required) if scope=="api:read" else required<=grants):
+            allowed = (bool(grants & required) if scope=="api:read" else
+                       (required <= grants and bool({"calls:read","metrics:read"} & grants))
+                       if scope=="mcp:read" else required <= grants)
+            if not allowed:
                 raise ValueError("Owner has insufficient permissions")
+            scope_caps = (
+                {"mcp:use","calls:read","metrics:read","calls:transcript:read"}
+                if scope=="mcp:read" else
+                {"calls:read","calls:sensitive","metrics:read"}
+                if scope=="api:sensitive" else {"calls:read","metrics:read"}
+            )
+            snapshot_caps = grants & scope_caps
+            snapshot_fields = (effective_fields(grants, owner["field_grants"]) &
+                               capability_fields(snapshot_caps))
             tid=con.execute(
                 """INSERT INTO panadan_auth.access_tokens
-                   (name,token_hash,scope,created_at,expires_at,owner_id)
-                   VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
-                (name[:80],digest(raw),scope,now,now+days*86400,owner_id),
+                   (name,token_hash,scope,created_at,expires_at,owner_id,field_grants,cap_grants)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                (name[:80],digest(raw),scope,now,now+days*86400,owner_id,
+                 json.dumps(sorted(snapshot_fields)),json.dumps(sorted(snapshot_caps))),
             ).fetchone()["id"]
         return int(tid),raw
 
@@ -236,12 +259,22 @@ class PgStore:
             if not row or not row["is_active"]:
                 return False
             grants=permissions(row["role"],row["grants"])
+            if row["cap_grants"] is not None:
+                try:
+                    issued=json.loads(row["cap_grants"])
+                    if type(issued) is not list or any(type(x) is not str for x in issued):
+                        grants=set()
+                    else:
+                        grants &= set(issued)
+                except (TypeError, ValueError):
+                    grants=set()
             matching=(row["scope"]==scope or
                       (scope=="api:read" and row["scope"]=="api:sensitive"))
             valid=bool(matching and (
                 ({"calls:read","metrics:read"} & grants) if scope=="api:read" else
                 {"calls:read","calls:sensitive"} <= grants if scope=="api:sensitive" else
-                {"mcp:use","calls:read","metrics:read"} <= grants
+                ("mcp:use" in grants and bool({"calls:read","metrics:read"} & grants))
+                if scope=="mcp:read" else False
             ) and (not capability or capability in grants))
             if valid:
                 con.execute(
@@ -284,8 +317,8 @@ class PgStore:
                 (user_id,),
             ).fetchone()
             if (not user or not user["is_active"] or
-                    not {"mcp:use","calls:read","metrics:read"} <=
-                    permissions(user["role"],user["grants"])):
+                    not ("mcp:use" in permissions(user["role"],user["grants"]) and
+                    bool({"calls:read","metrics:read"} & permissions(user["role"],user["grants"])))):
                 raise ValueError("Active user with MCP privileges required")
             return int(con.execute(
                 """INSERT INTO panadan_auth.oauth_identities
@@ -321,9 +354,10 @@ class PgStore:
     def oauth_identity_has_mcp_access(self, issuer: str, subject: str) -> bool:
         with self.db() as con:
             row=self._oauth_user(con,issuer,subject)
-        return bool(row and row["is_active"] and
-                    {"mcp:use","calls:read","metrics:read"} <=
-                    permissions(row["role"],row["grants"]))
+        if not row or not row["is_active"]:
+            return False
+        caps=permissions(row["role"],row["grants"])
+        return "mcp:use" in caps and bool({"calls:read","metrics:read"} & caps)
 
     def actor_for_oauth(self, issuer: str, subject: str) -> int | None:
         if not issuer or not subject:
@@ -346,7 +380,7 @@ class PgStore:
                     return None
         if not row or not row["is_active"]:
             return None
-        if not {"mcp:use","calls:read","metrics:read","calls:transcript:read"} <= permissions(row["role"],row["grants"]):
+        if not {"mcp:use","calls:read","calls:transcript:read"} <= permissions(row["role"],row["grants"]):
             return None
         return int(row["id"])
 
@@ -364,7 +398,8 @@ class PgStore:
                     return None
         if not row or not row["is_active"] or not row["profile_id"]:
             return None
-        if not {"mcp:use","calls:read","metrics:read"} <= permissions(row["role"],row["grants"]):
+        caps=permissions(row["role"],row["grants"])
+        if "mcp:use" not in caps or not ({"calls:read","metrics:read"} & caps):
             return None
         return {"id":row["profile_id"],"name":row["username"]}
 
@@ -375,11 +410,12 @@ class PgStore:
         with self.db() as con:
             # FOR UPDATE serializes role revocation and transcript reads.
             row=con.execute(
-                "SELECT role,grants,is_active FROM panadan_auth.users WHERE id=%s FOR UPDATE",
+                "SELECT role,grants,field_grants,is_active FROM panadan_auth.users WHERE id=%s FOR UPDATE",
                 (user_id,),
             ).fetchone()
             caps=permissions(row["role"],row["grants"]) if row and row["is_active"] else set()
-            if not {"calls:read","calls:transcript:read"} <= caps:
+            if (not {"calls:read","calls:transcript:read"} <= caps or
+                    "transcription" not in effective_fields(caps,row["field_grants"])):
                 return False
             con.execute(
                 """INSERT INTO panadan_auth.transcript_access_audit
