@@ -546,3 +546,188 @@ def test_odoo_write_date_end_to_end_local_pg_backfill_then_old_row_update(pg):
     ).fetchone()["n"] == 5
     after_sync = verify_sample(source, pg, mode="utc_naive", source_key=key)
     assert after_sync["all_match"] and after_sync["matched"] == 4
+
+
+def test_full_mirror_pilot_pg18_insert_update_replay_and_missing_row_retention(pg):
+    """Synthetic joined rows -> disposable PG18 with revisions and replay.
+
+    Does not touch live Odoo, and checks detection of child-only changes that
+    do NOT advance the parent call's write_date.
+    """
+    from datetime import date, datetime, timedelta, timezone
+    from server import odoo_full_mirror_adapter as full
+    from server import odoo_full_mirror_pilot as pilot
+
+    now = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)
+    old = now - timedelta(minutes=60)
+
+    def record(call_id, summary, *, score=50):
+        values = {}
+        for name, kind in full.COLUMN_TYPES:
+            if kind == 'integer':
+                values[name] = 1
+            elif kind == 'double precision':
+                values[name] = 1.25
+            elif kind in ('character varying', 'text'):
+                values[name] = 'SYNTHETIC ONLY'
+            elif kind == 'date':
+                values[name] = date(2026, 11, 4)
+            elif kind == 'timestamp without time zone':
+                values[name] = old.replace(tzinfo=None)
+            elif kind == 'jsonb':
+                values[name] = {'en_US': 'Synthetic'}
+            else:
+                pytest.fail('Unknown synthetic field')
+        values.update(
+            id=call_id, summary=summary, possibility_of_sale_ai=score,
+            transcription='FAKE-TRANSCRIPT\\n' * 100,
+            customertell='0000000000', customername='SYNTHETIC PERSON')
+        return values
+
+    class Result:
+        def __init__(self, rows=()):
+            self.rows = list(rows)
+
+        def fetchall(self):
+            return self.rows
+
+    class SyntheticOdoo:
+        def __init__(self):
+            self.records = [record(1, 'Original'), record(2, 'Original')]
+
+        def execute(self, sql, params=None):
+            if sql == full.SCHEMA_SQL:
+                return Result([
+                    {'column_name': name, 'data_type': kind, 'is_nullable': 'YES'}
+                    for name, kind in full.COLUMN_TYPES])
+            if sql == full.ID_SQL:
+                after_id, limit = params
+                return Result(sorted(
+                    (row for row in self.records if row['id'] > after_id),
+                    key=lambda row: row['id'])[:limit])
+            raise AssertionError('Only fixed read-only view SQL is permitted')
+
+    source = SyntheticOdoo()
+    key = pilot.SOURCE_KEY
+    register_source(pg, source_key=key, kind='database',
+                    label='Synthetic snapshot mirror')
+    assert pg.execute(
+        'SELECT enabled FROM panadan_ingest.sources WHERE source_key=%s',
+        (key,)).fetchone()['enabled'] is False
+
+    with pytest.raises(ValueError, match='not enabled'):
+        pilot._snapshot(source, pg, limit=100)
+
+    pg.execute('UPDATE panadan_ingest.sources SET enabled=TRUE WHERE source_key=%s',
+               (key,))
+    first = pilot._snapshot(source, pg, limit=100)
+    assert first['calls'] == 2 and first['changed'] == 2
+    assert first['pass_complete']
+    status = pilot.local_status(pg)
+    assert status['completed_passes'] == 1
+    assert status['committed_pages'] == 1
+    assert status['processing_pending'] == 2
+    assert status['processing_failed'] == 0
+    assert status['seconds_since_last_commit'] is not None
+    assert pilot.verify_sample(source, pg, limit=100)['all_match']
+
+    # Replaying an unchanged full pass must produce zero new revisions.
+    replay = pilot._snapshot(source, pg, limit=100)
+    assert replay['changed'] == 0 and replay['unchanged'] == 2
+
+    # Joined analysis changes without changing parent write_date. One
+    # duplicated call is preserved as two distinct view-row variants.
+    source.records[0]['summary'] = 'Updated'
+    source.records.append(record(1, 'Other analysis', score=90))
+    source.records.append(record(3, 'New'))
+    changed = pilot._snapshot_run(source, pg, limit=2, max_pages=3)
+    assert changed['changed'] == 2
+    assert changed['source_rows'] == 4
+    assert changed['calls'] == 3
+    assert changed['pages'] == 2
+    assert changed['pass_complete'] is True
+    assert pilot.verify_sample(source, pg, limit=100)['all_match']
+
+    # Same rows but reverse tie order: canonical grouping is idempotent.
+    source.records.reverse()
+    replay = pilot._snapshot(source, pg, limit=100)
+    assert replay['changed'] == 0 and replay['unchanged'] == 3
+
+    # A missing upstream call is never tombstoned in the local store.
+    source.records = [row for row in source.records if row['id'] != 2]
+    absence = pilot._snapshot(source, pg, limit=100)
+    assert absence['changed'] == 0
+    assert pilot.local_status(pg)['local_records'] == 3
+    stored_two = pg.execute(
+        'SELECT is_deleted, revision_no FROM panadan_ingest.source_records '
+        'WHERE source_key=%s AND external_id=%s',
+        (key, '2')).fetchone()
+    assert stored_two == {'is_deleted': False, 'revision_no': 1}
+
+    stored = pg.execute(
+        'SELECT revision_no, operation, payload FROM panadan_ingest.raw_revisions '
+        'WHERE source_key=%s AND external_id=%s ORDER BY revision_no',
+        (key, '1')).fetchall()
+    assert [entry['revision_no'] for entry in stored] == [1, 2]
+    assert [entry['operation'] for entry in stored] == ['upsert', 'upsert']
+    assert stored[0]['payload']['source_rows'][0]['summary'] == 'Original'
+    assert len(stored[1]['payload']['source_rows']) == 2
+    assert all(len(r) == 37 for r in stored[1]['payload']['source_rows'])
+    assert pilot.local_status(pg)['local_revisions'] == 4
+
+
+
+def test_mirror_scoped_processor_does_not_dequeue_other_sources(pg):
+    """A supervised full-mirror tick never drains unrelated pending jobs."""
+    from server.platform_processing import process_next
+    from server.odoo_full_mirror_pilot import SOURCE_KEY
+
+    other_key = "scoped_processor_unrelated"
+    _enable(pg, other_key)
+    register_source(pg, source_key=SOURCE_KEY, kind="database",
+                    label="Synthetic isolated processor mirror")
+    pg.execute(
+        "UPDATE panadan_ingest.sources SET enabled=TRUE WHERE source_key=%s",
+        (SOURCE_KEY,),
+    )
+    ingest_batch(
+        pg, source_key=other_key, stream="queue",
+        events=[SourceEvent("unrelated", "upsert", {"tellside": "IntoOut"})],
+        expected_cursor=None, next_cursor={"id": 1},
+    )
+    ingest_batch(
+        pg, source_key=SOURCE_KEY, stream="scoped_fixture",
+        events=[SourceEvent("880", "upsert", {
+            "id": 880, "source_schema": "odoo_view_37_v1",
+            "source_rows": [{
+                "id": 880, "tellside": "OutToIn",
+                "customername": "SYNTHETIC ONLY",
+                "transcription": "PRIVATE SYNTHETIC TRANSCRIPT",
+            }],
+        })],
+        expected_cursor=None, next_cursor={"pass": 1, "last_id": 880},
+    )
+
+    # Earlier synthetic tests may have left OTHER pending mirror revisions.
+    # Drain only this source; never infer queue emptiness from this fixture.
+    assert process_next(pg, source_key=SOURCE_KEY)
+    for _ in range(100):
+        if not process_next(pg, source_key=SOURCE_KEY):
+            break
+    else:
+        pytest.fail("Synthetic mirror queue did not drain")
+    with pytest.raises(ValueError, match="reviewed full mirror"):
+        process_next(pg, source_key=other_key)
+    statuses = pg.execute(
+        """SELECT r.source_key, j.status
+           FROM panadan_ingest.processing_jobs AS j
+           JOIN panadan_ingest.raw_revisions AS r
+             ON r.revision_id=j.revision_id
+           WHERE (r.source_key=%s AND r.external_id='880')
+              OR (r.source_key=%s AND r.external_id='unrelated')
+           ORDER BY r.source_key""",
+        (SOURCE_KEY, other_key),
+    ).fetchall()
+    assert {r["source_key"]: r["status"] for r in statuses} == {
+        SOURCE_KEY: "succeeded", other_key: "pending",
+    }

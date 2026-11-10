@@ -78,6 +78,13 @@
       </div>
       <a class="primary access-add-shortcut" href="#create-user">+ افزودن کاربر</a>
     </header>
+    {% if operator_scope_admin_enabled %}
+    <section class="panel" aria-label="مجوز اپراتورهای Odoo">
+      <div class="panel-head"><h2>مجوز اپراتورهای Odoo</h2></div>
+      <p class="muted">دسترسی‌های اپراتور فقط بر اساس شناسه عددی تأییدشدهٔ منبع تنظیم می‌شوند.</p>
+      <a href="/dashboard/operator-scopes" class="secondary">مدیریت مجوزهای اپراتورها</a>
+    </section>
+    {% endif %}
     <section class="access-overview" aria-label="آمار کاربران">
       <div class="access-overview-stat"><span>همهٔ حساب‌ها</span><strong>{{users|length}}</strong><small>حساب ثبت‌شده</small></div>
       <div class="access-overview-stat"><span>حساب‌های فعال</span><strong>{{users|selectattr('is_active')|list|length}}</strong><small>اجازه ورود به پانادان</small></div>

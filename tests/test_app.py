@@ -690,3 +690,61 @@ def test_admin_system_monitoring_is_separate_and_protected(client):
     assert 'id="access-user-role"' in users.text
     assert 'id="create-user"' in users.text
     assert 'data-user-name="statusreader"' in users.text
+
+
+def test_operator_scope_admin_page_is_hidden_until_explicitly_enabled(client, monkeypatch):
+    c, main = client
+    assert c.get('/dashboard/operator-scopes').status_code == 401
+
+    admin_id = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    raw, csrf = main.store.create_session(admin_id)
+    c.cookies.set('panadan_session', raw)
+    assert c.get('/dashboard/operator-scopes').status_code == 404
+    assert 'مدیریت مجوزهای اپراتورها' not in c.get('/dashboard/users').text
+
+    monkeypatch.setattr(main, 'MIRROR_OPERATOR_SCOPE_ADMIN_ENABLED', True)
+    assert c.get('/dashboard/operator-scopes').status_code == 200
+    assert 'مجوز اپراتورهای Odoo' in c.get('/dashboard/users').text
+
+    uid = main.store.create_user(
+        'scope_reader', 'a-long-safe-testing-password', 'reader')
+    grant_url = '/dashboard/operator-scopes/grant'
+    assert c.post(grant_url, data={
+        'csrf': csrf, 'user_id': uid, 'operator_id': 55,
+    }).status_code == 400  # Required manual, independently checked identity
+    assert c.post(grant_url, data={
+        'csrf': 'wrong', 'user_id': uid, 'operator_id': 55,
+        'verified': 'yes',
+    }).status_code == 403
+    assert main.store.verified_operator_ids(uid) == []
+
+    granted = c.post(grant_url, data={
+        'csrf': csrf, 'user_id': uid, 'operator_id': 55,
+        'verified': 'yes',
+    }, follow_redirects=False)
+    assert granted.status_code == 303
+    assert main.store.verified_operator_ids(uid) == [55]
+    page = c.get('/dashboard/operator-scopes')
+    assert page.status_code == 200
+    assert 'scope_reader' in page.text
+    assert '55' in page.text
+    assert page.headers['cache-control'] == 'no-store'
+
+    other, _ = main.store.create_session(uid)
+    c.cookies.set('panadan_session', other)
+    assert c.get('/dashboard/operator-scopes').status_code == 403
+    assert c.post('/dashboard/operator-scopes/revoke', data={
+        'csrf': csrf, 'user_id': uid, 'operator_id': 55,
+    }).status_code == 403
+
+    c.cookies.set('panadan_session', raw)
+    revoked = c.post('/dashboard/operator-scopes/revoke', data={
+        'csrf': csrf, 'user_id': uid, 'operator_id': 55,
+    }, follow_redirects=False)
+    assert revoked.status_code == 303
+    assert main.store.verified_operator_ids(uid) == []
+    with main.store.db() as db:
+        actions = db.execute(
+            "SELECT action FROM operator_scope_audit ORDER BY event_id"
+        ).fetchall()
+    assert [r['action'] for r in actions] == ['grant', 'revoke']
