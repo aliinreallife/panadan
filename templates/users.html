@@ -43,7 +43,7 @@
       <a href="/dashboard/api">⌘ راهنمای API</a>
       <a href="/dashboard/oauth">◉ اتصال امن OAuth</a>
       <a class="active" aria-current="page" href="/dashboard/users">♙ کاربران و دسترسی‌ها</a>
-      <a href="/dashboard/activity">▤ فعالیت کاربران</a>
+      <a href="/dashboard/activity">▤ فعالیت کاربران</a><a href="/dashboard/system">◷ وضعیت سیستم</a>
     </nav>
     <div class="side-footer">
       <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{csrf}}">
@@ -56,70 +56,43 @@
       <div>
         <span class="eyebrow">امنیت و مدیریت حساب‌ها</span>
         <h1>کاربران و دسترسی‌ها</h1>
-        <p class="muted">یک گروهٔ آماده انتخاب کنید، سپس مجوزهای دقیق هر کاربر را بررسی و تنظیم کنید.</p>
+        <p class="muted">حساب‌های سازمان، وضعیت فعال‌بودن و دسترسی‌ها را یک‌جا مدیریت کنید.</p>
       </div>
-      <span class="tag">مدیریت فقط برای مدیر کل</span>
+      <a class="primary access-add-shortcut" href="#create-user">+ افزودن کاربر</a>
     </header>
-    <section class="panel access-guide" aria-label="راهنمای سطوح دسترسی">
-      <div class="panel-head"><h2>سطوح دسترسی</h2></div>
-      <div class="access-guide-levels">
-        {% for category in permission_categories %}
-        <div class="access-guide-item access-guide-item--{{category.id}}">
-          <strong>{{category.label}}</strong>
-          <p>{{category.description}}</p>
-        </div>
-        {% endfor %}
-      </div>
-      <p class="description">«کم‌خطر» به معنی عمومی‌بودن داده‌ها نیست. همهٔ اطلاعات پانادان فقط برای افراد مجاز سازمان هستند.</p>
+    <section class="access-overview" aria-label="آمار کاربران">
+      <div class="access-overview-stat"><span>همهٔ حساب‌ها</span><strong>{{users|length}}</strong><small>حساب ثبت‌شده</small></div>
+      <div class="access-overview-stat"><span>حساب‌های فعال</span><strong>{{users|selectattr('is_active')|list|length}}</strong><small>اجازه ورود به پانادان</small></div>
+      <div class="access-overview-stat"><span>غیرفعال</span><strong>{{users|rejectattr('is_active')|list|length}}</strong><small>ورود مسدود است</small></div>
+      <div class="access-overview-stat"><span>مدیران کل</span><strong>{{users|selectattr('role','equalto','admin')|list|length}}</strong><small>مدیریت حساب‌ها و مجوزها</small></div>
     </section>
-
-    <section class="panel access-create-panel">
-      <div class="panel-head"><div><h2>افزودن کاربر</h2><p class="muted small-text">گروه فقط تنظیمات اولیه را وارد می‌کند؛ مجوزهای نهایی هر حساب مستقل ذخیره می‌شوند.</p></div></div>
-      <form method="post" action="/dashboard/users" class="management-form access-editor" data-access-editor="create">
-        <input type="hidden" name="csrf" value="{{csrf}}">
-        <label>نام کاربری
-          <input name="username" dir="ltr" lang="en" maxlength="80" required autocomplete="off" placeholder="user_name">
-        </label>
-        <label>رمز موقت (حداقل ۱۴ کاراکتر)
-          <input name="password" dir="ltr" lang="en" type="password" minlength="14" required autocomplete="new-password">
-        </label>
-        <label>نقش حساب
-          <select name="role" id="role" data-role-select>
-            <option value="analyst" selected>تحلیل‌گر</option>
-            <option value="reader">خواننده</option>
-            <option value="metrics">فقط آمار</option>
-            <option value="admin">مدیر کل (تمام دسترسی‌ها)</option>
-          </select>
-        </label>
-        <label>گروه دسترسی پیش‌فرض
-          <select data-group-select aria-label="انتخاب گروه دسترسی">
-            {% for group in permission_groups %}
-            <option value="{{group.id}}" {% if group.id=='analyst' %}selected{% endif %}>{{group.label}}</option>
-            {% endfor %}
-            <option value="custom">سفارشی — انتخاب دستی</option>
-          </select>
-          <small class="access-group-hint" data-group-hint>انتخاب گروه، مجوزهای زیر را به‌صورت قابل ویرایش تنظیم می‌کند.</small>
-        </label>
-        <div class="access-editor-grants">
-          <div class="access-editor-heading"><h3>مجوزهای دقیق این کاربر</h3>
-            <span class="access-grant-count" data-grant-count>—</span>
-          </div>
-          {{grant_picker(['calls:read','metrics:read','mcp:use'])}}
-          <p class="access-risk-note" data-risk-note hidden>این حساب به اطلاعات محرمانه دسترسی خواهد داشت. پیش از ذخیره، نیاز کاری را بررسی کنید.</p>
-        </div>
-        <button class="primary" type="submit">ساخت حساب کاربری</button>
-      </form>
-    </section>
-
     <section class="panel users-panel">
       <div class="panel-head">
         <div><h2>کاربران موجود</h2>
           <p class="muted small-text">هر حساب مجوزهای مستقل دارد؛ تغییر یک الگوی پیش‌فرض، دسترسی سایر کاربران را تغییر نمی‌دهد.</p>
         </div><span class="tag">{{users|length}} نفر</span>
       </div>
-      <div class="users-list">
+      <div class="access-directory-tools">
+        <label class="access-directory-search">جستجوی حساب
+          <input id="access-user-search" type="search" autocomplete="off" placeholder="نام کاربری را بنویسید…" aria-controls="access-users-list">
+        </label>
+        <label class="access-directory-filter">وضعیت
+          <select id="access-user-status" aria-controls="access-users-list">
+            <option value="all">همه</option><option value="active">فعال</option><option value="inactive">غیرفعال</option>
+          </select>
+        </label>
+        <label class="access-directory-filter">نقش
+          <select id="access-user-role" aria-controls="access-users-list">
+            <option value="all">همهٔ نقش‌ها</option><option value="admin">مدیر کل</option>
+            <option value="analyst">تحلیل‌گر</option><option value="reader">خواننده</option>
+            <option value="metrics">فقط آمار</option>
+          </select>
+        </label>
+        <span id="access-visible-count" class="access-directory-count" role="status" aria-live="polite">{{users|length}} کاربر</span>
+      </div>
+      <div class="users-list" id="access-users-list">
         {% for user in users %}
-        <details class="user-card access-user-card">
+        <details class="user-card access-user-card" data-user-name="{{user.username|lower}}" data-user-role="{{user.role}}" data-user-active="{{'true' if user.is_active else 'false'}}">
           <summary class="user-card-summary">
             <span class="user-card-name"><bdi dir="ltr">{{user.username}}</bdi>
               {% if user.is_active %}<span class="status-badge" data-status="SoldOut">فعال</span>
@@ -136,8 +109,9 @@
             </span>
             <span class="user-capabilities">
               {% for cap in user_caps[user.id]|sort %}
-              <span class="user-capability" title="{{cap}}">{{cap_labels.get(cap,cap)}}</span>
+                {% if loop.index <= 3 %}<span class="user-capability" title="{{cap}}">{{cap_labels.get(cap,cap)}}</span>{% endif %}
               {% else %}<span class="muted">بدون دسترسی</span>{% endfor %}
+              {% if user_caps[user.id]|length > 3 %}<span class="user-capability user-capability-more">+{{user_caps[user.id]|length - 3}} مجوز</span>{% endif %}
             </span>
             <span class="user-card-edit">ویرایش <span aria-hidden="true">⌄</span></span>
           </summary>
@@ -177,13 +151,74 @@
         </details>
         {% else %}<p class="muted">کاربری وجود ندارد.</p>{% endfor %}
       </div>
-      <p class="description">مجوزهای مدیریتی فقط با نقش مدیر کل فعال می‌شوند. اتصال MCP به مجوزهای تماس‌ها و آمار نیاز دارد.</p>
+      <p class="access-directory-empty" id="access-users-empty" hidden>کاربری با این فیلترها پیدا نشد. نام یا وضعیت را تغییر دهید.</p>
+      <p class="description">برای ویرایش مجوزها روی کارت کاربر کلیک کنید. ذخیرهٔ تغییرات، نشست‌ها و توکن‌های فعلی این حساب را باطل می‌کند.</p>
     </section>
+    <details class="access-create-disclosure" id="create-user">
+      <summary class="access-create-trigger">
+        <span class="access-create-trigger-copy"><strong>افزودن کاربر جدید</strong>
+          <small>نام کاربری، رمز موقت و دسترسی‌های اولیه را تعیین کنید</small></span>
+        <span class="access-create-trigger-action">باز کردن فرم <span aria-hidden="true">⌄</span></span>
+      </summary>
+    <section class="panel access-create-panel">
+      <div class="panel-head"><div><h2>افزودن کاربر</h2><p class="muted small-text">گروه فقط تنظیمات اولیه را وارد می‌کند؛ مجوزهای نهایی هر حساب مستقل ذخیره می‌شوند.</p></div></div>
+      <form method="post" action="/dashboard/users" class="management-form access-editor" data-access-editor="create">
+        <input type="hidden" name="csrf" value="{{csrf}}">
+        <label>نام کاربری
+          <input name="username" dir="ltr" lang="en" maxlength="80" required autocomplete="off" placeholder="user_name">
+        </label>
+        <label>رمز موقت (حداقل ۱۴ کاراکتر)
+          <input name="password" dir="ltr" lang="en" type="password" minlength="14" required autocomplete="new-password">
+        </label>
+        <label>نقش حساب
+          <select name="role" id="role" data-role-select>
+            <option value="analyst" selected>تحلیل‌گر</option>
+            <option value="reader">خواننده</option>
+            <option value="metrics">فقط آمار</option>
+            <option value="admin">مدیر کل (تمام دسترسی‌ها)</option>
+          </select>
+        </label>
+        <label>گروه دسترسی پیش‌فرض
+          <select data-group-select aria-label="انتخاب گروه دسترسی">
+            {% for group in permission_groups %}
+            <option value="{{group.id}}" {% if group.id=='analyst' %}selected{% endif %}>{{group.label}}</option>
+            {% endfor %}
+            <option value="custom">سفارشی — انتخاب دستی</option>
+          </select>
+          <small class="access-group-hint" data-group-hint>انتخاب گروه، مجوزهای زیر را به‌صورت قابل ویرایش تنظیم می‌کند.</small>
+        </label>
+        <div class="access-editor-grants">
+          <div class="access-editor-heading"><h3>مجوزهای دقیق این کاربر</h3>
+            <span class="access-grant-count" data-grant-count>—</span>
+          </div>
+          {{grant_picker(['calls:read','metrics:read','mcp:use'])}}
+          <p class="access-risk-note" data-risk-note hidden>این حساب به اطلاعات محرمانه دسترسی خواهد داشت. پیش از ذخیره، نیاز کاری را بررسی کنید.</p>
+        </div>
+        <button class="primary" type="submit">ساخت حساب کاربری</button>
+      </form>
+    </section>
+    </details>
+    <details class="access-guide-disclosure">
+      <summary>راهنمای سطوح دسترسی <span class="muted">توضیح دسته‌بندی مجوزها</span></summary>
+    <section class="panel access-guide" aria-label="راهنمای سطوح دسترسی">
+      <div class="panel-head"><h2>سطوح دسترسی</h2></div>
+      <div class="access-guide-levels">
+        {% for category in permission_categories %}
+        <div class="access-guide-item access-guide-item--{{category.id}}">
+          <strong>{{category.label}}</strong>
+          <p>{{category.description}}</p>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="description">«کم‌خطر» به معنی عمومی‌بودن داده‌ها نیست. همهٔ اطلاعات پانادان فقط برای افراد مجاز سازمان هستند.</p>
+    </section>
+    </details>
   </main>
 </div>
 <script id="access-group-catalog" type="application/json">{{permission_groups|tojson}}</script>
 <script id="access-role-defaults" type="application/json">{{recommended_groups|tojson}}</script>
 <script src="/static/users.js" defer></script>
+<script src="/static/users-directory.js" defer></script>
 <script type="module">import {enhanceSelects} from "/static/selects.js";enhanceSelects();</script>
 <script src="/static/mobile-nav.js" defer></script>
 </body>
