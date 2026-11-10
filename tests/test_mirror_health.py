@@ -131,6 +131,11 @@ def test_admin_js_never_interprets_remote_status_as_html():
     assert "textContent" in src
     assert "innerHTML" not in src
     assert "setInterval" in src
-    page = Path("templates/dashboard.html").read_text()
-    assert "session.role == 'admin'" in page
+    dashboard = Path("templates/dashboard.html").read_text()
+    page = Path("templates/system.html").read_text()
+    assert "mirror-health-panel" not in dashboard
     assert "mirror-health-panel" in page
+    assert 'href="/dashboard/system"' in dashboard
+    assert "وضعیت نسخهٔ محلی Odoo" in page
+    assert "نمایش وضعیت هنوز متصل نشده" not in src
+    assert "همگام‌سازی نسخهٔ محلی غیرفعال است" in src

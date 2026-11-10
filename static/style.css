@@ -1393,3 +1393,53 @@ doran-datepicker::part(dialog){
 .mirror-health-footer button{margin-inline-start:auto}
 @media(max-width:950px){.mirror-health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.mirror-health-panel{padding:15px}.mirror-health-grid{gap:8px}.mirror-health-stat{padding:11px}.mirror-health-stat strong{font-size:15px}.mirror-health-footer button{width:100%;margin:0}}
+
+
+/* Admin accounts: directory first, account creation on demand. */
+.access-content{max-width:1350px}
+.access-page-head{align-items:center}
+.access-add-shortcut{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;min-height:42px;white-space:nowrap}
+.access-overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 22px}
+.access-overview-stat{display:flex;flex-direction:column;gap:7px;min-width:0;padding:19px 20px;border:1px solid #e1e9e5;border-radius:15px;background:#fff}
+.access-overview-stat span{font-size:12px;font-weight:650;color:#587569}
+.access-overview-stat strong{font-size:27px;line-height:1.35;font-weight:800;font-variant-numeric:tabular-nums;color:#163f32}
+.access-overview-stat small{font-size:11px;color:#72847b}
+.access-directory-tools{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:0 0 17px;padding:15px;background:#f7faf8;border:1px solid #e2eee6;border-radius:12px}
+.access-directory-tools label{display:flex;flex-direction:column;gap:7px;color:#426657;font-weight:650;font-size:12px}
+.access-directory-search{flex:2 1 230px;min-width:180px}
+.access-directory-filter{flex:1 1 135px;min-width:115px}
+.access-directory-tools input,.access-directory-tools select{width:100%;min-height:42px;background:#fff}
+.access-directory-count{font-size:12px;color:#547061;flex:none;padding:10px 5px 9px;margin-inline-start:auto}
+.access-user-card[hidden]{display:none!important}
+.access-directory-empty{padding:18px;margin:8px 0;border:1px dashed #d2dfd6;border-radius:12px;text-align:center;font-size:13px;color:#597363;background:#f8faf9}
+.access-directory-empty[hidden]{display:none!important}
+.user-capability-more{background:#f8f9fb;color:#667586}
+.access-create-disclosure,.access-guide-disclosure{border:1px solid #dce7df;border-radius:16px;background:#fff;margin:0 0 18px;overflow:hidden}
+.access-create-trigger,.access-guide-disclosure>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:19px 22px}
+.access-create-trigger::-webkit-details-marker,.access-guide-disclosure>summary::-webkit-details-marker{display:none}
+.access-create-trigger:focus-visible,.access-guide-disclosure>summary:focus-visible{outline:3px solid #168465;outline-offset:-3px}
+.access-create-trigger:hover,.access-guide-disclosure>summary:hover{background:#f7faf8}
+.access-create-trigger-copy{display:flex;flex-direction:column;gap:6px}
+.access-create-trigger-copy strong{font-size:15px;color:#234c3b}
+.access-create-trigger-copy small{font-size:12px;color:#71857a}
+.access-create-trigger-action{display:inline-flex;align-items:center;gap:10px;color:#137755;font-size:12px;font-weight:750;white-space:nowrap}
+.access-create-disclosure[open] .access-create-trigger-action span{transform:rotate(180deg)}
+.access-create-panel{margin:0;border:0;border-top:1px solid #e4ede8;box-shadow:none;border-radius:0}
+.access-guide-disclosure>summary{font-size:13px;font-weight:750;color:#415e51}
+.access-guide-disclosure>summary span{font-size:11px;font-weight:450}
+.access-guide-disclosure .access-guide{margin:0;border:0;border-top:1px solid #e4ede8;box-shadow:none;border-radius:0}
+@media(max-width:850px){.access-overview{grid-template-columns:repeat(2,minmax(0,1fr))}.access-directory-count{width:100%;text-align:start}}
+@media(max-width:480px){.access-page-head{gap:14px}.access-add-shortcut{width:100%}.access-overview-stat{padding:13px}.access-overview-stat strong{font-size:22px}.access-directory-tools{padding:12px;gap:10px}.access-directory-search{flex:1 1 100%}.access-directory-filter{min-width:0;flex:1 1 45%}.access-create-trigger,.access-guide-disclosure>summary{padding:15px}.access-create-trigger-action{font-size:11px}}
+/* Dedicated Odoo monitoring instead of interrupting primary call reporting. */
+.system-health-content{max-width:1260px}
+.system-health-page-head{margin-bottom:22px}
+.system-source-context{display:flex;align-items:flex-start;gap:14px;padding:16px 19px;border:1px solid #e0e8e4;background:#f7faf8;border-radius:14px}
+.system-source-context p{margin:0;font-size:13px;line-height:1.9;color:#51695c}
+.system-source-context strong{color:#244c3b}
+.system-source-icon{display:flex;align-items:center;justify-content:center;flex:none;width:27px;height:27px;border-radius:50%;background:#e4efe8;color:#287454;font-size:15px;font-weight:800;font-family:serif}
+.system-health-content .mirror-health-panel{margin:18px 0;padding:25px}
+.system-health-content .mirror-health-stat{background:#f8faf9}
+.system-health-content .mirror-health-stat strong{font-size:22px}
+.mirror-health-explanation{padding:13px 16px;margin:0 0 19px;border:1px solid #e1e8e3;border-radius:11px;background:#f8faf8;font-size:13px;line-height:1.85;color:#556b60}
+.system-health-footnote{font-size:12px;color:#72847b;line-height:1.8;margin:14px 4px}
+@media(max-width:600px){.system-source-context{padding:13px}.system-health-content .mirror-health-panel{padding:16px}.system-health-content .mirror-health-stat strong{font-size:18px}}
