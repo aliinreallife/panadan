@@ -639,10 +639,11 @@ def test_mirror_health_is_admin_only_and_does_not_expose_customer_data(client, m
         "admin", "a-long-safe-testing-password")
     raw, _ = main.store.create_session(admin_id)
     c.cookies.set("panadan_session", raw)
-    page = c.get("/dashboard")
+    page = c.get("/dashboard/system")
     assert page.status_code == 200
     assert "mirror-health-panel" in page.text
     assert "/static/mirror-health.js" in page.text
+    assert "mirror-health-panel" not in c.get("/dashboard").text
     assert c.get("/dashboard/operator?name=Test%20Op").status_code == 200
     assert "mirror-health-panel" not in c.get(
         "/dashboard/operator?name=Test%20Op").text
@@ -654,3 +655,38 @@ def test_mirror_health_is_admin_only_and_does_not_expose_customer_data(client, m
     assert observed == [True]
     assert "customername" not in result.text
     assert "transcription" not in result.text
+
+
+def test_admin_system_monitoring_is_separate_and_protected(client):
+    c, main = client
+    assert c.get('/dashboard/system').status_code == 401
+    uid = main.store.create_user(
+        'statusreader', 'another-long-password', 'reader', ['calls:read']
+    )
+    token, _ = main.store.create_session(uid)
+    c.cookies.set('panadan_session', token)
+    assert c.get('/dashboard/system').status_code == 403
+    assert c.get('/dashboard/mirror-health').status_code == 403
+
+    admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    token, _ = main.store.create_session(admin)
+    c.cookies.set('panadan_session', token)
+    response = c.get('/dashboard/system')
+    assert response.status_code == 200
+    assert response.headers['cache-control'] == 'no-store'
+    assert 'وضعیت نسخهٔ محلی Odoo' in response.text
+    assert 'mirror-health-panel' in response.text
+    assert 'access-user-search' not in response.text
+
+    dashboard = c.get('/dashboard')
+    assert dashboard.status_code == 200
+    assert 'mirror-health-panel' not in dashboard.text
+    assert 'href="/dashboard/system"' in dashboard.text
+
+    users = c.get('/dashboard/users')
+    assert users.status_code == 200
+    assert 'id="access-user-search"' in users.text
+    assert 'id="access-user-status"' in users.text
+    assert 'id="access-user-role"' in users.text
+    assert 'id="create-user"' in users.text
+    assert 'data-user-name="statusreader"' in users.text
