@@ -175,11 +175,13 @@ def test_oauth_gate_rejects_legacy_tokens_and_requires_bound_user(
     assert oauth_config.metadata_url in challenge
     assert denied[0]["status"] == call(mint())[0]["status"] == 401
     store.bind_oauth_identity(oauth_config.issuer, "provider-user-123", admin)
-    assert call(mint())[0]["status"] == 204
-    assert call(mint(aud="https://other.example/mcp/"))[0]["status"] == 401
+    assert call(mint())[0]["status"] == 401  # no signed client identity
+    assert call(mint(azp="signed-client"))[0]["status"] == 204
+    assert call(mint(azp="one", client_id="different"))[0]["status"] == 401
+    assert call(mint(azp="signed-client",aud="https://other.example/mcp/"))[0]["status"] == 401
     identity = store.list_oauth_identities(oauth_config.issuer)[0]
     store.revoke_oauth_identity(oauth_config.issuer, identity["id"])
-    assert call(mint())[0]["status"] == 401
+    assert call(mint(azp="signed-client"))[0]["status"] == 401
 
 
 def test_resource_metadata_disabled_without_oauth(monkeypatch):

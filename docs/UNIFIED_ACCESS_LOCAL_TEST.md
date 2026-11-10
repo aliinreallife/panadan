@@ -27,8 +27,14 @@ mirror cutover. The newly merged PR #98 web health panel is preserved.
   or calls-only MCP clients are supported by the new policy.
 - Access discovery: MCP tools get_my_access and explain_access(field);
   REST GET /api/v1/me/access. No arbitrary user-id query or customer lookup.
-- New manual MCP tokens snapshot the owner's allowed columns/capabilities.
-  Later user grants cannot silently expand already issued token rights.
+- New manual MCP and REST API tokens snapshot the owner's allowed
+  columns/capabilities. Later user grants cannot silently expand already
+  issued token rights. Previously issued API tokens with NULL snapshots
+  retain legacy dynamic grants until planned revocation/rotation; inventory
+  these credentials before enabling a new permission model.
+- OAuth MCP bearer ingress now requires a cryptographically verified, signed
+  client identity (azp/client_id). Unconsented but properly identified
+  clients can still discover how to request consent; data tools deny access.
 - User-managed client-specific OAuth subset approvals at
   GET /dashboard/mcp-apps, POST /dashboard/mcp-apps/approve and /revoke.
   The new-client form preselects eligible user access, and existing clients

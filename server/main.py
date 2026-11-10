@@ -178,7 +178,9 @@ def api_field_access(request: Request, scope: str = 'api:read') -> frozenset[str
     actor = store.actor_for_token(raw, scope)
     if actor is None or not hasattr(store, 'user_access'):
         raise HTTPException(401, 'Unauthorized reporting identity')
-    policy = store.user_access(actor)
+    if not hasattr(store, 'api_token_access'):
+        raise HTTPException(403, 'API field authorization unavailable')
+    policy = store.api_token_access(actor, raw, scope)
     if policy is None:
         raise HTTPException(403, 'Reporting permission revoked')
     return policy['fields']
@@ -841,9 +843,18 @@ def read_my_access(request: Request):
                 caps = delegated['capabilities']
                 fields = delegated['fields']
             else:
-                caps, fields = user['capabilities'], user['fields']
-                if not store.actor_for_token(raw, 'api:sensitive'):
-                    fields = fields - set(database.SENSITIVE_COLUMNS)
+                if not hasattr(store, 'api_token_access'):
+                    raise HTTPException(403, 'API authorization unavailable')
+                if store.verify_token(raw, 'api:sensitive'):
+                    requested_scope = 'api:sensitive'
+                elif store.verify_token(raw, 'api:read'):
+                    requested_scope = 'api:read'
+                else:
+                    raise HTTPException(401, 'Token authorization revoked')
+                snapshot = store.api_token_access(actor, raw, requested_scope)
+                if snapshot is None:
+                    raise HTTPException(403, 'Token field authorization unavailable')
+                caps, fields = snapshot['capabilities'], snapshot['fields']
     if not caps:
         raise HTTPException(403, 'Account has no active access')
     return JSONResponse({
@@ -958,9 +969,15 @@ class MCPBearerGate:
         raw = auth[7:] if auth.startswith('Bearer ') else ''
         actor = None
         if oauth_config.mode == 'oauth':
-            subject = oauth_verifier.verify(raw) if oauth_verifier else None
-            valid = bool(subject and store.oauth_identity_has_mcp_access(oauth_config.issuer, subject))
-            if valid: actor=store.actor_for_oauth(oauth_config.issuer,subject)
+            details = oauth_verifier.verify_details(raw) if oauth_verifier else None
+            # An IdP's signed subject alone does not identify the AI client.
+            # An unconsented, signed client may discover consent instructions,
+            # but a token with no signed client identity is rejected here.
+            valid = bool(details and details.get('client_id') and
+                         store.oauth_identity_has_mcp_access(
+                             oauth_config.issuer, details['subject']))
+            if valid:
+                actor = store.actor_for_oauth(oauth_config.issuer, details['subject'])
         else:
             valid = store.verify_token(raw, 'mcp:read')
             if valid: actor=store.actor_for_token(raw, 'mcp:read')

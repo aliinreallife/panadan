@@ -144,3 +144,72 @@ def test_field_form_requires_server_owned_allowlist(app_client):
     },follow_redirects=False)
     assert denied.status_code == 400
     assert all(u['username'] != 'wrongfields' for u in main.store.list_users())
+
+
+def test_api_tokens_snapshot_fields_and_capabilities_without_silent_expansion(app_client):
+    import json
+    c, main, secret = app_client
+    uid = main.store.create_user(
+        'rest_snapshot', 'example-password-very-long', 'reader',
+        ['calls:read'], fields=['id', 'CALLDATE'])
+    tid, token = main.store.create_token('snapshot', 'api:read', 7, uid)
+    headers = {'authorization': 'Bearer ' + token}
+    assert c.get('/api/v1/calls', headers=headers).json()['items'] == [
+        {'id': 81, 'CALLDATE': '2026-11-09'}]
+    assert c.get('/api/v1/states', headers=headers).status_code == 401
+
+    # Simulate an out-of-band grant/migration: the ordinary admin editor
+    # already invalidates existing tokens on updates. Defense in depth must
+    # still prevent a still-valid token from automatically gaining grants.
+    with main.store.db() as conn:
+        conn.execute('UPDATE users SET grants=?,field_grants=? WHERE id=?', (
+            json.dumps(['calls:read','metrics:read']),
+            json.dumps(['id','CALLDATE','aicallinfostate','voice_length']),
+            uid))
+    assert c.get('/api/v1/calls', headers=headers).json()['items'] == [
+        {'id': 81, 'CALLDATE': '2026-11-09'}]
+    assert c.get('/api/v1/states', headers=headers).status_code == 401
+    access = c.get('/api/v1/me/access', headers=headers)
+    assert access.status_code == 200
+    assert {f['id'] for f in access.json()['fields']} == {'id','CALLDATE'}
+    assert access.json()['capabilities'] == ['calls:read']
+    assert secret not in access.text
+
+    # Newly issued tokens may intentionally receive the new permissions.
+    _, newer = main.store.create_token('after-update', 'api:read', 7, uid)
+    assert c.get('/api/v1/states', headers={
+        'authorization':'Bearer '+newer}).status_code == 200
+    main.store.revoke(tid)
+    assert c.get('/api/v1/calls', headers=headers).status_code == 401
+
+
+def test_sensitive_api_and_legacy_api_token_scope_boundaries(app_client):
+    c, main, secret = app_client
+    uid = main.store.create_user('api_sensitive', 'example-password-very-long',
+        'analyst', ['calls:read', 'calls:sensitive'],
+        fields=['id','CALLDATE','customername'])
+    _, regular = main.store.create_token('ordinary', 'api:read', 7, uid)
+    _, sensitive = main.store.create_token('restricted', 'api:sensitive', 7, uid)
+    read_headers = {'authorization': 'Bearer ' + regular}
+    sensitive_headers = {'authorization': 'Bearer ' + sensitive}
+    assert secret not in c.get('/api/v1/calls/81', headers=read_headers).text
+    assert c.get('/api/v1/calls/81?include_sensitive=true',
+                 headers=read_headers).status_code == 401
+    disclosure = c.get('/api/v1/calls/81?include_sensitive=true',
+                       headers=sensitive_headers)
+    assert disclosure.status_code == 200
+    assert disclosure.json()['customername'] == secret
+    assert 'customername' not in {
+        v['id'] for v in c.get('/api/v1/me/access',headers=read_headers).json()['fields']}
+    assert 'customername' in {
+        v['id'] for v in c.get('/api/v1/me/access',headers=sensitive_headers).json()['fields']}
+
+    # Legacy API token rows with NULL grant snapshots retain prior behavior
+    # until operators can arrange a coordinated token rotation.
+    from server.security import digest
+    with main.store.db() as conn:
+        conn.execute('UPDATE access_tokens SET field_grants=NULL,cap_grants=NULL '
+                     'WHERE token_hash=?', (digest(regular),))
+    assert c.get('/api/v1/calls/81', headers=read_headers).status_code == 200
+    assert c.get('/api/v1/calls/81?include_sensitive=true',
+                 headers=read_headers).status_code == 401

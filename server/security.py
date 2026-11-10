@@ -584,6 +584,54 @@ class Store:
                 'fields': effective_fields,
                 'capabilities': effective_caps}
 
+
+    def api_token_access(self, user_id: int, raw: str, scope: str) -> dict | None:
+        """Intersect an authenticated API token's original grants with live policy.
+
+        Historical NULL snapshots keep legacy API tokens functional until
+        an explicitly reviewed rotation; new tokens cannot silently expand.
+        """
+        if (scope not in ('api:read', 'api:sensitive') or
+                not raw or len(raw) > 256):
+            return None
+        access = self.user_access(user_id)
+        if access is None:
+            return None
+        with self.db() as c:
+            row = c.execute(
+                'SELECT scope,field_grants,cap_grants FROM access_tokens '
+                'WHERE owner_id=? AND token_hash=? AND expires_at>?',
+                (user_id, digest(raw), int(time.time()))
+            ).fetchone()
+        if not row or (row['scope'] != scope and not (
+                scope == 'api:read' and row['scope'] == 'api:sensitive')):
+            return None
+        try:
+            capabilities = set(access['capabilities'])
+            if row['cap_grants'] is not None:
+                stored_caps = json.loads(row['cap_grants'])
+                if (type(stored_caps) is not list or
+                        any(type(v) is not str for v in stored_caps)):
+                    return None
+                capabilities &= set(stored_caps)
+            fields = set(access['fields'])
+            if row['field_grants'] is not None:
+                stored_fields = json.loads(row['field_grants'])
+                if (type(stored_fields) is not list or
+                        any(type(v) is not str for v in stored_fields) or
+                        len(stored_fields) != len(set(stored_fields))):
+                    return None
+                fields &= set(stored_fields)
+            if scope == 'api:read':
+                capabilities &= {'calls:read', 'metrics:read'}
+            elif not {'calls:read', 'calls:sensitive'} <= capabilities:
+                return None
+            fields &= capability_fields(capabilities)
+            return {'capabilities': frozenset(capabilities),
+                    'fields': frozenset(fields)}
+        except (TypeError, ValueError):
+            return None
+
     def actor_for_token(self, raw: str, scope: str) -> int | None:
         """Resolve owner from an already-authenticated service token, or None."""
         if not raw or len(raw) > 256 or scope not in ('mcp:read','api:read','api:sensitive'):
@@ -713,8 +761,18 @@ class Store:
                        if scope == 'mcp:read' else required <= grants)
             if not allowed:
                 raise ValueError('Owner has insufficient permissions')
-            fields = json.dumps(sorted(effective_fields(grants, owner['field_grants']))) if scope == 'mcp:read' else None
-            granted_caps = json.dumps(sorted(grants & {'mcp:use','calls:read','metrics:read','calls:transcript:read'})) if scope == 'mcp:read' else None
+            # Snapshot the authority of every NEW token. Later grant changes
+            # must not expand a previously issued REST or MCP credential.
+            scope_caps = ({'mcp:use','calls:read','metrics:read','calls:transcript:read'}
+                          if scope == 'mcp:read' else
+                          {'calls:read','calls:sensitive','metrics:read'}
+                          if scope == 'api:sensitive' else
+                          {'calls:read','metrics:read'})
+            snapshot_caps = grants & scope_caps
+            snapshot_fields = (effective_fields(grants, owner['field_grants'])
+                               & capability_fields(snapshot_caps))
+            fields = json.dumps(sorted(snapshot_fields))
+            granted_caps = json.dumps(sorted(snapshot_caps))
             cur = c.execute('''INSERT INTO access_tokens(name,token_hash,scope,created_at,expires_at,owner_id,field_grants,cap_grants)
                                VALUES(?,?,?,?,?,?,?,?)''',
                             (name[:80], digest(raw), scope, now, now + days*86400, owner_id, fields, granted_caps))
@@ -723,10 +781,21 @@ class Store:
     def verify_token(self, raw: str, scope: str, capability: str | None = None) -> bool:
         if not raw or len(raw) > 256: return False
         with self.db() as c:
-            row = c.execute('''SELECT t.id,t.scope,u.role,u.grants,u.is_active
+            row = c.execute('''SELECT t.id,t.scope,t.cap_grants,u.role,u.grants,u.is_active
                                FROM access_tokens t JOIN users u ON u.id=t.owner_id
                                WHERE t.token_hash=? AND t.expires_at>?''', (digest(raw), int(time.time()))).fetchone()
             grants = permissions(row['role'], row['grants']) if row and row['is_active'] else set()
+            # NULL snapshots are pre-existing tokens; keep those working
+            # until an explicitly approved rotation. Invalid JSON fails closed.
+            if row and row['cap_grants'] is not None:
+                try:
+                    issued = json.loads(row['cap_grants'])
+                    if type(issued) is not list or any(type(x) is not str for x in issued):
+                        grants = set()
+                    else:
+                        grants &= set(issued)
+                except (TypeError, ValueError):
+                    grants = set()
             matching = bool(row and (row['scope'] == scope or
                             (scope == 'api:read' and row['scope'] == 'api:sensitive')))
             valid = bool(matching and (
