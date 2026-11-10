@@ -539,6 +539,70 @@ def test_dashboard_does_not_retry_invalid_sql_or_validation_errors(client, monke
     assert len(calls) == 1
     assert c.get('/dashboard/data?after=not-a-date').status_code == 422
 
+
+
+def test_admin_permission_groups_are_rendered_and_legacy_access_retained(client):
+    c, main = client
+    reader_id = main.store.create_user(
+        "grantedreader", "some-long-safe-password", "reader",
+        ["calls:read"])
+    reader = next(u for u in main.store.list_users() if u["id"] == reader_id)
+    assert main.permissions(reader["role"], reader["grants"]) == {"calls:read"}
+
+    raw, _ = main.store.create_session(reader_id)
+    c.cookies.set("panadan_session", raw)
+    assert c.get("/dashboard/users").status_code == 403
+
+    admin_id = main.store.verify_login(
+        "admin", "a-long-safe-testing-password")
+    admin_cookie, _ = main.store.create_session(admin_id)
+    c.cookies.set("panadan_session", admin_cookie)
+    page = c.get("/dashboard/users")
+    assert page.status_code == 200
+    assert "گروه دسترسی" in page.text
+    assert "کم‌خطر" in page.text
+    assert "محرمانه" in page.text
+    assert "مدیریتی" in page.text
+    assert "access-group-catalog" in page.text
+    assert "data-group-select" in page.text
+    assert 'class="user-edit-form"' in page.text
+    assert "دسترسی سفارشی" in page.text or "مشاهده تماس‌ها" in page.text
+    assert c.get("/static/users.js").status_code == 200
+    assert main.permissions(reader["role"], reader["grants"]) == {"calls:read"}
+
+
+def test_group_label_cannot_bypass_backend_grant_validation(client):
+    c, main = client
+    admin_id = main.store.verify_login(
+        "admin", "a-long-safe-testing-password")
+    raw, csrf = main.store.create_session(admin_id)
+    c.cookies.set("panadan_session", raw)
+    # The optional UI preset label is NOT an authorization source.
+    response = c.post("/dashboard/users", data={
+        "csrf": csrf,
+        "username": "untrustedpreset",
+        "password": "some-long-safe-password",
+        "role": "reader",
+        "group_preset": "confidential",
+        "grants": ["calls:read"],
+    }, follow_redirects=False)
+    assert response.status_code == 303
+    user = next(u for u in main.store.list_users()
+                if u["username"] == "untrustedpreset")
+    assert main.permissions(user["role"], user["grants"]) == {"calls:read"}
+    # A forged unsupported sensitive combination is rejected regardless of
+    # the selected UI group, and no user is created.
+    rejected = c.post("/dashboard/users", data={
+        "csrf": csrf,
+        "username": "deniedconfidential",
+        "password": "some-long-safe-password",
+        "role": "reader",
+        "grants": ["calls:sensitive"],
+    })
+    assert rejected.status_code == 400
+    assert all(u["username"] != "deniedconfidential"
+               for u in main.store.list_users())
+
 def test_mirror_health_is_admin_only_and_does_not_expose_customer_data(client, monkeypatch):
     c, main = client
     observed = []

@@ -22,6 +22,10 @@ from starlette import status
 
 from . import database
 from . import mirror_health
+from .permission_catalog import (
+    PERMISSION_CATEGORIES, ADMIN_ONLY, ROLE_RECOMMENDED_GROUP,
+    group_options, matching_group,
+)
 from .ingress import allowed_hosts, external_base_url, read_public_origin, valid_form_origin
 from .reporting_retries import read_with_retry
 from .transcript_ai import transcript_for_ai, MAX_TRANSCRIPT_CHARS
@@ -583,20 +587,36 @@ def private_openapi(request: Request, session: dict = Depends(current_session)):
 @app.get('/dashboard/users', response_class=HTMLResponse, include_in_schema=False)
 def users_page(request: Request, session: dict = Depends(current_session)):
     admin_only(session)
-    return templates.TemplateResponse(request,'users.html', {
-        'session':session, 'csrf':session['csrf'], 'users':store.list_users(),
-        'roles':ROLE_GRANTS, 'capabilities':CAPABILITIES, 'user_caps':{u['id']:permissions(u['role'],u['grants']) for u in store.list_users()},
-        'cap_labels': {
-            'calls:read':'دیدن فهرست تماس‌ها',
-            'calls:sensitive':'جزئیات حساس',
-            'calls:transcript:read':'تحلیل مکالمات توسط AI',
-            'metrics:read':'گزارش‌های آماری',
-            'mcp:use':'اتصال MCP',
-            'users:manage':'مدیریت کاربران',
-            'tokens:manage':'مدیریت توکن‌ها',
+    users = store.list_users()
+    user_caps = {
+        user['id']: permissions(user['role'], user['grants']) for user in users
+    }
+    return templates.TemplateResponse(request, 'users.html', {
+        'session': session, 'csrf': session['csrf'],
+        'users': users,
+        'roles': ROLE_GRANTS,
+        'capabilities': CAPABILITIES,
+        'user_caps': user_caps,
+        'user_groups': {
+            user['id']: matching_group(user['role'], user_caps[user['id']])
+            for user in users
         },
-        'role_labels':{'admin':'مدیر کل','analyst':'تحلیل‌گر','reader':'خواننده','metrics':'فقط آمار'},
-        'error':request.query_params.get('error'),
+        'permission_categories': PERMISSION_CATEGORIES,
+        'permission_groups': group_options(),
+        'recommended_groups': ROLE_RECOMMENDED_GROUP,
+        'admin_only_caps': ADMIN_ONLY,
+        'cap_labels': {
+            item['id']: item['label']
+            for category in PERMISSION_CATEGORIES
+            for item in category['items']
+        },
+        'role_labels': {
+            'admin': 'مدیر کل',
+            'analyst': 'تحلیل‌گر',
+            'reader': 'خواننده',
+            'metrics': 'فقط آمار',
+        },
+        'error': request.query_params.get('error'),
     })
 
 
