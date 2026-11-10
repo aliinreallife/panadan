@@ -21,6 +21,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette import status
 
 from . import database
+from . import mirror_health
 from .field_permissions import (capability_fields, effective_fields,
     field_catalog, project_call, project_metrics)
 from .permission_catalog import (
@@ -95,6 +96,7 @@ async def audit_http_activity(request: Request, call_next):
         '/dashboard/filter-options', '/dashboard/api', '/dashboard/users',
         '/dashboard/tokens', '/dashboard/connect', '/dashboard/oauth',
         '/dashboard/activity', '/dashboard/activity/data',
+        '/dashboard/mirror-health',
         '/dashboard/operator', '/dashboard/operators', '/dashboard/operators/assign'
     }
     if path in approved:
@@ -370,6 +372,14 @@ def dashboard(request: Request):
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
         'selected_operator':None, 'operator_title':None, 'operator_meta':{},
     })
+
+
+@app.get('/dashboard/mirror-health', include_in_schema=False)
+def dashboard_mirror_health(session: dict = Depends(current_session)):
+    # Aggregate-only health; the reporting database is not touched here.
+    admin_only(session)
+    return JSONResponse(mirror_health.load_admin_mirror_health(),
+                        headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/dashboard/operator', response_class=HTMLResponse, include_in_schema=False)
