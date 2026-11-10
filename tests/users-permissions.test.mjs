@@ -35,6 +35,10 @@ function prepare({editing = false, selected = ['calls:read'], roleName = 'reader
   const checks = new Map(caps.map(key => {
     const c = control(key);
     c.checked = selected.includes(key);
+    c.change = function(checked) {
+      this.checked = checked;
+      this.listeners.get('change')?.();
+    };
     return [key, c];
   }));
   const role = control(roleName);
