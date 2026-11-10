@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS panadan_auth.users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin','analyst','reader','metrics')),
   grants TEXT,
+  field_grants TEXT,
   is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
   profile_id TEXT NOT NULL UNIQUE
     CHECK (profile_id ~ '^prf_[A-Za-z0-9_-]{32,}$')
@@ -45,7 +46,24 @@ CREATE TABLE IF NOT EXISTS panadan_auth.access_tokens (
   created_at BIGINT NOT NULL,
   expires_at BIGINT NOT NULL,
   last_used BIGINT,
-  owner_id BIGINT NOT NULL REFERENCES panadan_auth.users(id) ON DELETE RESTRICT
+  owner_id BIGINT NOT NULL REFERENCES panadan_auth.users(id) ON DELETE RESTRICT,
+  field_grants TEXT,
+  cap_grants TEXT
+);
+
+-- Idempotent additions to existing staging PG18 auth schemas.
+ALTER TABLE panadan_auth.users ADD COLUMN IF NOT EXISTS field_grants TEXT;
+ALTER TABLE panadan_auth.access_tokens ADD COLUMN IF NOT EXISTS field_grants TEXT;
+ALTER TABLE panadan_auth.access_tokens ADD COLUMN IF NOT EXISTS cap_grants TEXT;
+
+-- Consent is keyed by a verified IdP client ID and a local account ID.
+CREATE TABLE IF NOT EXISTS panadan_auth.mcp_client_grants (
+  user_id BIGINT NOT NULL REFERENCES panadan_auth.users(id) ON DELETE RESTRICT,
+  client_id TEXT NOT NULL CHECK (char_length(client_id) BETWEEN 1 AND 160),
+  capabilities TEXT NOT NULL,
+  fields TEXT NOT NULL,
+  approved_at BIGINT NOT NULL,
+  PRIMARY KEY (user_id, client_id)
 );
 
 CREATE TABLE IF NOT EXISTS panadan_auth.oauth_identities (
