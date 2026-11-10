@@ -211,3 +211,111 @@ def test_oauth_verifier_accepts_only_signed_consistent_client_identity(signer):
     assert verifier.verify_details(mint()) == {
         "subject": "provider-user-123", "client_id": None
     }
+
+
+def test_real_signed_oauth_clients_are_isolated_on_mcp_http(
+    tmp_path, monkeypatch, oauth_config, signer
+):
+    """A real RS256-signed token passes the HTTP gate and each MCP tool's
+    separate user/client authorization check. Never touches live Odoo.
+    """
+    import importlib
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv('PANADAN_AUTH_DB', str(tmp_path / 'oauth-http.sqlite'))
+    monkeypatch.setenv('PANADAN_ADMIN_PASSWORD', 'a-long-admin-password-for-testing')
+    monkeypatch.setenv('PANADAN_MCP_AUTH_MODE', 'legacy')
+    monkeypatch.setenv('PANADAN_COOKIE_SECURE', 'false')
+    import server.main as main
+    main = importlib.reload(main)
+    verifier, mint = signer
+    monkeypatch.setattr(main, 'oauth_config', oauth_config)
+    monkeypatch.setattr(main, 'oauth_verifier', verifier)
+
+    secret = 'CUSTOMER-SECRET-NEVER-EXPOSE'
+    row = {'id': 93, 'CALLDATE': '2026-11-09',
+           'aicallinfostate': 'Unchecked', 'customername': secret,
+           'customertell': secret, 'transcription': secret}
+    monkeypatch.setattr(main.database, 'list_calls', lambda *args, **kw: [row.copy()])
+    monkeypatch.setattr(main.database, 'stats', lambda *args, **kw: {
+        'total': 1, 'sold_out': 0, 'avg_ai_score': 66
+    })
+
+    with TestClient(main.app, base_url='http://localhost:8508') as client:
+        user_id = main.store.create_user(
+            'oauthowner', 'oauth-owner-password-very-long', 'analyst',
+            ['calls:read', 'metrics:read', 'mcp:use'],
+            fields=['id', 'CALLDATE', 'aicallinfostate'])
+        main.store.bind_oauth_identity(oauth_config.issuer,
+                                       'provider-user-123', user_id)
+        main.store.approve_mcp_client(user_id, 'calls-client',
+            ['mcp:use', 'calls:read'], ['id', 'CALLDATE'])
+        main.store.approve_mcp_client(user_id, 'metrics-client',
+            ['mcp:use', 'metrics:read'], ['id', 'aicallinfostate'])
+
+        def request(token, name, arguments=None, seq=1):
+            response = client.post('/mcp/', headers={
+                'accept': 'application/json, text/event-stream',
+                'content-type': 'application/json',
+                'authorization': 'Bearer ' + token,
+            }, json={
+                'jsonrpc': '2.0', 'id': seq, 'method': 'tools/call',
+                'params': {'name': name, 'arguments': arguments or {}}
+            })
+            return response
+
+        def result(response):
+            assert response.status_code == 200, response.text
+            if 'text/event-stream' in response.headers.get('content-type',''):
+                entries = [line.removeprefix('data: ').strip()
+                           for line in response.text.splitlines()
+                           if line.startswith('data: ')]
+                assert entries
+                value = json.loads(entries[-1])
+            else:
+                value = response.json()
+            assert 'error' not in value, value
+            answer = value['result']
+            if 'structuredContent' in answer:
+                return answer['structuredContent']
+            parts = answer.get('content') or []
+            assert parts, answer
+            return json.loads(parts[0]['text'])
+
+        calls_jwt = mint(azp='calls-client')
+        metrics_jwt = mint(client_id='metrics-client')
+        unknown_jwt = mint(azp='unapproved-client')
+        assert request(mint(), 'get_my_access').status_code == 401
+        assert request(mint(azp='calls-client', client_id='metrics-client'),
+                       'get_my_access').status_code == 401
+
+        calls_response = request(calls_jwt, 'list_recent_calls')
+        assert secret not in calls_response.text
+        assert result(calls_response) == {'id': 93, 'CALLDATE': '2026-11-09'}
+        assert result(request(calls_jwt, 'get_call_metrics'))['error'] == 'permission_denied'
+        assert result(request(metrics_jwt, 'list_recent_calls'))['error'] == 'permission_denied'
+        assert result(request(metrics_jwt, 'get_call_metrics')) == {
+            'total': 1, 'sold_out': 0}
+        assert result(request(metrics_jwt, 'get_call_summary', {'call_id': 93}))['error'] == 'permission_denied'
+
+        calls_access = client.get('/api/v1/me/access',
+            headers={'authorization': 'Bearer ' + calls_jwt})
+        metrics_access = client.get('/api/v1/me/access',
+            headers={'authorization': 'Bearer ' + metrics_jwt})
+        assert calls_access.status_code == metrics_access.status_code == 200
+        assert {f['id'] for f in calls_access.json()['fields']} == {'id','CALLDATE'}
+        assert {f['id'] for f in metrics_access.json()['fields']} == {'id','aicallinfostate'}
+        assert secret not in calls_access.text + metrics_access.text
+
+        # An unapproved but signed client can discover consent instructions,
+        # not data or another app's approved permission list.
+        empty = result(request(unknown_jwt, 'get_my_access'))
+        assert empty['capabilities'] == []
+        assert empty['columns'] == []
+        assert result(request(unknown_jwt, 'list_recent_calls'))['error'] == 'permission_denied'
+
+        main.store.revoke_mcp_client(user_id, 'calls-client')
+        assert result(request(calls_jwt, 'list_recent_calls'))['error'] == 'permission_denied'
+        assert result(request(calls_jwt, 'get_my_access'))['columns'] == []
+        assert result(request(metrics_jwt, 'get_call_metrics')) == {
+            'total': 1, 'sold_out': 0}
