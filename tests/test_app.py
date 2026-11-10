@@ -639,10 +639,11 @@ def test_mirror_health_is_admin_only_and_does_not_expose_customer_data(client, m
         "admin", "a-long-safe-testing-password")
     raw, _ = main.store.create_session(admin_id)
     c.cookies.set("panadan_session", raw)
-    page = c.get("/dashboard")
+    page = c.get("/dashboard/system")
     assert page.status_code == 200
     assert "mirror-health-panel" in page.text
     assert "/static/mirror-health.js" in page.text
+    assert "mirror-health-panel" not in c.get("/dashboard").text
     assert c.get("/dashboard/operator?name=Test%20Op").status_code == 200
     assert "mirror-health-panel" not in c.get(
         "/dashboard/operator?name=Test%20Op").text
