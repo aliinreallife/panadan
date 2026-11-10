@@ -1,5 +1,5 @@
 <!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{(operator_title ~ " | گزارش کارشناس") if operator_title else "گزارش تماس‌ها"}} | پانادان</title><link rel="icon" type="image/svg+xml" href="/static/favicon.svg"><link rel="stylesheet" href="/static/vendor/panadan-bundle.css"><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/vendor/doran.css" onerror="this.remove()"></head><body>
-<div class="shell"><aside class="sidebar"><a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a><div class="nav-caption">فضای کاری</div><nav><a class="{{'' if selected_operator else 'active'}}" href="/dashboard">▦ <span>گزارش تماس‌ها</span></a>{% if abilities['calls:read'] %}<a href="/dashboard/operators">♙ <span>کارشناسان و مقاصد</span></a>{% endif %}{% if abilities['tokens:manage'] %}<a href="/dashboard/connect">◈ <span>اتصال هوش مصنوعی</span></a><a href="/dashboard/tokens">♢ <span>توکن‌های دسترسی</span></a><a href="/dashboard/api">⌘ <span>راهنمای API</span></a><a href="/dashboard/oauth">◉ <span>اتصال امن OAuth</span></a>{% endif %}{% if abilities['users:manage'] %}<a href="/dashboard/users">♙ <span>کاربران و دسترسی‌ها</span></a><a href="/dashboard/activity">▤ <span>فعالیت کاربران</span></a>{% endif %}</nav><div class="side-footer"><div class="status"><span class="dot"></span> گزارش‌ها · فقط خواندنی</div><span class="muted">{{session.username}} · {{session.role}}</span><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{csrf}}"><button class="link-button">خروج</button></form></div></aside>
+<div class="shell"><aside class="sidebar"><a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a><div class="nav-caption">فضای کاری</div><nav><a class="{{'' if selected_operator else 'active'}}" href="/dashboard">▦ <span>گزارش تماس‌ها</span></a>{% if abilities['calls:read'] %}<a href="/dashboard/operators">♙ <span>کارشناسان و مقاصد</span></a>{% endif %}{% if abilities['mcp:use'] %}<a href="/dashboard/mcp-apps">◉ <span>برنامه‌های متصل من</span></a>{% endif %}{% if abilities['tokens:manage'] %}<a href="/dashboard/connect">◈ <span>اتصال هوش مصنوعی</span></a><a href="/dashboard/tokens">♢ <span>توکن‌های دسترسی</span></a><a href="/dashboard/api">⌘ <span>راهنمای API</span></a><a href="/dashboard/oauth">◉ <span>اتصال امن OAuth</span></a>{% endif %}{% if abilities['users:manage'] %}<a href="/dashboard/users">♙ <span>کاربران و دسترسی‌ها</span></a><a href="/dashboard/activity">▤ <span>فعالیت کاربران</span></a><a href="/dashboard/system">◷ <span>وضعیت سیستم</span></a>{% endif %}</nav><div class="side-footer"><div class="status"><span class="dot"></span> گزارش‌ها · فقط خواندنی</div><span class="muted">{{session.username}} · {{session.role}}</span><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{csrf}}"><button class="link-button">خروج</button></form></div></aside>
 <main id="dashboard-content" class="content" data-profile-operator="{{selected_operator or ''}}"><header class="page-head"><div><span class="eyebrow">{{'صفحهٔ کارشناس' if selected_operator else 'مرکز گزارش‌های تماس'}}</span>
 <h1>{{operator_title if selected_operator else 'مرور تماس‌ها'}}</h1>
 <p class="muted">{{'آمار و تماس‌های ثبت‌شده برای این کارشناس' if selected_operator else 'نمای کلی تماس‌ها، وضعیت‌ها و تحلیل‌ها در یک نگاه'}}</p>
@@ -8,36 +8,6 @@
 <span>تیم: <strong>{{operator_meta.team}}</strong></span></div>
 <a class="operator-back" href="/dashboard">← بازگشت به همهٔ تماس‌ها</a>
 {% endif %}</div><div class="head-tools"><span id="source-health" class="source-health" role="status" aria-live="polite">منبع گزارش · در حال بررسی</span><span id="webmcp-status" class="tag" hidden>WebMCP فعال · آزمایشی</span><span class="tag">فقط خواندنی</span><button id="refresh" class="secondary">↻ بروزرسانی</button></div></header>
-{% if session.role == 'admin' and not selected_operator %}
-<section class="panel mirror-health-panel" id="mirror-health-panel" aria-labelledby="mirror-health-title">
-  <div class="panel-head mirror-health-head">
-    <div>
-      <span class="eyebrow">نظارت مدیر · همگام‌سازی</span>
-      <h2 id="mirror-health-title">وضعیت نسخهٔ محلی Odoo</h2>
-      <p class="muted small-text">این بخش فقط وضعیت پایگاه دادهٔ آزمایشی را نشان می‌دهد؛ گزارش‌های فعلی هنوز از مسیر قبلی خوانده می‌شوند.</p>
-    </div>
-    <span class="mirror-health-state" id="mirror-health-state" role="status" aria-live="polite">در حال بررسی…</span>
-  </div>
-  <div class="mirror-health-grid">
-    <div class="mirror-health-stat"><span>تماس‌های ذخیره‌شده</span><strong id="mirror-health-records">—</strong></div>
-    <div class="mirror-health-stat"><span>نسخه‌های ثبت‌شده</span><strong id="mirror-health-revisions">—</strong></div>
-    <div class="mirror-health-stat"><span>آخرین زمان همگام‌شده</span><strong id="mirror-health-through" dir="ltr">—</strong></div>
-    <div class="mirror-health-stat"><span>تأخیر نسبت به زمان فعلی</span><strong id="mirror-health-lag">—</strong></div>
-  </div>
-  <div class="mirror-health-detail" id="mirror-health-progress" hidden>
-    <span>در حال جبران عقب‌ماندگی</span>
-    <strong id="mirror-health-processed" dir="ltr">—</strong>
-    <span>تا</span>
-    <strong id="mirror-health-upper" dir="ltr">—</strong>
-  </div>
-  <div class="mirror-health-footer">
-    <span id="mirror-health-vpn">VPN: در حال بررسی</span>
-    <span id="mirror-health-timer">زمان‌بندی: در حال بررسی</span>
-    <span id="mirror-health-updated">آخرین بررسی: —</span>
-    <button type="button" class="secondary" id="mirror-health-refresh">↻ بررسی مجدد</button>
-  </div>
-</section>
-{% endif %}
 <div id="error" role="alert" class="report-error" hidden><span id="report-error-message">ارتباط با منبع گزارش‌گیری موقتاً برقرار نیست.</span><button type="button" id="report-retry" class="secondary">تلاش دوباره</button></div>
 {% if abilities['metrics:read'] %}<section class="metrics"><article class="metric"><span>تماس‌های بازه</span><strong id="metric-total">—</strong><small>تعداد تماس‌های گزارش‌شده</small></article><article class="metric"><span>فروش رفته</span><strong id="metric-sold">—</strong><small>براساس وضعیت ثبت‌شده در گزارش</small></article><article class="metric"><span>میانگین امتیاز احتمال فروش</span><strong id="metric-score">—</strong><small id="metric-score-coverage">فقط تماس‌های دارای امتیاز</small></article><article class="metric"><span>میانگین مدت صوت</span><strong id="metric-length">—</strong><small>مدت ثبت‌شده به ثانیه؛ نمایش خوانا</small></article></section>{% endif %}
 <section class="panel filter-panel"><div class="panel-head"><div><h2>فیلتر گزارش</h2><p class="muted small-text">برای هر فیلتر چند گزینه انتخاب کنید؛ هر گزینهٔ انتخاب‌شده می‌تواند در نتایج باشد.</p></div><span class="tag">منطقهٔ زمانی تهران</span></div><form id="filters" class="filters report-filters">
@@ -55,4 +25,4 @@
 {% if abilities['calls:transcript:read'] and abilities['calls:read'] %}<span id="webmcp-transcript-permission" hidden></span>{% endif %}
 {% if abilities['calls:read'] %}<section class="panel calls-panel"><div class="panel-head"><div><h2>فهرست تماس‌ها</h2><p class="muted small-text">ابتدا نتیجه را مرور کنید؛ مکالمهٔ کامل در انتهای جزئیات قرار دارد.</p></div><span id="count" class="tag" role="status" aria-live="polite" aria-atomic="true">—</span></div><div id="applied-filters" class="applied-filters" role="group" aria-label="فیلترهای اعمال‌شده به فهرست تماس‌ها" hidden><div class="applied-filters-heading"><strong>فیلترهای این نتایج</strong><span id="applied-filters-count" class="muted small-text"></span></div><div id="applied-filter-chips" class="applied-filter-chips"></div></div><div class="table-scroller"><table><thead><tr><th>تاریخ</th><th>کارشناس</th><th>نوع تماس</th><th>وضعیت هوش مصنوعی</th><th title="امتیاز تخمینی احتمال فروش (AI)، نه فروش قطعی">امتیاز احتمال فروش</th><th><span class="sr-only">جزئیات</span></th></tr></thead><tbody id="rows"><tr><td colspan="6">در حال دریافت...</td></tr></tbody></table></div><p class="source-note">عنوان‌های فارسی برای خوانایی هستند؛ با نگه‌داشتن نشانگر روی برچسب‌ها، مقدار اصلی نمایش داده می‌شود. «فروش رفته» معادل نمایشی SoldOut است؛ تأیید مالی فروش باید جداگانه بررسی شود. امتیاز احتمال فروش نیز تخمین AI است و به معنی فروش قطعی نیست.</p><div class="pager"><button id="previous" class="secondary">قبلی</button><span id="page">صفحه ۱</span><button id="next" class="secondary">بعدی</button></div></section>{% else %}<section class="panel"><h2>دسترسی محدود</h2><p class="muted">حساب شما فقط به گزارش‌های آماری دسترسی دارد.</p></section>{% endif %}</main></div>
 <div id="veil" class="veil" hidden><div class="veil-backdrop" id="close-backdrop"></div><section role="dialog" aria-modal="true" aria-labelledby="detail-title" aria-describedby="detail-intro" class="drawer"><header><div><span class="eyebrow">جزئیات تماس</span><h2 id="detail-title">تماس</h2></div><button id="close-drawer" class="icon-btn" aria-label="بستن">×</button></header><p id="detail-intro" class="small-text muted detail-intro">ابتدا مشخصات و خلاصه را ببینید. ساعت تماس از مبدأ گزارش شده و معنای دقیق آن هنوز تأیید نشده؛ متن مکالمه در انتهای جزئیات قرار دارد.</p><div id="detail" class="detail-grid"></div></section></div>
-<script src="/static/vendor/panadan-bundle.js" defer></script><script src="/static/jalali.js" defer></script><script type="module" src="/static/app.js"></script>{% if session.role == 'admin' and not selected_operator %}<script src="/static/mirror-health.js" defer></script>{% endif %}<script src="/static/mobile-nav.js" defer></script></body></html>
+<script src="/static/vendor/panadan-bundle.js" defer></script><script src="/static/jalali.js" defer></script><script type="module" src="/static/app.js"></script><script src="/static/mobile-nav.js" defer></script></body></html>

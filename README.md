@@ -202,6 +202,12 @@ The source reporting database remains strictly **read-only at the application
 level**. An external IdP and HTTPS endpoint are still required to complete
 the one-click OAuth consent experience.
 
+**Per-column reporting access and MCP consent (draft PR #100):** The [authorization design](docs/UNIFIED_AUTHORIZATION_MCP.md) and [local security/release gates](docs/UNIFIED_ACCESS_LOCAL_TEST.md) cover the implemented SQLite field grants for 19 existing production fields, delegated signed OAuth client subsets, and `get_my_access`/`explain_access` tooling. Automated tests pass, but independent security review, IdP end-to-end verification and rollout authorization remain outstanding. **Not deployed.** The remaining Odoo mirror-only fields, row/team restrictions and automated access-request workflow are not part of this release.
+
+**Permission groups redesign (merged PR #99):** The [access-category and preset guide](docs/ACCESS_PERMISSION_GROUPS.md) describes the Persian administrator editor and security limitations. [MCP setup](docs/MCP_SETUP.md#how-mcp-relates-to-a-panadan-users-permissions) explains how effective capabilities gate MCP. This is merged source code, not proof of production deployment.
+
+**Admin mirror health dashboard rollout (PR #98):** See [the isolated admin sync-status card release guide](docs/ADMIN_MIRROR_HEALTH_RELEASE.md). The host publisher is already installed separately; this web-only PR does not alter mirror synchronization, production reporting, or MCP. The UI is not live until the reviewed web image and read-only health directory are deployed.
+
 ## Data access and security
 
 - Dashboard/API/MCP can query only explicit read-only PostgreSQL transactions and allowlisted reporting columns; they cannot execute arbitrary user SQL or modify the reporting database.
@@ -397,9 +403,9 @@ bounded keyset backfill, transactional upsert checkpoints, reliable
 edit/delete detection, stale-data handling and when Redis is useful.
 No mirror or scheduler is enabled by this command.
 
-## Odoo reporting mirror: five-minute timestamp synchronization (staging)
+## Odoo reporting mirror: opt-in staging synchronization (not production)
 
-The isolated PostgreSQL 18 staging mirror has a separate, explicitly installed
+The isolated PostgreSQL 18 staging mirror can have an optional, explicitly installed
 systemd timer that uses **`create_date` and `write_date`** to discover new
 and changed Odoo reporting calls. Each selected call is imported with all 37
 fields; there is **no scheduled full-view comparison** and no mandatory new

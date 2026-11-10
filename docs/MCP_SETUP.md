@@ -10,6 +10,63 @@ Panadan exposes **read-only** MCP tools. It has two mutually exclusive auth mode
 The REST API and browser session authentication do not change when MCP switches modes.
 Raw transcripts are **not** exposed. A separate explicitly granted `calls:transcript:read` capability can enable redacted, paginated excerpts via `get_redacted_call_transcript`. Arbitrary SQL and write operations remain unavailable.
 
+## Unified field-limited MCP access (feature branch only — not live)
+
+Development branch: feat/unified-field-access-mcp-20261109.
+[Local test/release gates](UNIFIED_ACCESS_LOCAL_TEST.md).
+
+In this draft implementation, each MCP request uses the **actual active
+user** and the **verified bearer token or signed OAuth client ID**:
+
+    effective fields = current user's allowed fields
+                       intersect explicitly approved token/client fields
+                       intersect current tool capability
+                       intersect fixed server policy
+
+The base gate is MCP plus **at least one** reporting permission. Tools then
+perform their own independent checks, so a metrics-only user does not have
+to receive call-list permission just to use statistics.
+
+| MCP operation | Required user AND approved client permissions |
+| --- | --- |
+| get_my_access / explain_access | Verified linked MCP actor; safe metadata only |
+| list_recent_calls / get_call_summary | mcp:use + calls:read; only allowed non-sensitive call fields |
+| get_call_metrics | mcp:use + metrics:read; only aggregates whose input fields are delegated |
+| get_available_states | mcp:use + status field + calls:read or metrics:read |
+| get_redacted_call_transcript | mcp:use + calls:read + calls:transcript:read + transcription field + recorded audit |
+| Raw sensitive customer details and administrator tools | Not offered through MCP |
+
+Use get_my_access to understand the actual fields the app may receive.
+Use explain_access(field="customertell") to distinguish an administrator
+grant from a user's per-app OAuth consent. Neither tool returns customer
+records, arbitrary SQL, another user's grants, or a protected employee's
+existence.
+
+The [user-owned approval page](/dashboard/mcp-apps) preselects all
+MCP-eligible fields and capabilities the user owns for **a new client**.
+They may deselect any subset before approving, reapprove an existing client
+without silent expansion, or revoke. Panadan checks that approved client_id
+against an **already cryptographically verified** azp/client_id claim in the
+external IdP's signed access token. Legacy manual bearer tokens snapshot
+field/capability limits at issuance.
+
+This new branch's database migration is presently for the normal SQLite
+identity store, **not** the experimental PostgreSQL auth staging backend.
+The source mirror has 37 fields, but this branch only restricts the **19
+currently exposed production reporting fields**. It does not activate
+new source columns, row-scoped operator security or mirror cutover.
+
+**Important:** Production is still on the old MCP gate requiring calls and
+metrics together. This feature branch has not passed full local/CI tests,
+has not been reviewed for a production security release and is **not
+deployed**. Panadan is still only an OAuth resource server. A real
+compatible external IdP, signed client identity, HTTPS and actual client
+authorization are required for working OAuth; the manual approval page
+is not an authorization-server redirect or complete OAuth provider.
+
+See [the complete architecture](UNIFIED_AUTHORIZATION_MCP.md) and
+[feature-local test plan](UNIFIED_ACCESS_LOCAL_TEST.md).
+
 ## 1. Local setup without a domain (default)
 
 Leave `PANADAN_MCP_AUTH_MODE=legacy` in your private `.env.app`.

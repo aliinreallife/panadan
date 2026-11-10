@@ -22,9 +22,10 @@ from psycopg.rows import dict_row
 from .auth_store import validate_staging_dsn
 
 TABLE_COLUMNS = {
-    "users": ("id","username","password_hash","role","grants","is_active","profile_id"),
+    "users": ("id","username","password_hash","role","grants","field_grants","is_active","profile_id"),
     "sessions": ("token_hash","user_id","csrf","expires_at"),
-    "access_tokens": ("id","name","token_hash","scope","created_at","expires_at","last_used","owner_id"),
+    "access_tokens": ("id","name","token_hash","scope","created_at","expires_at","last_used","owner_id","field_grants","cap_grants"),
+    "mcp_client_grants": ("user_id","client_id","capabilities","fields","approved_at"),
     "oauth_identities": ("id","issuer","subject","user_id","created_at"),
     "transcript_access_audit": ("id","user_id","surface","call_id","char_limit","created_at"),
     "activity_events": ("id","user_id","surface","action","http_status","duration_ms","created_at"),
@@ -58,7 +59,13 @@ def inspect_snapshot(path: Path) -> tuple[sqlite3.Connection, dict[str, int]]:
     counts={}
     for table,expected in TABLE_COLUMNS.items():
         present={r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
-        required=set(expected) - ({"profile_id"} if table=="users" else set())
+        # Allow NULL defaults when reading older SQLite account/token rows,
+        # but require the consent table to exist before importing.
+        optional = (
+            {"profile_id", "field_grants"} if table=="users" else
+            {"field_grants", "cap_grants"} if table=="access_tokens" else set()
+        )
+        required=set(expected) - optional
         if not required <= present:
             conn.close()
             raise ValueError(f"Snapshot table {table} lacks expected columns")
@@ -136,6 +143,10 @@ def _read_rows(source: sqlite3.Connection,table: str) -> tuple[tuple[str,...],li
             # If the SQLite store already has profile IDs, retain them.
             # Otherwise allocate cryptographically random opaque identifiers.
             data["profile_id"]=data.get("profile_id") or "prf_"+secrets.token_urlsafe(24)
+            data.setdefault("field_grants", None)
+        if table=="access_tokens":
+            data.setdefault("field_grants", None)
+            data.setdefault("cap_grants", None)
         records.append(tuple(data[col] for col in columns))
     return columns,records
 

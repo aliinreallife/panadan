@@ -98,6 +98,10 @@ def evaluate(snapshot, *, now=None):
         state = "disk_low"
     elif snapshot["service_ok"] is False:
         state = "service_failed"
+    elif snapshot["source_enabled"] is not True:
+        # A stopped/unconfigured source must never appear caught up merely
+        # because its last processed timestamp is recent.
+        state = "not_configured"
     elif upper is not None:
         state = "catching_up"
     elif lag is None or lag > FRESH_THRESHOLD_SECONDS:

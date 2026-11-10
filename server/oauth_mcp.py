@@ -109,6 +109,11 @@ class OAuthVerifier:
         )
 
     def verify(self, raw: str) -> str | None:
+        details = self.verify_details(raw)
+        return details['subject'] if details else None
+
+    def verify_details(self, raw: str) -> dict | None:
+        """Return verified subject and signed OAuth client identity, if provided."""
         if not raw or len(raw) > 8192 or raw.count(".") != 2:
             return None
         try:
@@ -144,6 +149,15 @@ class OAuthVerifier:
                 return None
             if payload.get("token_use", "access") != "access":
                 return None
-            return sub
+            # Client identity must be part of the signed JWT. Never use a
+            # model argument, display name, header or unverified claim.
+            azp, client_id = payload.get("azp"), payload.get("client_id")
+            if azp is not None and client_id is not None and azp != client_id:
+                return None
+            client = azp if azp is not None else client_id
+            if (client is not None and
+                    (type(client) is not str or not 1 <= len(client) <= 160)):
+                return None
+            return {"subject": sub, "client_id": client}
         except (InvalidTokenError, ValueError, TypeError, KeyError, OSError, TimeoutError, jwt.PyJWKClientError):
             return None

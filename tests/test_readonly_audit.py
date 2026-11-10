@@ -56,8 +56,20 @@ def test_only_non_sensitive_read_only_mcp_tools_exist():
     names = {tool.name for tool in mcp_tools.mcp._tool_manager.list_tools()}
     assert names == {
         "list_recent_calls", "get_call_summary", "get_call_metrics", "get_available_states",
-        "get_redacted_call_transcript"
+        "get_redacted_call_transcript", "get_my_access", "explain_access",
     }
+    by_name = {tool.name: tool for tool in mcp_tools.mcp._tool_manager.list_tools()}
+    # Access-discovery tools can only inspect the caller's current policy.
+    # They are read-only, with no source customer data or permission writes.
+    for name in ("get_my_access", "explain_access"):
+        annotations = by_name[name].annotations
+        assert annotations is not None
+        assert annotations.read_only_hint is True
+        assert annotations.destructive_hint is False
+        assert annotations.open_world_hint is False
+    # Reading a transcript writes an audit event and must NOT be advertised
+    # as side-effect-free.
+    assert by_name["get_redacted_call_transcript"].annotations.read_only_hint is False
 
 
 def test_rest_reporting_routes_offer_get_only():

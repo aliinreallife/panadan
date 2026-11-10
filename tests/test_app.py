@@ -541,6 +541,157 @@ def test_dashboard_does_not_retry_invalid_sql_or_validation_errors(client, monke
 
 
 
+def test_admin_permission_groups_are_rendered_and_legacy_access_retained(client):
+    c, main = client
+    reader_id = main.store.create_user(
+        "grantedreader", "some-long-safe-password", "reader",
+        ["calls:read"])
+    reader = next(u for u in main.store.list_users() if u["id"] == reader_id)
+    assert main.permissions(reader["role"], reader["grants"]) == {"calls:read"}
+
+    raw, _ = main.store.create_session(reader_id)
+    c.cookies.set("panadan_session", raw)
+    assert c.get("/dashboard/users").status_code == 403
+
+    admin_id = main.store.verify_login(
+        "admin", "a-long-safe-testing-password")
+    admin_cookie, _ = main.store.create_session(admin_id)
+    c.cookies.set("panadan_session", admin_cookie)
+    page = c.get("/dashboard/users")
+    assert page.status_code == 200
+    assert "گروه دسترسی" in page.text
+    assert "کم‌خطر" in page.text
+    assert "محرمانه" in page.text
+    assert "مدیریتی" in page.text
+    assert "access-group-catalog" in page.text
+    assert "data-group-select" in page.text
+    assert 'class="user-edit-form"' in page.text
+    assert "دسترسی سفارشی" in page.text or "مشاهده تماس‌ها" in page.text
+    assert c.get("/static/users.js").status_code == 200
+    assert main.permissions(reader["role"], reader["grants"]) == {"calls:read"}
+
+
+def test_group_label_cannot_bypass_backend_grant_validation(client):
+    c, main = client
+    admin_id = main.store.verify_login(
+        "admin", "a-long-safe-testing-password")
+    raw, csrf = main.store.create_session(admin_id)
+    c.cookies.set("panadan_session", raw)
+    # The optional UI preset label is NOT an authorization source.
+    response = c.post("/dashboard/users", data={
+        "csrf": csrf,
+        "username": "untrustedpreset",
+        "password": "some-long-safe-password",
+        "role": "reader",
+        "group_preset": "confidential",
+        "grants": ["calls:read"],
+    }, follow_redirects=False)
+    assert response.status_code == 303
+    user = next(u for u in main.store.list_users()
+                if u["username"] == "untrustedpreset")
+    assert main.permissions(user["role"], user["grants"]) == {"calls:read"}
+    # A forged unsupported sensitive combination is rejected regardless of
+    # the selected UI group, and no user is created.
+    rejected = c.post("/dashboard/users", data={
+        "csrf": csrf,
+        "username": "deniedconfidential",
+        "password": "some-long-safe-password",
+        "role": "reader",
+        "grants": ["calls:sensitive"],
+    })
+    assert rejected.status_code == 400
+    assert all(u["username"] != "deniedconfidential"
+               for u in main.store.list_users())
+
+def test_mirror_health_is_admin_only_and_does_not_expose_customer_data(client, monkeypatch):
+    c, main = client
+    observed = []
+    fake = {
+        "state": "catching_up", "records": 97038, "revisions": 98719,
+        "pages": 58, "lag_seconds": 7200,
+        "completed_through": "2026-11-09T05:56:46+00:00",
+        "last_processed": "2026-11-09T06:00:00+00:00",
+        "window_upper": "2026-11-09T08:00:00+00:00",
+        "last_commit": "2026-11-09T06:05:24Z",
+        "generated_at": "2026-11-09T06:06:00Z",
+        "vpn_healthy": True, "timer_active": True,
+        "disk_free_bytes": 6800000000, "source_enabled": False,
+        "detail": "telemetry_only",
+    }
+
+    def load():
+        observed.append(True)
+        return fake
+
+    monkeypatch.setattr(main.mirror_health, "load_admin_mirror_health", load)
+    assert c.get("/dashboard/mirror-health").status_code == 401
+    assert not observed
+
+    user_id = main.store.create_user(
+        "mirror_reader", "another-long-password", "reader", ["calls:read"])
+    raw, _ = main.store.create_session(user_id)
+    c.cookies.set("panadan_session", raw)
+    assert c.get("/dashboard/mirror-health").status_code == 403
+    assert "mirror-health-panel" not in c.get("/dashboard").text
+    assert not observed
+
+    admin_id = main.store.verify_login(
+        "admin", "a-long-safe-testing-password")
+    raw, _ = main.store.create_session(admin_id)
+    c.cookies.set("panadan_session", raw)
+    page = c.get("/dashboard/system")
+    assert page.status_code == 200
+    assert "mirror-health-panel" in page.text
+    assert "/static/mirror-health.js" in page.text
+    assert "mirror-health-panel" not in c.get("/dashboard").text
+    assert c.get("/dashboard/operator?name=Test%20Op").status_code == 200
+    assert "mirror-health-panel" not in c.get(
+        "/dashboard/operator?name=Test%20Op").text
+
+    result = c.get("/dashboard/mirror-health")
+    assert result.status_code == 200
+    assert result.headers["Cache-Control"] == "no-store"
+    assert result.json() == fake
+    assert observed == [True]
+    assert "customername" not in result.text
+    assert "transcription" not in result.text
+
+
+def test_admin_system_monitoring_is_separate_and_protected(client):
+    c, main = client
+    assert c.get('/dashboard/system').status_code == 401
+    uid = main.store.create_user(
+        'statusreader', 'another-long-password', 'reader', ['calls:read']
+    )
+    token, _ = main.store.create_session(uid)
+    c.cookies.set('panadan_session', token)
+    assert c.get('/dashboard/system').status_code == 403
+    assert c.get('/dashboard/mirror-health').status_code == 403
+
+    admin = main.store.verify_login('admin', 'a-long-safe-testing-password')
+    token, _ = main.store.create_session(admin)
+    c.cookies.set('panadan_session', token)
+    response = c.get('/dashboard/system')
+    assert response.status_code == 200
+    assert response.headers['cache-control'] == 'no-store'
+    assert 'وضعیت نسخهٔ محلی Odoo' in response.text
+    assert 'mirror-health-panel' in response.text
+    assert 'access-user-search' not in response.text
+
+    dashboard = c.get('/dashboard')
+    assert dashboard.status_code == 200
+    assert 'mirror-health-panel' not in dashboard.text
+    assert 'href="/dashboard/system"' in dashboard.text
+
+    users = c.get('/dashboard/users')
+    assert users.status_code == 200
+    assert 'id="access-user-search"' in users.text
+    assert 'id="access-user-status"' in users.text
+    assert 'id="access-user-role"' in users.text
+    assert 'id="create-user"' in users.text
+    assert 'data-user-name="statusreader"' in users.text
+
+
 def test_operator_scope_admin_page_is_hidden_until_explicitly_enabled(client, monkeypatch):
     c, main = client
     assert c.get('/dashboard/operator-scopes').status_code == 401
@@ -597,57 +748,3 @@ def test_operator_scope_admin_page_is_hidden_until_explicitly_enabled(client, mo
             "SELECT action FROM operator_scope_audit ORDER BY event_id"
         ).fetchall()
     assert [r['action'] for r in actions] == ['grant', 'revoke']
-
-
-
-def test_mirror_health_is_admin_only_and_does_not_expose_customer_data(client, monkeypatch):
-    c, main = client
-    observed = []
-    fake = {
-        "state": "catching_up", "records": 97038, "revisions": 98719,
-        "pages": 58, "lag_seconds": 7200,
-        "completed_through": "2026-11-09T05:56:46+00:00",
-        "last_processed": "2026-11-09T06:00:00+00:00",
-        "window_upper": "2026-11-09T08:00:00+00:00",
-        "last_commit": "2026-11-09T06:05:24Z",
-        "generated_at": "2026-11-09T06:06:00Z",
-        "vpn_healthy": True, "timer_active": True,
-        "disk_free_bytes": 6800000000, "source_enabled": False,
-        "detail": "telemetry_only",
-    }
-
-    def load():
-        observed.append(True)
-        return fake
-
-    monkeypatch.setattr(main.mirror_health, "load_admin_mirror_health", load)
-    assert c.get("/dashboard/mirror-health").status_code == 401
-    assert not observed
-
-    user_id = main.store.create_user(
-        "mirror_reader", "another-long-password", "reader", ["calls:read"])
-    raw, _ = main.store.create_session(user_id)
-    c.cookies.set("panadan_session", raw)
-    assert c.get("/dashboard/mirror-health").status_code == 403
-    assert "mirror-health-panel" not in c.get("/dashboard").text
-    assert not observed
-
-    admin_id = main.store.verify_login(
-        "admin", "a-long-safe-testing-password")
-    raw, _ = main.store.create_session(admin_id)
-    c.cookies.set("panadan_session", raw)
-    page = c.get("/dashboard")
-    assert page.status_code == 200
-    assert "mirror-health-panel" in page.text
-    assert "/static/mirror-health.js" in page.text
-    assert c.get("/dashboard/operator?name=Test%20Op").status_code == 200
-    assert "mirror-health-panel" not in c.get(
-        "/dashboard/operator?name=Test%20Op").text
-
-    result = c.get("/dashboard/mirror-health")
-    assert result.status_code == 200
-    assert result.headers["Cache-Control"] == "no-store"
-    assert result.json() == fake
-    assert observed == [True]
-    assert "customername" not in result.text
-    assert "transcription" not in result.text

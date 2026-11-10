@@ -24,6 +24,14 @@ validate_staging_dsn(dsn)
 
 from server import main  # noqa: E402
 
+# Synthetic reporting values only; never connect to the production Odoo view.
+secret = "SYNTHETIC-CUSTOMER-SECRET"
+main.database.list_calls = lambda *a, **kw: [{
+    "id": 73, "CALLDATE": "2026-11-09",
+    "aicallinfostate": "Unchecked", "customername": secret,
+}]
+main.database.statuses = lambda: ["Unchecked"]
+main.database.stats = lambda *a, **kw: {"total": 1, "sold_out": 0}
 store = main.store
 # The caller creates an empty, dedicated CI auth schema with a setup fixture.
 # Refuse to touch nonempty accounts/tokens instead of modifying an existing
@@ -102,7 +110,37 @@ with TestClient(main.app, base_url="http://localhost:8508") as client:
     assert initialize.status_code == 200
     tools = extract(post(client, alice_token, "tools/list", request_id=2))["tools"]
     names = {t["name"] for t in tools}
-    assert len(names) == 6, "staging profile is additive to the original five tools"
+    # Seven current reporting/access tools plus the staging-only profile.
+    # Discovery can advertise tools, but authorization occurs per call.
+    expected_tools = {
+        "get_profile", "get_my_access", "explain_access",
+        "list_recent_calls", "get_call_summary", "get_call_metrics",
+        "get_available_states", "get_redacted_call_transcript",
+    }
+    assert names == expected_tools
+    assert len(tools) == len(names), "duplicate tool names"
+
+    # Unified PostgreSQL auth must now enforce the SAME field-grant
+    # intersections as SQLite on the real HTTP/MCP transport.
+    def tool_call(token, name, arguments=None, request_id=20):
+        return post(client, token, "tools/call", {
+            "name": name, "arguments": arguments or {},
+        }, request_id=request_id)
+
+    mine = extract(tool_call(alice_token, "get_my_access", request_id=20))
+    assert mine["actor"] == "self"
+    assert "calls:read" in mine["capabilities"]
+    assert "id" in {field["id"] for field in mine["columns"]}
+    explanation = extract(tool_call(alice_token, "explain_access",
+        {"field": "aicallinfostate"}, request_id=21))
+    assert explanation["allowed"] is True
+    recent = extract(tool_call(alice_token, "list_recent_calls",
+        {"limit": 1}, request_id=22))
+    assert recent["id"] == 73
+    assert recent["CALLDATE"] == "2026-11-09"
+    assert secret not in str(recent)
+    assert secret not in tool_call(alice_token,"list_recent_calls",{"limit":1},
+                                   request_id=23).text
     profile_tool = next(t for t in tools if t["name"] == "get_profile")
     assert profile_tool["_meta"]["openai/profile"] is True
     assert profile_tool["annotations"]["readOnlyHint"] is True
