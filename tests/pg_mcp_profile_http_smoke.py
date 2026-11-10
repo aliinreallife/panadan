@@ -102,7 +102,27 @@ with TestClient(main.app, base_url="http://localhost:8508") as client:
     assert initialize.status_code == 200
     tools = extract(post(client, alice_token, "tools/list", request_id=2))["tools"]
     names = {t["name"] for t in tools}
-    assert len(names) == 6, "staging profile is additive to the original five tools"
+    # Seven current reporting/access tools plus the staging-only profile.
+    # Discovery can advertise tools, but authorization occurs per call.
+    expected_tools = {
+        "get_profile", "get_my_access", "explain_access",
+        "list_recent_calls", "get_call_summary", "get_call_metrics",
+        "get_available_states", "get_redacted_call_transcript",
+    }
+    assert names == expected_tools
+    assert len(tools) == len(names), "duplicate tool names"
+
+    # PG field-grant persistence is not migrated. Newly advertised tools
+    # must fail closed for a valid MCP bearer instead of querying reporting.
+    for number, name, arguments in (
+        (20, "get_my_access", {}),
+        (21, "explain_access", {"field": "aicallinfostate"}),
+        (22, "list_recent_calls", {"limit": 1}),
+    ):
+        denied = extract(post(client, alice_token, "tools/call", {
+            "name": name, "arguments": arguments,
+        }, request_id=number))
+        assert denied.get("error") == "permission_denied", name
     profile_tool = next(t for t in tools if t["name"] == "get_profile")
     assert profile_tool["_meta"]["openai/profile"] is True
     assert profile_tool["annotations"]["readOnlyHint"] is True
