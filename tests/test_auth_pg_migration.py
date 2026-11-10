@@ -363,12 +363,11 @@ def test_staged_pg_http_runtime_preserves_imported_identity_and_revocation(
         assert client.get("/dashboard").status_code == 200
         api_id, api_token = store.create_token("synthetic API", "api:read", 7, analyst_id)
         headers = {"authorization": "Bearer " + api_token}
-        # The imported bearer remains valid, but PG auth does not yet
-        # implement the unified per-user field policy. Reporting must fail
-        # closed rather than silently bypass column authorization.
+        # The imported bearer is valid and the PostgreSQL runtime must now
+        # apply the same user, token, and field intersections as SQLite.
         assert store.verify_token(api_token, "api:read", "metrics:read")
         assert store.actor_for_token(api_token, "api:read") == analyst_id
-        assert client.get("/api/v1/states", headers=headers).status_code == 401
+        assert client.get("/api/v1/states", headers=headers).status_code == 200
         # Direct HTTP revocation proves no stale client-side permission cache.
         store.update_user(analyst_id, "reader", ["calls:read"], True, admin_id)
         assert client.get("/dashboard", follow_redirects=False).status_code == 303
@@ -494,3 +493,76 @@ def test_parity_error_rolls_back_all_imported_auth_tables(
             assert target.execute(
                 f"SELECT COUNT(*) FROM panadan_auth.{table}"
             ).fetchone()[0] == 0
+
+
+def test_postgres_unified_fields_tokens_and_oauth_consent(disposable_db):
+    """Real disposable PG18 enforces the same grant intersections as SQLite."""
+    import json
+    from server.security_pg import PgStore
+    store = PgStore(disposable_db)
+    store.bootstrap("synthetic_admin", "synthetic-test-admin-password")
+    admin = store.verify_login("synthetic_admin", "synthetic-test-admin-password")
+    uid = store.create_user(
+        "permitted_pg", "synthetic-test-analyst-password", "analyst",
+        ["calls:read", "metrics:read", "mcp:use"],
+        fields=["id", "CALLDATE", "aicallinfostate"],
+    )
+    access = store.user_access(uid)
+    assert access["fields"] == {"id", "CALLDATE", "aicallinfostate"}
+    assert "calls:read" in access["capabilities"]
+
+    mcp_id, mcp_token = store.create_token("AI", "mcp:read", 7, uid)
+    assert store.verify_token(mcp_token, "mcp:read")
+    delegated = store.mcp_access(uid, legacy_token=mcp_token)
+    assert delegated["fields"] == access["fields"]
+    assert {"calls:read", "metrics:read", "mcp:use"} <= delegated["capabilities"]
+
+    store.approve_mcp_client(uid, "verified-client-one",
+        ["mcp:use", "calls:read"], ["id", "CALLDATE"])
+    store.approve_mcp_client(uid, "verified-client-two",
+        ["mcp:use", "metrics:read"], ["aicallinfostate"])
+    first = store.mcp_access(uid, oauth_client="verified-client-one")
+    second = store.mcp_access(uid, oauth_client="verified-client-two")
+    assert first["fields"] == {"id", "CALLDATE"}
+    assert second["fields"] == {"aicallinfostate"}
+    assert "metrics:read" not in first["capabilities"]
+    assert "calls:read" not in second["capabilities"]
+    assert store.mcp_access(uid, oauth_client="unknown")["fields"] == set()
+    with pytest.raises(ValueError):
+        store.approve_mcp_client(uid, "verified-client-one",
+            ["mcp:use", "calls:read"], ["customername"])
+
+    api_id, api_token = store.create_token("REST", "api:read", 7, uid)
+    api = store.api_token_access(uid, api_token, "api:read")
+    assert api["fields"] == access["fields"]
+
+    # Simulate unexpected direct SQL grant growth. Existing tokens must
+    # not inherit the newly granted field or capability.
+    with store.db() as con:
+        con.execute(
+            "UPDATE panadan_auth.users SET grants=%s, field_grants=%s WHERE id=%s",
+            (json.dumps(["calls:read","metrics:read","mcp:use","calls:sensitive"]),
+             json.dumps(["id","CALLDATE","aicallinfostate","customername"]), uid),
+        )
+    assert "customername" not in store.api_token_access(uid, api_token, "api:read")["fields"]
+    assert "customername" not in store.mcp_access(uid, legacy_token=mcp_token)["fields"]
+    assert "customername" not in store.mcp_access(uid, oauth_client="verified-client-one")["fields"]
+
+    store.revoke_mcp_client(uid, "verified-client-one")
+    assert store.mcp_access(uid, oauth_client="verified-client-one")["fields"] == set()
+    assert store.mcp_access(uid, oauth_client="verified-client-two")["fields"] == {
+        "aicallinfostate"}
+
+    # Explicit account policy edits revoke browser sessions, API/MCP tokens,
+    # IdP identity bindings and all client approvals.
+    browser, _ = store.create_session(uid)
+    store.update_user(uid, "reader", ["calls:read"], True, admin, fields=["id"])
+    assert store.session(browser) is None
+    assert not store.verify_token(mcp_token, "mcp:read")
+    assert not store.verify_token(api_token, "api:read")
+    assert store.mcp_access(uid, legacy_token=mcp_token) is None
+    assert store.list_mcp_clients(uid) == []
+    assert store.user_access(uid)["fields"] == {"id"}
+    assert store.mcp_access(uid, oauth_client="verified-client-two") is None
+    store.revoke(api_id)
+    store.revoke(mcp_id)
