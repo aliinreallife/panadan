@@ -206,6 +206,8 @@ the one-click OAuth consent experience.
 
 **Permission groups redesign (PR #99):** The [access-category and preset guide](docs/ACCESS_PERMISSION_GROUPS.md) describes the new Persian administrator editor and security limitations. [MCP setup](docs/MCP_SETUP.md#how-mcp-relates-to-a-panadan-users-permissions) explains how effective user capabilities gate connections and the transcript tool. This is a draft UI/security change, not a deployed access migration.
 
+**Admin mirror health dashboard rollout (PR #98):** See [the isolated admin sync-status card release guide](docs/ADMIN_MIRROR_HEALTH_RELEASE.md). The host publisher is already installed separately; this web-only PR does not alter mirror synchronization, production reporting, or MCP. The UI is not live until the reviewed web image and read-only health directory are deployed.
+
 ## Data access and security
 
 - Dashboard/API/MCP can query only explicit read-only PostgreSQL transactions and allowlisted reporting columns; they cannot execute arbitrary user SQL or modify the reporting database.
