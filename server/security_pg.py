@@ -384,6 +384,185 @@ class PgStore:
             return None
         return int(row["id"])
 
+    def user_access(self, user_id: int) -> dict | None:
+        """Effective user grant intersection, recomputed for each request."""
+        with self.db() as con:
+            row=con.execute(
+                "SELECT id,role,grants,field_grants,is_active "
+                "FROM panadan_auth.users WHERE id=%s", (user_id,),
+            ).fetchone()
+        if not row or not row["is_active"]:
+            return None
+        caps=permissions(row["role"],row["grants"])
+        return {"user_id":int(row["id"]), "capabilities":caps,
+                "fields":effective_fields(caps,row["field_grants"])}
+
+    def client_grants(self, user_id: int, client_id: str) -> dict | None:
+        if type(client_id) is not str or not 1<=len(client_id)<=160:
+            return None
+        with self.db() as con:
+            row=con.execute(
+                "SELECT capabilities,fields FROM panadan_auth.mcp_client_grants "
+                "WHERE user_id=%s AND client_id=%s", (user_id,client_id),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            caps=json.loads(row["capabilities"])
+            fields=json.loads(row["fields"])
+            if (type(caps) is not list or type(fields) is not list or
+                    any(type(v) is not str for v in caps+fields) or
+                    len(caps)!=len(set(caps)) or len(fields)!=len(set(fields))):
+                return None
+            return {"capabilities":frozenset(caps), "fields":frozenset(fields)}
+        except (TypeError, ValueError):
+            return None
+
+    def approve_mcp_client(self, user_id: int, client_id: str,
+                           caps: list[str], fields: list[str]) -> None:
+        """Atomic approval: user rights cannot be modified mid-consent."""
+        if (type(client_id) is not str or not 1<=len(client_id)<=160 or
+                any(ord(ch)<33 or ord(ch)>126 for ch in client_id)):
+            raise ValueError("Invalid OAuth client identifier")
+        if (type(caps) is not list or any(type(x) is not str for x in caps)
+                or len(set(caps)) != len(caps)):
+            raise ValueError("Invalid delegated capabilities")
+        with self.db() as con:
+            row=con.execute(
+                "SELECT role,grants,field_grants,is_active "
+                "FROM panadan_auth.users WHERE id=%s FOR UPDATE", (user_id,),
+            ).fetchone()
+            if not row or not row["is_active"]:
+                raise ValueError("Account unavailable")
+            allowed_caps=permissions(row["role"],row["grants"])
+            available_fields=effective_fields(allowed_caps,row["field_grants"])
+            if ("mcp:use" not in allowed_caps or "mcp:use" not in caps or
+                    not set(caps) <= allowed_caps &
+                        {"mcp:use","calls:read","metrics:read","calls:transcript:read"} or
+                    ("calls:transcript:read" in caps and "calls:read" not in caps)):
+                raise ValueError("Delegated capabilities exceed user access")
+            chosen=validate_fields(fields, allowed_caps)
+            if (not set(chosen) <= available_fields or
+                    not set(chosen) <= capability_fields(set(caps))):
+                raise ValueError("Delegated fields exceed user access")
+            con.execute(
+                """INSERT INTO panadan_auth.mcp_client_grants
+                   (user_id,client_id,capabilities,fields,approved_at)
+                   VALUES (%s,%s,%s,%s,%s)
+                   ON CONFLICT(user_id,client_id) DO UPDATE SET
+                   capabilities=excluded.capabilities,fields=excluded.fields,
+                   approved_at=excluded.approved_at""",
+                (user_id,client_id,json.dumps(sorted(caps)),
+                 json.dumps(chosen),int(time.time())),
+            )
+
+    def revoke_mcp_client(self, user_id: int, client_id: str) -> None:
+        with self.db() as con:
+            con.execute(
+                "DELETE FROM panadan_auth.mcp_client_grants "
+                "WHERE user_id=%s AND client_id=%s", (user_id,client_id),
+            )
+
+    def list_mcp_clients(self, user_id: int) -> list[dict]:
+        with self.db() as con:
+            return con.execute(
+                "SELECT client_id,capabilities,fields,approved_at "
+                "FROM panadan_auth.mcp_client_grants "
+                "WHERE user_id=%s ORDER BY approved_at DESC",
+                (user_id,),
+            ).fetchall()
+
+    def mcp_access(self, user_id: int, *, legacy_token: str | None = None,
+                   oauth_client: str | None = None) -> dict | None:
+        """Never trust tool input for principal/field grants; intersect all."""
+        if bool(legacy_token)==bool(oauth_client):
+            return None
+        access=self.user_access(user_id)
+        if access is None or "mcp:use" not in access["capabilities"]:
+            return None
+        if legacy_token:
+            if len(legacy_token)>256:
+                return None
+            with self.db() as con:
+                row=con.execute(
+                    "SELECT field_grants,cap_grants FROM panadan_auth.access_tokens "
+                    "WHERE owner_id=%s AND token_hash=%s AND scope='mcp:read' "
+                    "AND expires_at>%s",
+                    (user_id,digest(legacy_token),int(time.time())),
+                ).fetchone()
+            if row is None:
+                return None
+            try:
+                if row["cap_grants"] is None:
+                    caps=frozenset({"mcp:use","calls:read","metrics:read","calls:transcript:read"})
+                else:
+                    parsed=json.loads(row["cap_grants"])
+                    if type(parsed) is not list or any(type(x) is not str for x in parsed):
+                        return None
+                    caps=frozenset(parsed)
+                if row["field_grants"] is None:
+                    fields=capability_fields(
+                        {"calls:read","calls:sensitive","metrics:read"})
+                else:
+                    parsed=json.loads(row["field_grants"])
+                    if type(parsed) is not list or any(type(x) is not str for x in parsed):
+                        return None
+                    fields=frozenset(parsed)
+            except (TypeError,ValueError):
+                return None
+            approved={"capabilities":caps,"fields":fields}
+        else:
+            approved=self.client_grants(user_id,oauth_client)
+            if approved is None:
+                approved={"capabilities":frozenset(),"fields":frozenset()}
+        effective_caps=access["capabilities"] & approved["capabilities"]
+        effective_columns=access["fields"] & approved["fields"] & capability_fields(effective_caps)
+        return {"user_fields":access["fields"],
+                "user_capabilities":access["capabilities"],
+                "approved_fields":approved["fields"],
+                "approved_capabilities":approved["capabilities"],
+                "fields":effective_columns,"capabilities":effective_caps}
+
+    def api_token_access(self, user_id: int, raw: str, scope: str) -> dict | None:
+        if scope not in ("api:read","api:sensitive") or not raw or len(raw)>256:
+            return None
+        access=self.user_access(user_id)
+        if access is None:
+            return None
+        with self.db() as con:
+            row=con.execute(
+                "SELECT scope,field_grants,cap_grants "
+                "FROM panadan_auth.access_tokens "
+                "WHERE owner_id=%s AND token_hash=%s AND expires_at>%s",
+                (user_id,digest(raw),int(time.time())),
+            ).fetchone()
+        if not row or (row["scope"]!=scope and not (
+                scope=="api:read" and row["scope"]=="api:sensitive")):
+            return None
+        try:
+            caps=set(access["capabilities"])
+            fields=set(access["fields"])
+            if row["cap_grants"] is not None:
+                issued=json.loads(row["cap_grants"])
+                if type(issued) is not list or any(type(v) is not str for v in issued):
+                    return None
+                caps &= set(issued)
+            if row["field_grants"] is not None:
+                issued_fields=json.loads(row["field_grants"])
+                if (type(issued_fields) is not list or
+                        any(type(v) is not str for v in issued_fields) or
+                        len(issued_fields)!=len(set(issued_fields))):
+                    return None
+                fields &= set(issued_fields)
+            if scope=="api:read":
+                caps &= {"calls:read","metrics:read"}
+            elif not {"calls:read","calls:sensitive"} <= caps:
+                return None
+            return {"capabilities":frozenset(caps),
+                    "fields":frozenset(fields & capability_fields(caps))}
+        except (TypeError,ValueError):
+            return None
+
     def mcp_profile(self, *, oauth_issuer: str | None = None,
                     oauth_subject: str | None = None,
                     legacy_token: str | None = None) -> dict | None:
