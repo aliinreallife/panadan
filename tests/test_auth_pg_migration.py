@@ -25,10 +25,15 @@ def snapshot(tmp_path):
     admin=store.verify_login("synthetic_admin","synthetic-test-admin-password-very-long")
     analyst=store.create_user(
         "synthetic_analyst","synthetic-test-analyst-password-very-long",
-        "analyst",["calls:read","metrics:read","mcp:use"]
+        "analyst",["calls:read","metrics:read","mcp:use"],
+        fields=["id","CALLDATE","aicallinfostate"]
     )
     session,csrf=store.create_session(analyst)
     _,token=store.create_token("synthetic_mcp","mcp:read",7,analyst)
+    store.approve_mcp_client(
+        analyst, "signed-synthetic-client",
+        ["mcp:use","calls:read"], ["id","CALLDATE"]
+    )
     store.bind_oauth_identity("https://identity.example.test","subject-synthetic-1",analyst)
     store.record_activity(user_id=analyst,surface="mcp",action="MCP synthetic",
                           http_status=200,duration_ms=2)
@@ -51,6 +56,7 @@ def test_offline_snapshot_preflight_and_no_token_output(snapshot,capsys):
         assert counts["activity_events"]==1
     finally:
         connection.close()
+    assert counts["mcp_client_grants"] == 1
     assert token not in capsys.readouterr().out
 
 
@@ -92,7 +98,7 @@ def disposable_db():
         owner.execute(sql)
         for table in (
             "activity_events","transcript_access_audit","oauth_identities","access_tokens",
-            "sessions","login_throttle","operator_directory","users",
+            "mcp_client_grants","sessions","login_throttle","operator_directory","users",
         ):
             # Disposable CI database only. Never on real Panadan.
             owner.execute(f"TRUNCATE panadan_auth.{table} RESTART IDENTITY CASCADE")
@@ -113,10 +119,25 @@ def test_transactional_pg_import_preserves_accounts_tokens_bindings(snapshot,dis
         ).fetchone()
         assert role=="analyst"
         assert profile.startswith("prf_")
+        assert pg.execute(
+            "SELECT field_grants FROM panadan_auth.users WHERE id=%s", (analyst,)
+        ).fetchone()[0] == '["CALLDATE", "aicallinfostate", "id"]'
         assert ":" in hash_password
         assert pg.execute("SELECT COUNT(*) FROM panadan_auth.oauth_identities").fetchone()[0]==1
         assert pg.execute("SELECT csrf FROM panadan_auth.sessions WHERE user_id=%s",(analyst,)).fetchone()[0]==csrf
         assert pg.execute("SELECT count(*) FROM panadan_auth.access_tokens").fetchone()[0]==1
+        assert pg.execute(
+            "SELECT field_grants,cap_grants FROM panadan_auth.access_tokens"
+        ).fetchone() == (
+            '["CALLDATE", "aicallinfostate", "id"]',
+            '["calls:read", "mcp:use", "metrics:read"]'
+        )
+        assert pg.execute(
+            "SELECT client_id,capabilities,fields FROM panadan_auth.mcp_client_grants"
+        ).fetchone() == (
+            "signed-synthetic-client",
+            '["calls:read", "mcp:use"]', '["CALLDATE", "id"]'
+        )
         # Explicitly verify the stored digest rather than copying raw bearer.
         from server.security import digest
         assert pg.execute("SELECT token_hash FROM panadan_auth.access_tokens").fetchone()[0]==digest(token)
@@ -449,7 +470,7 @@ def test_postgres_import_detects_single_field_drift_with_identical_counts(
 def test_parity_error_rolls_back_all_imported_auth_tables(
     snapshot, disposable_db, monkeypatch
 ):
-    """Even a late, schema-valid mismatch aborts the entire 8-table import."""
+    """Even a late, schema-valid mismatch aborts the entire 9-table import."""
     import server.auth_pg_migration as migration
 
     monkeypatch.setenv("PANADAN_AUTH_MIGRATION_TEST_ALLOW_APPLY", "YES")
