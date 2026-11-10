@@ -1,10 +1,11 @@
 # Unified field permissions and MCP delegation — local testing / release gates
 
 **Development branch:** feat/unified-field-access-mcp-20261109
-**Stacked on:** PR #99 (categorized permissions)
-**Status:** code committed, NOT TESTED WITH CI, NOT APPROVED FOR PRODUCTION.
+**Base:** `main` (PR #99 permission groups and PR #98 mirror-health UI are merged).
+**Status:** synthetic local and GitHub CI checks pass on the integration branch;
+**security signoff and production deployment are NOT approved**.
 This is an incremental security change; do not mix it with PR #97's Odoo
-mirror cutover or PR #98's admin mirror-health UI deployment.
+mirror cutover. The newly merged PR #98 web health panel is preserved.
 
 ## What is implemented in this branch
 
@@ -61,8 +62,10 @@ mirror cutover or PR #98's admin mirror-health UI deployment.
    the discovery list to the caller's grants is a separate UI/privacy step.
 6. No user-to-admin access-request workflow yet. explain_access instructs
    which kind of approval is missing but does not send a request.
-7. No GitHub Actions minutes are currently available. Until local tests
-   pass and the deployment is reviewed, do not merge or deploy.
+7. GitHub Actions CI is now available. The four quality/integration/Docker
+   checks passed on commit `26263ec` after the combined `main` merge.
+   Passing CI is not approval to merge/deploy: complete the security and
+   production recovery acceptance criteria below first.
 
 ## Run tests only on your development WSL computer
 
