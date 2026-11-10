@@ -19,6 +19,22 @@ The endpoint is GET /dashboard/mirror-health. It requires an authenticated
 admin with users:manage, sends Cache-Control: no-store and returns no
 customer records or source identifiers.
 
+## Required external publisher contract (not included in this PR)
+
+This is deliberately a **web-only PR**. The publisher source and installer
+scripts (`tools/publish-odoo-mirror-admin-health.py` and
+`tools/install-odoo-mirror-admin-health-systemd.sh`) currently live on
+separate draft PR #97, not this branch or `main`. Its installation on a host
+does **not** establish release eligibility or guarantee the script matches
+a reviewed revision. This PR's automated tests validate the JSON reader,
+shape, field allowlist and failure states, not the external publisher script.
+Before any deployment, independently review and verify the installed publisher
+produces the exact version-1 17-field JSON schema expected by
+`server/mirror_health.py`, excludes all customer data and secrets, and is
+pinned to an authorized reviewed revision. If the publisher is unverified,
+do not mount telemetry or deploy this dashboard change.
+A disabled/unknown `source_enabled` flag is **not configured**, never green.
+
 ## Phase 1 — read-only VPS checks
 
 ~~~bash

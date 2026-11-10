@@ -1,10 +1,7 @@
 """Offline admin sync-status tests: no Odoo, staging or Docker required."""
 from datetime import datetime, timedelta, timezone
-import importlib.util
 import json
 from pathlib import Path
-import subprocess
-from types import SimpleNamespace
 
 import pytest
 
@@ -29,7 +26,7 @@ def sample(**overrides):
         "completed_through": "2026-11-09T06:05:00+00:00",
         "last_processed": None,
         "window_upper": None,
-        "source_enabled": False,
+        "source_enabled": True,
     }
     value.update(overrides)
     return value
@@ -53,6 +50,8 @@ def test_caught_up_and_catching_up_have_distinct_states():
 
 @pytest.mark.parametrize(("changes", "expected"), [
     ({"timer_active": False}, "paused"),
+    ({"source_enabled": False}, "not_configured"),
+    ({"source_enabled": None}, "not_configured"),
     ({"vpn_healthy": False}, "vpn_down"),
     ({"service_ok": False}, "service_failed"),
     ({"disk_free_bytes": 1024}, "disk_low"),
@@ -93,91 +92,37 @@ def test_counter_boolean_and_future_time_rejected():
                                window_upper="2026-11-09T07:00:00Z"), now=NOW)
 
 
-def _publisher():
-    name = "publish-odoo-mirror-admin-health"
-    path = Path("tools") / (name + ".py")
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+
+def test_strict_consumer_contract_rejects_customer_data_and_unknown_keys():
+    # Privileged publisher implementation is not part of this standalone
+    # web-only PR. Validate its data contract without importing host scripts.
+    good = sample()
+    assert set(good) == health._FIELDS
+    assert health.evaluate(good, now=NOW)["state"] == "caught_up"
+    for forbidden in ("customer_phone", "odoo_dsn", "source_row_id", "transcript"):
+        with pytest.raises(ValueError, match="Unexpected"):
+            health.evaluate({**good, forbidden: "not exposed"}, now=NOW)
 
 
-def test_host_publisher_uses_only_aggregate_metadata(monkeypatch, tmp_path):
-    publish = _publisher()
-    db = {
-        "database": "panadan_ci", "version": "180006",
-        "snapshot_pass": "3", "snapshot_last_id": "0",
-        "source_enabled": False, "records": 97038,
-        "revisions": 98719, "pages": 58,
-        "completed_through": "2026-11-09T06:05:00+00:00",
-        "last_processed": None, "window_upper": None,
-        "last_commit": "2026-11-09T06:05:24Z",
-    }
-    def fake_command(args, timeout=15):
-        if args[:2] == ["systemctl", "is-active"]:
-            return "active"
-        if args[:2] == ["systemctl", "show"]:
-            return "success"
-        if args[:2] == ["docker", "inspect"]:
-            return "healthy"
-        if args[:2] == ["docker", "port"]:
-            return "127.0.0.1:55432"
-        if args[:2] == ["docker", "exec"]:
-            return json.dumps(db)
-        raise AssertionError(args)
-
-    monkeypatch.setattr(publish, "command", fake_command)
-    monkeypatch.setattr(
-        publish.shutil, "disk_usage",
-        lambda _: SimpleNamespace(free=7_100_000_000))
-    value = publish.collect(now=NOW)
-    assert value["timer_active"] and value["vpn_healthy"]
-    assert value["database_ok"] and value["records"] == 97038
-    assert set(value) == health._FIELDS
-    path = tmp_path / "health" / "mirror-health.json"
-    monkeypatch.setattr(publish, "OUT", path)
-    publish.publish(value, path=path)
-    assert json.loads(path.read_text()) == value
-    assert path.stat().st_mode & 0o777 == 0o644
-    assert health.evaluate(value, now=NOW)["state"] == "caught_up"
+def test_consumer_does_not_claim_healthy_without_active_source():
+    for source_enabled in (False, None):
+        response = health.evaluate(sample(source_enabled=source_enabled), now=NOW)
+        assert response["state"] != "caught_up"
+        assert response["source_enabled"] is source_enabled
+    # A stale publisher must never show green even when previously enabled.
+    assert health.evaluate(
+        sample(generated_at="2026-11-09T06:00:00+00:00"), now=NOW
+    )["state"] == "unavailable"
 
 
-def test_publisher_degrades_safely_when_vpn_or_postgres_missing(monkeypatch):
-    publish = _publisher()
-    def fail_command(args, timeout=15):
-        raise RuntimeError("secret connection string should not leak")
-    monkeypatch.setattr(publish, "command", fail_command)
-    monkeypatch.setattr(
-        publish.shutil, "disk_usage",
-        lambda _: SimpleNamespace(free=7_100_000_000))
-    value = publish.collect(now=NOW)
-    assert not value["database_ok"]
-    assert value["records"] is None
-    assert "secret" not in json.dumps(value)
+def test_missing_publisher_is_explicitly_unconfigured_not_a_working_sync(tmp_path, monkeypatch):
+    missing_file = tmp_path / "unmounted" / "mirror-health.json"
+    monkeypatch.setattr(health, "HEALTH_FILE", missing_file)
+    response = health.load_admin_mirror_health()
+    assert response["state"] == "not_configured"
+    assert response["records"] is None
+    assert response["source_enabled"] is None
 
-
-def test_admin_health_installer_requires_ack_and_pinned_release():
-    script = Path("tools/install-odoo-mirror-admin-health-systemd.sh")
-    check = subprocess.run(["bash", "-n", str(script)],
-                           capture_output=True, text=True)
-    assert check.returncode == 0, check.stderr
-    args = subprocess.run(
-        ["bash", str(script), "install"], capture_output=True,
-        text=True, timeout=5)
-    assert args.returncode == 2
-    assert "Usage" in args.stderr
-    body = script.read_text()
-    assert "ack-admin-health-publisher" in body
-    assert 'git -C "$ROOT" archive --format=tar "$REV"' in body
-    assert "sudo -n chown -R root:root" in body
-    assert "systemctl start panadan-mirror-health-publisher.service" in body
-    assert "systemctl enable --now panadan-mirror-health-publisher.timer" in body
-    assert "OnCalendar=*:0/1" in body
-    assert "docker compose" not in body
-    assert "DELETE FROM" not in body
-    assert "pg_dump" not in body
-    assert "run-odoo-mirror-incremental-cycle.sh" not in body
 
 
 def test_admin_js_never_interprets_remote_status_as_html():
