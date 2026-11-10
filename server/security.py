@@ -989,7 +989,7 @@ class Store:
             # must not expand a previously issued REST or MCP credential.
             scope_caps = ({'mcp:use','calls:read','metrics:read','calls:transcript:read'}
                           if scope == 'mcp:read' else
-                          {'calls:read','calls:sensitive','metrics:read'}
+                          {'calls:read','calls:sensitive','calls:transcript:read','metrics:read'}
                           if scope == 'api:sensitive' else
                           {'calls:read','metrics:read'})
             snapshot_caps = grants & scope_caps
