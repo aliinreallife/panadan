@@ -28,8 +28,12 @@ def test_modern_mcp_protocol_tool_discovery():
                 "list_recent_calls", "get_call_summary",
                 "get_call_metrics", "get_available_states",
                 "get_redacted_call_transcript",
+                # Permission discovery returns only the caller's own policy
+                # metadata. It never reads customer rows or mutates grants.
+                "get_my_access", "explain_access",
             }
             by_name = {item.name: item for item in tools}
+            assert {"get_my_access", "explain_access"} <= names
             for name in names - {"get_redacted_call_transcript"}:
                 annotations = by_name[name].annotations
                 assert annotations is not None

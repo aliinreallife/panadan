@@ -92,19 +92,23 @@ function prepare({editing = false, selected = ['calls:read'], roleName = 'reader
 }
 
 for (const editing of [false, true]) {
-  test('MCP auto-checks prerequisites in ' + (editing ? 'edit' : 'create') + ' form', () => {
-    const {checks} = prepare({editing});
+  test('MCP requires at least one reporting permission in ' + (editing ? 'edit' : 'create') + ' form', () => {
+    const {checks} = prepare({editing, selected: []});
     checks.get('mcp:use').change(true);
-    assert.equal(checks.get('calls:read').checked, true);
+    assert.equal(checks.get('mcp:use').checked, true);
+    assert.equal(checks.get('calls:read').checked, false);
     assert.equal(checks.get('metrics:read').checked, true);
-    checks.get('calls:read').change(false);
-    assert.equal(checks.get('mcp:use').checked, false);
-    checks.get('mcp:use').change(true);
     checks.get('metrics:read').change(false);
     assert.equal(checks.get('mcp:use').checked, false);
-    assert.equal(checks.get('calls:read').checked, true);
+    checks.get('calls:read').change(true);
+    checks.get('mcp:use').change(true);
+    assert.equal(checks.get('mcp:use').checked, true);
+    assert.equal(checks.get('metrics:read').checked, false);
+    checks.get('calls:read').change(false);
+    assert.equal(checks.get('mcp:use').checked, false);
   });
 }
+
 
 test('default role selection never grants MCP or administration to a reader', () => {
   const {checks, role, group} = prepare({editing:false});
@@ -162,4 +166,9 @@ test('sensitive changes and editing require a confirmation', () => {
   assert.equal(form.submit(), false);
   assert.equal(messages.length, 1);
   assert.match(messages[0], /محرمانه/);
+});
+
+test('MCP user can find own app approval page without admin token privilege', () => {
+  const template = readFileSync(new URL('../templates/dashboard.html', import.meta.url), 'utf8');
+  assert.match(template, /\{% if abilities\['mcp:use'\] %\}<a href="\/dashboard\/mcp-apps">/);
 });

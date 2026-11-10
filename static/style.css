@@ -1344,6 +1344,33 @@ doran-datepicker::part(dialog){
 @media(max-width:720px){.access-guide-levels{grid-template-columns:repeat(2,minmax(0,1fr))}.access-category-grid{grid-template-columns:1fr}.access-role-group{grid-template-columns:1fr}}
 @media(max-width:470px){.access-guide-levels{grid-template-columns:1fr}.access-guide,.access-category{padding:12px}.access-permission-row{padding:9px}}
 
+/* Granular report fields: intentionally neutral, high density and RTL. */
+.access-field-grants{margin-top:13px;padding:13px}
+.access-field-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.access-field-option{display:flex!important;align-items:center;gap:9px;padding:10px;border:1px solid var(--border,#e0e4e9);border-radius:9px;cursor:pointer;min-width:0}
+.access-field-option:focus-within{outline:2px solid var(--accent,#527d9c);outline-offset:2px}
+.access-field-option input{flex:0 0 auto;accent-color:var(--accent,#527d9c)}
+.access-field-option>span:first-of-type{display:grid;min-width:0;gap:3px;flex:1}
+.access-field-option strong{font-size:12px;font-weight:650}
+.access-field-option small{font-size:10px;word-break:break-all;color:var(--muted,#778390)}
+.access-field-risk{font-size:10px;color:var(--muted,#778390)}
+.access-field-disabled{opacity:.46;cursor:not-allowed}
+@media(max-width:1000px){.access-field-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:550px){.access-field-grid{grid-template-columns:1fr}}
+
+/* User-granted, app-specific MCP consent. */
+.mcp-consent-form{display:grid;gap:16px;padding:10px 0 18px}
+.mcp-consent-form fieldset{padding:14px;border:1px solid var(--border,#dee3e8);border-radius:12px;min-width:0}
+.mcp-consent-form legend{font-size:14px;font-weight:700;padding:0 7px}
+.access-consent-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.access-consent-grid label{display:flex;align-items:flex-start;gap:9px;padding:11px;border-radius:10px;border:1px solid var(--border,#e2e5eb);min-width:0;cursor:pointer}
+.access-consent-grid label input{flex:0 0 auto;accent-color:var(--accent,#517b9d);margin-top:3px}
+.access-consent-grid label small{display:block;margin-top:3px;color:var(--muted,#6c7583);font-size:11px}
+.access-consent-cols{grid-template-columns:repeat(3,minmax(0,1fr))}
+.mcp-consent-revoke{margin:12px 0 16px}
+@media(max-width:820px){.access-consent-cols{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:580px){.access-consent-grid,.access-consent-cols{grid-template-columns:1fr}}
+
 /* Admin-only incremental mirror telemetry — deliberately separate from the
    existing Odoo reporting source-health indicator. Responsive, RTL-friendly. */
 .mirror-health-panel{margin:18px 0 24px;padding:22px;border-radius:16px}
@@ -1366,6 +1393,7 @@ doran-datepicker::part(dialog){
 .mirror-health-footer button{margin-inline-start:auto}
 @media(max-width:950px){.mirror-health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.mirror-health-panel{padding:15px}.mirror-health-grid{gap:8px}.mirror-health-stat{padding:11px}.mirror-health-stat strong{font-size:15px}.mirror-health-footer button{width:100%;margin:0}}
+
 
 /* Admin accounts: directory first, account creation on demand. */
 .access-content{max-width:1350px}

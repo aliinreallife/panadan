@@ -38,7 +38,7 @@ their current sessions, tokens and OAuth bindings.
 
 ## Security dependencies
 
-- MCP requires BOTH call-list and metrics permissions.
+- In the unified-access branch, MCP requires at least one of call-list or metrics permissions; each MCP tool checks the separate capability it needs.
 - Sensitive call detail and transcript access require call-list permission.
 - Non-admin accounts cannot manage users or tokens.
 - The server independently revalidates every submitted grant list; UI

@@ -69,8 +69,6 @@ def test_group_is_one_time_snapshot_and_other_users_do_not_change(tmp_path):
 @pytest.mark.parametrize("caps", [
     ["calls:sensitive"],
     ["calls:transcript:read"],
-    ["mcp:use", "calls:read"],
-    ["mcp:use", "metrics:read"],
     ["tokens:manage"],
     ["users:manage"],
 ])
@@ -84,7 +82,9 @@ def test_legacy_corrupt_grants_do_not_escalate_access():
         "tokens:manage", "users:manage", "calls:sensitive",
         "calls:transcript:read", "metrics:read", "mcp:use",
     ])
-    assert permissions("reader", bad) == {"metrics:read"}
+    # Invalid admin/confidential grants must be stripped, while the
+    # explicit metrics+MCP pair remains valid under per-tool authorization.
+    assert permissions("reader", bad) == {"metrics:read", "mcp:use"}
     assert permissions("admin", bad) == set(CAPABILITIES)
 
 

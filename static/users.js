@@ -54,16 +54,17 @@ for (const form of document.querySelectorAll('form[data-access-editor]')) {
     const sensitive = inputs.get('calls:sensitive');
     const transcript = inputs.get('calls:transcript:read');
 
-    if (changed?.checked && [mcp, sensitive, transcript].includes(changed)) {
+    if (changed?.checked && [sensitive, transcript].includes(changed)) {
       if (calls) calls.checked = true;
-      if (changed === mcp && metrics) metrics.checked = true;
+    }
+    if (changed === mcp && mcp?.checked && !calls?.checked && !metrics?.checked) {
+      if (metrics) metrics.checked = true; // minimum useful MCP permission
     }
     if (calls && !calls.checked) {
-      if (mcp) mcp.checked = false;
       if (sensitive) sensitive.checked = false;
       if (transcript) transcript.checked = false;
     }
-    if (metrics && !metrics.checked && mcp) mcp.checked = false;
+    if (mcp && !calls?.checked && !metrics?.checked) mcp.checked = false;
   };
 
   const render = ({syncGroup = false} = {}) => {

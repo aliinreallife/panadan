@@ -10,6 +10,8 @@ import sqlite3
 import time
 from pathlib import Path
 
+from .field_permissions import capability_fields, effective_fields, validate_fields
+
 SESSION_SECONDS = 8 * 3600
 LOGIN_THROTTLE_WINDOW = 600  # rolling 10-minute observation window
 LOGIN_THROTTLE_THRESHOLD = 6
@@ -36,8 +38,8 @@ def validate_user_grants(role: str, caps: list[str] | None) -> None:
     if (selected - set(CAPABILITIES)
             or (role != 'admin' and selected & {'users:manage', 'tokens:manage'})):
         raise ValueError('Invalid user privileges')
-    if role != 'admin' and 'mcp:use' in selected and not MCP_PREREQUISITES <= selected:
-        raise ValueError('MCP requires calls and metrics permissions')
+    if role != 'admin' and 'mcp:use' in selected and not (MCP_PREREQUISITES & selected):
+        raise ValueError('MCP requires at least one reporting permission')
     if role != 'admin' and (selected & {'calls:sensitive', 'calls:transcript:read'}) and 'calls:read' not in selected:
         raise ValueError('Sensitive call details and transcript require calls:read')
 
@@ -70,7 +72,7 @@ def permissions(role: str, overrides: str | None = None) -> set[str]:
             granted = set(parsed) & set(CAPABILITIES) - {'users:manage', 'tokens:manage'}
             # Existing inconsistent rows cannot advertise effective MCP
             # permission until explicitly fixed by an administrator.
-            if 'mcp:use' in granted and not MCP_PREREQUISITES <= granted:
+            if 'mcp:use' in granted and not (MCP_PREREQUISITES & granted):
                 granted.discard('mcp:use')
             if 'calls:read' not in granted:
                 granted.discard('calls:sensitive')
@@ -120,12 +122,23 @@ class Store:
             for table, col, definition in [
                 ('users', 'role', "TEXT NOT NULL DEFAULT 'admin'"),
                 ('users', 'grants', 'TEXT'),
+                ('users', 'field_grants', 'TEXT'),
+                ('access_tokens', 'field_grants', 'TEXT'),
+                ('access_tokens', 'cap_grants', 'TEXT'),
                 ('users', 'is_active', 'INTEGER NOT NULL DEFAULT 1'),
                 ('access_tokens', 'owner_id', 'INTEGER'),
             ]:
                 existing = {r['name'] for r in c.execute(f'PRAGMA table_info({table})')}
                 if col not in existing:
                     c.execute(f'ALTER TABLE {table} ADD COLUMN {col} {definition}')
+            c.execute('''CREATE TABLE IF NOT EXISTS mcp_client_grants (
+                user_id INTEGER NOT NULL,
+                client_id TEXT NOT NULL,
+                capabilities TEXT NOT NULL,
+                fields TEXT NOT NULL,
+                approved_at INTEGER NOT NULL,
+                PRIMARY KEY(user_id,client_id)
+            )''')
             # OAuth subject bindings are separate from browser sessions and
             # legacy API tokens. No personal information from the provider
             # is automatically used to grant reporting permissions.
@@ -258,7 +271,7 @@ class Store:
     def session(self, raw: str | None):
         if not raw: return None
         with self.db() as c:
-            row = c.execute('''SELECT s.user_id,s.csrf,u.username,u.role,u.grants
+            row = c.execute('''SELECT s.user_id,s.csrf,u.username,u.role,u.grants,u.field_grants
                                FROM sessions s JOIN users u ON u.id=s.user_id
                                WHERE s.token_hash=? AND s.expires_at>? AND u.is_active=1''',
                             (digest(raw), int(time.time()))).fetchone()
@@ -271,7 +284,7 @@ class Store:
 
     def list_users(self):
         with self.db() as c:
-            return [dict(r) for r in c.execute('SELECT id,username,role,grants,is_active FROM users ORDER BY id')]
+            return [dict(r) for r in c.execute('SELECT id,username,role,grants,field_grants,is_active FROM users ORDER BY id')]
 
     def operator_assignments(self) -> dict[str, dict]:
         with self.db() as c:
@@ -305,35 +318,47 @@ class Store:
                     (operator_name,destination or None,team or None,int(time.time()))
                 )
 
-    def create_user(self, username: str, password: str, role: str, caps: list[str] | None = None):
+    def create_user(self, username: str, password: str, role: str, caps: list[str] | None = None, *, fields: list[str] | None = None):
         if not username or len(username) > 80 or not username.replace('_','').replace('-','').isalnum():
             raise ValueError('Invalid username')
         if len(password) < 14: raise ValueError('Password must be at least 14 characters')
         validate_user_grants(role, caps)
         grants = json.dumps(sorted(set(caps))) if caps is not None and role != 'admin' else None
+        selected = validate_fields(fields, permissions(role, grants)) if fields is not None else None
         with self.db() as c:
-            cur = c.execute('INSERT INTO users(username,password_hash,role,grants) VALUES(?,?,?,?)',
-                            (username, password_hash(password), role, grants))
+            cur = c.execute('INSERT INTO users(username,password_hash,role,grants,field_grants) VALUES(?,?,?,?,?)',
+                            (username, password_hash(password), role, grants,
+                             json.dumps(selected) if selected is not None else None))
             return cur.lastrowid
 
-    def update_user(self, user_id: int, role: str, caps: list[str] | None, active: bool, actor_id: int):
+    def update_user(self, user_id: int, role: str, caps: list[str] | None, active: bool, actor_id: int, *, fields: list[str] | None = None):
         validate_user_grants(role, caps)
         if int(user_id) == actor_id and (not active or role != 'admin'):
             raise ValueError('Cannot deactivate or demote your own admin account')
         grants = json.dumps(sorted(set(caps))) if caps is not None and role != 'admin' else None
         with self.db() as c:
-            user = c.execute('SELECT id,role,is_active FROM users WHERE id=?', (user_id,)).fetchone()
+            user = c.execute('SELECT id,role,is_active,field_grants FROM users WHERE id=?', (user_id,)).fetchone()
             if not user: raise ValueError('Unknown user')
             count = c.execute("SELECT COUNT(*) FROM users WHERE role='admin' AND is_active=1").fetchone()[0]
             if user['role'] == 'admin' and user['is_active'] and count <= 1 and (role != 'admin' or not active):
                 raise ValueError('Cannot remove the last active administrator')
-            c.execute('UPDATE users SET role=?,grants=?,is_active=? WHERE id=?',
-                      (role, grants, int(active), user_id))
+            new_caps = permissions(role, grants)
+            if fields is not None:
+                chosen = validate_fields(fields, new_caps)
+                stored_fields = json.dumps(chosen)
+            elif user['field_grants'] is not None:
+                chosen = sorted(effective_fields(new_caps, user['field_grants']))
+                stored_fields = json.dumps(chosen)
+            else:
+                stored_fields = None  # preserve legacy default within new capabilities
+            c.execute('UPDATE users SET role=?,grants=?,field_grants=?,is_active=? WHERE id=?',
+                      (role, grants, stored_fields, int(active), user_id))
             # A role change or disable must invalidate all outstanding sessions/tokens.
             c.execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
             c.execute('DELETE FROM access_tokens WHERE owner_id=?', (user_id,))
             # Reauthorization is required after a role or status update.
             c.execute('DELETE FROM oauth_identities WHERE user_id=?', (user_id,))
+            c.execute('DELETE FROM mcp_client_grants WHERE user_id=?', (user_id,))
 
     def bind_oauth_identity(self, issuer: str, subject: str, user_id: int) -> int:
         """Administrator-approved binding of an IdP subject to a local account.
@@ -350,8 +375,8 @@ class Store:
             if not row or not row['is_active']:
                 raise ValueError('User must be active')
             caps = permissions(row['role'], row['grants'])
-            if not {'mcp:use', 'calls:read', 'metrics:read'} <= caps:
-                raise ValueError('User needs MCP, calls and metrics permissions')
+            if 'mcp:use' not in caps or not ({'calls:read', 'metrics:read'} & caps):
+                raise ValueError('User needs MCP and one reporting permission')
             cursor = c.execute(
                 'INSERT INTO oauth_identities(issuer,subject,user_id,created_at) VALUES(?,?,?,?)',
                 (issuer, subject, user_id, int(time.time())),
@@ -381,7 +406,7 @@ class Store:
         if not row or not row['is_active']:
             return False
         caps = permissions(row['role'], row['grants'])
-        return {'mcp:use', 'calls:read', 'metrics:read'} <= caps
+        return 'mcp:use' in caps and bool({'calls:read', 'metrics:read'} & caps)
 
     def authorized_transcript_actor(self, *, oauth_issuer: str | None = None,
                                     oauth_subject: str | None = None,
@@ -410,7 +435,7 @@ class Store:
         if not row or not row['is_active']:
             return None
         caps = permissions(row['role'], row['grants'])
-        if not {'mcp:use', 'calls:read', 'metrics:read', 'calls:transcript:read'} <= caps:
+        if not {'mcp:use', 'calls:read', 'calls:transcript:read'} <= caps:
             return None
         return int(row['id'])
 
@@ -426,15 +451,186 @@ class Store:
         now = int(time.time())
         with self.db() as c:
             c.execute('BEGIN IMMEDIATE')
-            row = c.execute('SELECT role,grants,is_active FROM users WHERE id=?',(user_id,)).fetchone()
+            row = c.execute('SELECT role,grants,field_grants,is_active FROM users WHERE id=?',(user_id,)).fetchone()
             caps = permissions(row['role'], row['grants']) if row and row['is_active'] else set()
-            if not {'calls:read', 'calls:transcript:read'} <= caps:
+            if (not {'calls:read', 'calls:transcript:read'} <= caps or
+                    'transcription' not in effective_fields(caps, row['field_grants'])):
                 return False
             c.execute(
                 'INSERT INTO transcript_access_audit(user_id,surface,call_id,char_limit,created_at) VALUES(?,?,?,?,?)',
                 (user_id, surface, call_id, char_limit, now)
             )
             return True
+
+    def user_access(self, user_id: int) -> dict | None:
+        """Current effective user fields and capabilities, not cached claims."""
+        with self.db() as c:
+            row = c.execute(
+                'SELECT id,role,grants,field_grants,is_active FROM users WHERE id=?',
+                (user_id,),
+            ).fetchone()
+        if not row or not row['is_active']:
+            return None
+        caps = permissions(row['role'], row['grants'])
+        return {'user_id': int(row['id']), 'capabilities': caps,
+                'fields': effective_fields(caps, row['field_grants'])}
+
+    def client_grants(self, user_id: int, client_id: str) -> dict | None:
+        if not isinstance(client_id, str) or not 1 <= len(client_id) <= 160:
+            return None
+        with self.db() as c:
+            row = c.execute(
+                'SELECT capabilities,fields FROM mcp_client_grants '
+                'WHERE user_id=? AND client_id=?', (user_id, client_id)
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            caps = json.loads(row['capabilities'])
+            fields = json.loads(row['fields'])
+            if (type(caps) is not list or type(fields) is not list or
+                    not all(type(v) is str for v in caps + fields)):
+                return None
+            return {'capabilities': frozenset(caps),
+                    'fields': frozenset(fields)}
+        except (TypeError, ValueError):
+            return None
+
+    def approve_mcp_client(self, user_id: int, client_id: str,
+                           caps: list[str], fields: list[str]) -> None:
+        """Explicit logged-in user's approval for one trusted OAuth client ID."""
+        if (type(client_id) is not str or not 1 <= len(client_id) <= 160 or
+                any(ord(ch) < 33 or ord(ch) > 126 for ch in client_id)):
+            raise ValueError('Invalid OAuth client identifier')
+        access = self.user_access(user_id)
+        if access is None or 'mcp:use' not in access['capabilities']:
+            raise ValueError('MCP not available for this account')
+        allowed_caps = access['capabilities'] & {
+            'mcp:use', 'calls:read', 'metrics:read', 'calls:transcript:read'}
+        if (type(caps) is not list or len(set(caps)) != len(caps) or
+                not set(caps) <= allowed_caps):
+            raise ValueError('Invalid delegated capabilities')
+        if 'mcp:use' not in caps:
+            raise ValueError('Client requires MCP consent')
+        if 'calls:transcript:read' in caps and 'calls:read' not in caps:
+            raise ValueError('Transcript delegation requires calls:read')
+        selected = validate_fields(fields, access['capabilities'])
+        if not set(selected) <= access['fields']:
+            raise ValueError('Delegated fields exceed user access')
+        if not set(selected) <= capability_fields(set(caps)):
+            raise ValueError('Delegated fields require matching approved capability')
+        with self.db() as c:
+            c.execute(
+                'INSERT INTO mcp_client_grants(user_id,client_id,capabilities,fields,approved_at) '
+                'VALUES(?,?,?,?,?) ON CONFLICT(user_id,client_id) DO UPDATE SET '
+                'capabilities=excluded.capabilities,fields=excluded.fields,'
+                'approved_at=excluded.approved_at',
+                (user_id, client_id, json.dumps(sorted(caps)),
+                 json.dumps(selected), int(time.time()))
+            )
+
+    def revoke_mcp_client(self, user_id: int, client_id: str) -> None:
+        with self.db() as c:
+            c.execute('DELETE FROM mcp_client_grants WHERE user_id=? AND client_id=?',
+                      (user_id, client_id))
+
+    def list_mcp_clients(self, user_id: int) -> list[dict]:
+        with self.db() as c:
+            return [dict(row) for row in c.execute(
+                'SELECT client_id,capabilities,fields,approved_at '
+                'FROM mcp_client_grants WHERE user_id=? ORDER BY approved_at DESC',
+                (user_id,))]
+
+    def mcp_access(self, user_id: int, *, legacy_token: str | None = None,
+                   oauth_client: str | None = None) -> dict | None:
+        """Request-time intersection of user, token and app-approved grants."""
+        access = self.user_access(user_id)
+        if access is None or 'mcp:use' not in access['capabilities']:
+            return None
+        approved = None
+        if legacy_token:
+            with self.db() as c:
+                row = c.execute(
+                    'SELECT t.field_grants,t.cap_grants FROM access_tokens t '
+                    'WHERE t.owner_id=? AND t.token_hash=? AND t.scope=? '
+                    'AND t.expires_at>?',
+                    (user_id, digest(legacy_token), 'mcp:read', int(time.time()))
+                ).fetchone()
+            if row is None:
+                return None
+            try:
+                caps = (frozenset(json.loads(row['cap_grants']))
+                        if row['cap_grants'] is not None else
+                        frozenset({'mcp:use','calls:read','metrics:read',
+                                   'calls:transcript:read'}))
+                fields = (frozenset(json.loads(row['field_grants']))
+                          if row['field_grants'] is not None else
+                          capability_fields({'calls:read','calls:sensitive','metrics:read'}))
+                approved = {'capabilities': caps, 'fields': fields}
+            except (TypeError, ValueError):
+                return None
+        elif oauth_client:
+            approved = self.client_grants(user_id, oauth_client)
+            if approved is None:
+                approved = {'capabilities': frozenset(), 'fields': frozenset()}
+        else:
+            return None
+        effective_caps = access['capabilities'] & approved['capabilities']
+        effective_fields = access['fields'] & approved['fields'] & capability_fields(effective_caps)
+        return {'user_fields': access['fields'],
+                'user_capabilities': access['capabilities'],
+                'approved_fields': approved['fields'],
+                'approved_capabilities': approved['capabilities'],
+                'fields': effective_fields,
+                'capabilities': effective_caps}
+
+
+    def api_token_access(self, user_id: int, raw: str, scope: str) -> dict | None:
+        """Intersect an authenticated API token's original grants with live policy.
+
+        Historical NULL snapshots keep legacy API tokens functional until
+        an explicitly reviewed rotation; new tokens cannot silently expand.
+        """
+        if (scope not in ('api:read', 'api:sensitive') or
+                not raw or len(raw) > 256):
+            return None
+        access = self.user_access(user_id)
+        if access is None:
+            return None
+        with self.db() as c:
+            row = c.execute(
+                'SELECT scope,field_grants,cap_grants FROM access_tokens '
+                'WHERE owner_id=? AND token_hash=? AND expires_at>?',
+                (user_id, digest(raw), int(time.time()))
+            ).fetchone()
+        if not row or (row['scope'] != scope and not (
+                scope == 'api:read' and row['scope'] == 'api:sensitive')):
+            return None
+        try:
+            capabilities = set(access['capabilities'])
+            if row['cap_grants'] is not None:
+                stored_caps = json.loads(row['cap_grants'])
+                if (type(stored_caps) is not list or
+                        any(type(v) is not str for v in stored_caps)):
+                    return None
+                capabilities &= set(stored_caps)
+            fields = set(access['fields'])
+            if row['field_grants'] is not None:
+                stored_fields = json.loads(row['field_grants'])
+                if (type(stored_fields) is not list or
+                        any(type(v) is not str for v in stored_fields) or
+                        len(stored_fields) != len(set(stored_fields))):
+                    return None
+                fields &= set(stored_fields)
+            if scope == 'api:read':
+                capabilities &= {'calls:read', 'metrics:read'}
+            elif not {'calls:read', 'calls:sensitive'} <= capabilities:
+                return None
+            fields &= capability_fields(capabilities)
+            return {'capabilities': frozenset(capabilities),
+                    'fields': frozenset(fields)}
+        except (TypeError, ValueError):
+            return None
 
     def actor_for_token(self, raw: str, scope: str) -> int | None:
         """Resolve owner from an already-authenticated service token, or None."""
@@ -554,33 +750,58 @@ class Store:
                 admin = c.execute('SELECT id FROM users WHERE role=? AND is_active=1 ORDER BY id LIMIT 1', ('admin',)).fetchone()
                 owner_id = admin['id'] if admin else None
             if owner_id is None: raise ValueError('No active token owner')
-            owner = c.execute('SELECT role,grants,is_active FROM users WHERE id=?', (owner_id,)).fetchone()
+            owner = c.execute('SELECT role,grants,field_grants,is_active FROM users WHERE id=?', (owner_id,)).fetchone()
             if not owner or not owner['is_active']: raise ValueError('Inactive owner')
             grants = permissions(owner['role'], owner['grants'])
             required = ({'calls:read', 'metrics:read'} if scope == 'api:read' else
                         {'calls:read', 'calls:sensitive'} if scope == 'api:sensitive' else
-                        {'mcp:use', 'calls:read', 'metrics:read'})
-            allowed = (bool(grants & required) if scope == 'api:read' else required <= grants)
+                        {'mcp:use'})
+            allowed = (bool(grants & required) if scope == 'api:read' else
+                       (required <= grants and bool({'calls:read','metrics:read'} & grants))
+                       if scope == 'mcp:read' else required <= grants)
             if not allowed:
                 raise ValueError('Owner has insufficient permissions')
-            cur = c.execute('''INSERT INTO access_tokens(name,token_hash,scope,created_at,expires_at,owner_id)
-                               VALUES(?,?,?,?,?,?)''',
-                            (name[:80], digest(raw), scope, now, now + days*86400, owner_id))
+            # Snapshot the authority of every NEW token. Later grant changes
+            # must not expand a previously issued REST or MCP credential.
+            scope_caps = ({'mcp:use','calls:read','metrics:read','calls:transcript:read'}
+                          if scope == 'mcp:read' else
+                          {'calls:read','calls:sensitive','metrics:read'}
+                          if scope == 'api:sensitive' else
+                          {'calls:read','metrics:read'})
+            snapshot_caps = grants & scope_caps
+            snapshot_fields = (effective_fields(grants, owner['field_grants'])
+                               & capability_fields(snapshot_caps))
+            fields = json.dumps(sorted(snapshot_fields))
+            granted_caps = json.dumps(sorted(snapshot_caps))
+            cur = c.execute('''INSERT INTO access_tokens(name,token_hash,scope,created_at,expires_at,owner_id,field_grants,cap_grants)
+                               VALUES(?,?,?,?,?,?,?,?)''',
+                            (name[:80], digest(raw), scope, now, now + days*86400, owner_id, fields, granted_caps))
             return cur.lastrowid, raw
 
     def verify_token(self, raw: str, scope: str, capability: str | None = None) -> bool:
         if not raw or len(raw) > 256: return False
         with self.db() as c:
-            row = c.execute('''SELECT t.id,t.scope,u.role,u.grants,u.is_active
+            row = c.execute('''SELECT t.id,t.scope,t.cap_grants,u.role,u.grants,u.is_active
                                FROM access_tokens t JOIN users u ON u.id=t.owner_id
                                WHERE t.token_hash=? AND t.expires_at>?''', (digest(raw), int(time.time()))).fetchone()
             grants = permissions(row['role'], row['grants']) if row and row['is_active'] else set()
+            # NULL snapshots are pre-existing tokens; keep those working
+            # until an explicitly approved rotation. Invalid JSON fails closed.
+            if row and row['cap_grants'] is not None:
+                try:
+                    issued = json.loads(row['cap_grants'])
+                    if type(issued) is not list or any(type(x) is not str for x in issued):
+                        grants = set()
+                    else:
+                        grants &= set(issued)
+                except (TypeError, ValueError):
+                    grants = set()
             matching = bool(row and (row['scope'] == scope or
                             (scope == 'api:read' and row['scope'] == 'api:sensitive')))
             valid = bool(matching and (
                 ({'calls:read','metrics:read'} & grants) if scope == 'api:read' else
                 {'calls:read','calls:sensitive'} <= grants if scope == 'api:sensitive' else
-                {'mcp:use','calls:read','metrics:read'} <= grants if scope == 'mcp:read' else False
+                ('mcp:use' in grants and bool({'calls:read','metrics:read'} & grants)) if scope == 'mcp:read' else False
             ) and (not capability or capability in grants))
             if valid: c.execute('UPDATE access_tokens SET last_used=? WHERE id=?', (int(time.time()), row['id']))
         return bool(valid)

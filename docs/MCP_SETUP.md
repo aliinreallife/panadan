@@ -10,50 +10,62 @@ Panadan exposes **read-only** MCP tools. It has two mutually exclusive auth mode
 The REST API and browser session authentication do not change when MCP switches modes.
 Raw transcripts are **not** exposed. A separate explicitly granted `calls:transcript:read` capability can enable redacted, paginated excerpts via `get_redacted_call_transcript`. Arbitrary SQL and write operations remain unavailable.
 
-## How MCP relates to a Panadan user's permissions
+## Unified field-limited MCP access (feature branch only — not live)
 
-MCP is **not an independent superuser permission**. Panadan verifies the
-authenticated owner of a manual MCP token, or the approved local account
-linked to an OAuth subject, **at each HTTP request**.
+Development branch: feat/unified-field-access-mcp-20261109.
+[Local test/release gates](UNIFIED_ACCESS_LOCAL_TEST.md).
 
-Current implementation (before any future per-tool scoping):
+In this draft implementation, each MCP request uses the **actual active
+user** and the **verified bearer token or signed OAuth client ID**:
 
-| MCP tool | Required effective user grants |
+    effective fields = current user's allowed fields
+                       intersect explicitly approved token/client fields
+                       intersect current tool capability
+                       intersect fixed server policy
+
+The base gate is MCP plus **at least one** reporting permission. Tools then
+perform their own independent checks, so a metrics-only user does not have
+to receive call-list permission just to use statistics.
+
+| MCP operation | Required user AND approved client permissions |
 | --- | --- |
-| Recent calls, call summary, call metrics, available call states | `mcp:use`, `calls:read`, `metrics:read` |
-| Redacted transcript excerpts | The three grants above **plus** `calls:transcript:read` and a successful access audit |
-| Full sensitive customer fields | **Not available** through the normal MCP tools, even when `calls:sensitive` is granted |
-| Account / token administration | **Not available** through MCP |
+| get_my_access / explain_access | Verified linked MCP actor; safe metadata only |
+| list_recent_calls / get_call_summary | mcp:use + calls:read; only allowed non-sensitive call fields |
+| get_call_metrics | mcp:use + metrics:read; only aggregates whose input fields are delegated |
+| get_available_states | mcp:use + status field + calls:read or metrics:read |
+| get_redacted_call_transcript | mcp:use + calls:read + calls:transcript:read + transcription field + recorded audit |
+| Raw sensitive customer details and administrator tools | Not offered through MCP |
 
-In particular, `calls:sensitive` does not automatically make MCP disclose
-sensitive contact data. Transcript access has its own explicit capability,
-revalidates the actor and records the disclosure.
+Use get_my_access to understand the actual fields the app may receive.
+Use explain_access(field="customertell") to distinguish an administrator
+grant from a user's per-app OAuth consent. Neither tool returns customer
+records, arbitrary SQL, another user's grants, or a protected employee's
+existence.
 
-**Important limitation:** the base MCP gate currently requires both the call
-and metrics permissions. A user with just `metrics:read` + `mcp:use` cannot
-connect to only the metrics tool. Likewise, a call-only account cannot
-connect solely for call summaries. **Per-tool MCP authorization is not yet
-implemented**; do not promise that behavior from the new permission-group UI.
-Restrict or disable MCP instead of granting unnecessary data access just to
-enable an integration. This is an intentional separate security change.
+The [user-owned approval page](/dashboard/mcp-apps) preselects all
+MCP-eligible fields and capabilities the user owns for **a new client**.
+They may deselect any subset before approving, reapprove an existing client
+without silent expansion, or revoke. Panadan checks that approved client_id
+against an **already cryptographically verified** azp/client_id claim in the
+external IdP's signed access token. Legacy manual bearer tokens snapshot
+field/capability limits at issuance.
 
-The five draft group templates and their risk categories are documented in
-[ACCESS_PERMISSION_GROUPS.md](ACCESS_PERMISSION_GROUPS.md). Presets copy
-explicit grants to one account; they do not bypass the server checks.
-Legacy manual MCP tokens and OAuth bindings are separate from ordinary
-browser sessions. On account permission changes, existing sessions, tokens
-and OAuth bindings are revoked, and integrations must be reauthorized.
+This new branch's database migration is presently for the normal SQLite
+identity store, **not** the experimental PostgreSQL auth staging backend.
+The source mirror has 37 fields, but this branch only restricts the **19
+currently exposed production reporting fields**. It does not activate
+new source columns, row-scoped operator security or mirror cutover.
 
-### Planned per-field permissions and discoverable access (not implemented)
+**Important:** Production is still on the old MCP gate requiring calls and
+metrics together. This feature branch has not passed full local/CI tests,
+has not been reviewed for a production security release and is **not
+deployed**. Panadan is still only an OAuth resource server. A real
+compatible external IdP, signed client identity, HTTPS and actual client
+authorization are required for working OAuth; the manual approval page
+is not an authorization-server redirect or complete OAuth provider.
 
-The [unified authorization contract](UNIFIED_AUTHORIZATION_MCP.md) proposes
-field-level access shared by browser, REST and MCP, a per-application OAuth
-subset chosen by the user, plus a read-only `get_my_access` MCP tool and a
-safe `explain_access` permission advisor. When data is unavailable, the AI
-should distinguish **requires admin grant** from **requires user re-consent**
-without disclosing a restricted person or record. This is not supported by
-the existing MCP bearer gate or OAuth consent implementation yet. Do not
-mistake it for an available endpoint or tool.
+See [the complete architecture](UNIFIED_AUTHORIZATION_MCP.md) and
+[feature-local test plan](UNIFIED_ACCESS_LOCAL_TEST.md).
 
 ## 1. Local setup without a domain (default)
 

@@ -22,6 +22,8 @@ from starlette import status
 
 from . import database
 from . import mirror_health
+from .field_permissions import (capability_fields, effective_fields,
+    field_catalog, project_call, project_metrics)
 from .permission_catalog import (
     PERMISSION_CATEGORIES, ADMIN_ONLY, ROLE_RECOMMENDED_GROUP,
     group_options, matching_group,
@@ -161,6 +163,44 @@ def required(session: dict, capability: str):
 
 def admin_only(session: dict):
     return required(session, 'users:manage')
+
+
+def user_field_access(session: dict) -> frozenset[str]:
+    access = store.user_access(session['user_id']) if hasattr(store, 'user_access') else None
+    if access is None:
+        raise HTTPException(403, 'Field authorization unavailable')
+    return access['fields']
+
+
+def api_field_access(request: Request, scope: str = 'api:read') -> frozenset[str]:
+    auth = request.headers.get('authorization', '')
+    raw = auth[7:] if auth.startswith('Bearer ') else ''
+    actor = store.actor_for_token(raw, scope)
+    if actor is None or not hasattr(store, 'user_access'):
+        raise HTTPException(401, 'Unauthorized reporting identity')
+    if not hasattr(store, 'api_token_access'):
+        raise HTTPException(403, 'API field authorization unavailable')
+    policy = store.api_token_access(actor, raw, scope)
+    if policy is None:
+        raise HTTPException(403, 'Reporting permission revoked')
+    return policy['fields']
+
+
+def require_field_filters(fields: frozenset[str], *, after=None, before=None,
+                          created_after=None, created_before=None, state=None,
+                          call_type=None, direction=None, operator=None,
+                          operators=None, destination=None, team=None):
+    constraints = (
+        ((after is not None or before is not None), 'CALLDATE'),
+        ((created_after is not None or created_before is not None), 'create_date'),
+        (bool(state), 'aicallinfostate'),
+        (bool(call_type), 'tellstate'),
+        (bool(direction), 'tellside'),
+        (bool(operator) or bool(operators) or bool(destination) or bool(team),
+         'vw_danix_base_info_users_name'),
+    )
+    if any(on and field not in fields for on,field in constraints):
+        raise HTTPException(403, 'Filter requires an unauthorized field')
 
 
 def api_auth(request: Request, sensitive: bool = False, capability: str = "calls:read"):
@@ -347,7 +387,7 @@ def system_health_page(request: Request, session: dict = Depends(current_session
 
 @app.get('/dashboard/mirror-health', include_in_schema=False)
 def dashboard_mirror_health(session: dict = Depends(current_session)):
-    # Admin-only aggregate sync-health. No Odoo/staging DB access in web.
+    # Aggregate-only health; the reporting database is not touched here.
     admin_only(session)
     return JSONResponse(mirror_health.load_admin_mirror_health(),
                         headers={'Cache-Control': 'no-store'})
@@ -357,6 +397,8 @@ def dashboard_mirror_health(session: dict = Depends(current_session)):
 def operator_profile(request: Request, name: str = Query(...,min_length=1,max_length=180),
                      session: dict = Depends(current_session)):
     required(session,'calls:read')
+    if 'vw_danix_base_info_users_name' not in user_field_access(session):
+        raise HTTPException(403, 'Operator field unavailable')
     return templates.TemplateResponse(request,'dashboard.html',{
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
@@ -368,6 +410,8 @@ def operator_profile(request: Request, name: str = Query(...,min_length=1,max_le
 @app.get('/dashboard/operators', response_class=HTMLResponse, include_in_schema=False)
 def operators_page(request: Request, session: dict = Depends(current_session)):
     required(session,'calls:read')
+    if 'vw_danix_base_info_users_name' not in user_field_access(session):
+        raise HTTPException(403, 'Operator field unavailable')
     try: names=read_with_retry(database.operators)
     except Exception as e: json_failure(e)
     assignments=store.operator_assignments()
@@ -449,30 +493,40 @@ def dashboard_data(request: Request, limit: int = Query(20, ge=1, le=100),
                    created_after: datetime | None = None, created_before: datetime | None = None,
                    session: dict = Depends(current_session)):
     required(session, 'calls:read')
+    fields = user_field_access(session)
+    require_field_filters(fields, after=after, before=before, created_after=created_after,
+                          created_before=created_before, operator=operator,
+                          operators=operators, state=state, call_type=call_type,
+                          direction=direction, destination=destination, team=team)
     try:
         selected, groups = dashboard_multi_facets(
             operators, state, call_type, direction, destination, team)
-        return {'items': read_with_retry(lambda: database.list_calls(
+        rows = read_with_retry(lambda: database.list_calls(
             limit, offset, after, before, None, created_after, created_before,
             operator=operator, filter_mode='any', selected_facets=selected,
-            any_operator_groups=groups))}
+            any_operator_groups=groups,
+            sort_by_date='CALLDATE' in fields,
+            sort_by_id='id' in fields))
+        return {'items': [project_call(item, fields) for item in rows]}
     except Exception as e: json_failure(e)
 
 @app.get('/dashboard/filter-options', include_in_schema=False)
 def dashboard_filter_options(session: dict = Depends(current_session)):
     required(session, 'calls:read')
+    fields = user_field_access(session)
     try:
         names=database.operators()
         assignments=store.operator_assignments()
         return {
-            'states': read_with_retry(database.statuses), 'call_types': read_with_retry(database.call_types),
-            'directions': read_with_retry(database.directions),
+            'states': read_with_retry(database.statuses) if 'aicallinfostate' in fields else [],
+            'call_types': read_with_retry(database.call_types) if 'tellstate' in fields else [],
+            'directions': read_with_retry(database.directions) if 'tellside' in fields else [],
             'operators':[{'value':name,'label':operator_display(name),
                           'destination':assignments.get(name,{}).get('destination','نامشخص'),
                           'team':assignments.get(name,{}).get('team','نامشخص')}
-                         for name in names],
-            'destinations':sorted({'نامشخص',*(row['destination'] for row in assignments.values())}),
-            'teams':sorted({'نامشخص',*(row['team'] for row in assignments.values())}),
+                         for name in names] if 'vw_danix_base_info_users_name' in fields else [],
+            'destinations':sorted({'نامشخص',*(row['destination'] for row in assignments.values())}) if 'vw_danix_base_info_users_name' in fields else [],
+            'teams':sorted({'نامشخص',*(row['team'] for row in assignments.values())}) if 'vw_danix_base_info_users_name' in fields else [],
         }
     except Exception as e: json_failure(e)
 
@@ -484,6 +538,8 @@ def browser_ai_transcript(call_id: int, offset: int = Query(0,ge=0,le=2147483646
     """Authorized WebMCP retrieval: redacted, bounded, auditable and read-only."""
     required(session,'calls:read')
     required(session,'calls:transcript:read')
+    if not {'id','transcription'} <= user_field_access(session):
+        raise HTTPException(403, 'Transcript requires call ID and transcript grants')
     if call_id <= 0:
         raise HTTPException(400, 'Invalid call ID')
     allowed = store.audit_transcript_request(
@@ -503,19 +559,25 @@ def browser_ai_transcript(call_id: int, offset: int = Query(0,ge=0,le=2147483646
 def dashboard_public_call_overview(call_id: int, session: dict = Depends(current_session)):
     """Metadata-only lookup for browser agents; never fetch sensitive columns."""
     required(session, 'calls:read')
+    fields = user_field_access(session)
+    if 'id' not in fields:
+        raise HTTPException(403, 'Call ID field required for individual lookup')
     try: result = read_with_retry(lambda: database.get_call(call_id, sensitive=False))
     except Exception as e: json_failure(e)
     if not result: raise HTTPException(404, 'Call not found')
-    return JSONResponse(result, headers={'Cache-Control': 'no-store'})
+    return JSONResponse(project_call(result, fields), headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/dashboard/data/{call_id}', include_in_schema=False)
 def dashboard_detail(call_id: int, session: dict = Depends(current_session)):
     required(session,'calls:read')
+    fields = user_field_access(session)
+    if 'id' not in fields:
+        raise HTTPException(403, 'Call ID field required for individual lookup')
     try: result = read_with_retry(lambda: database.get_call(call_id, sensitive=has_capability(session,'calls:sensitive')))
     except Exception as e: json_failure(e)
     if not result: raise HTTPException(404, 'Call not found')
-    return JSONResponse(result, headers={'Cache-Control':'no-store'})
+    return JSONResponse(project_call(result, fields), headers={'Cache-Control':'no-store'})
 
 
 @app.get('/dashboard/metrics', include_in_schema=False)
@@ -530,50 +592,73 @@ def dashboard_metrics(after: date | None = None, before: date | None = None,
                       direction: list[str] | None = Query(None),
                       session: dict = Depends(current_session)):
     required(session,'metrics:read')
+    fields = user_field_access(session)
+    require_field_filters(fields, after=after, before=before, created_after=created_after,
+                          created_before=created_before, operator=operator,
+                          operators=operators, state=state, call_type=call_type,
+                          direction=direction, destination=destination, team=team)
     try:
         selected, groups = dashboard_multi_facets(
             operators, state, call_type, direction, destination, team)
-        return read_with_retry(lambda: database.stats(
+        data = read_with_retry(lambda: database.stats(
             after, before, created_after, created_before, operator,
             state=None, filter_mode='any', selected_facets=selected,
             any_operator_groups=groups))
+        return project_metrics(data, fields)
     except Exception as e: json_failure(e)
 
 @app.get('/api/v1/calls', dependencies=[Depends(require_api)], tags=['Calls'])
-def api_calls(limit: int = Query(20,ge=1,le=100), offset: int = Query(0,ge=0,le=10000),
+def api_calls(request: Request, limit: int = Query(20,ge=1,le=100), offset: int = Query(0,ge=0,le=10000),
               after: date | None = None, before: date | None = None, state: str | None = None,
               call_type: str | None = None,
               operator: str | None = Query(None,max_length=180),
               destination: str | None = Query(None,max_length=80),
               team: str | None = Query(None,max_length=80)):
+    fields = api_field_access(request)
+    require_field_filters(fields, after=after, before=before, state=state,
+                          call_type=call_type, operator=operator,
+                          destination=destination, team=team)
     try:
-        return {'items':database.list_calls(limit,offset,after,before,state,call_type=call_type,
-                                            operator=operator,
-                                            operator_names=directory_operator_names(destination,team))}
+        rows = database.list_calls(limit,offset,after,before,state,call_type=call_type,
+                                   operator=operator,
+                                   operator_names=directory_operator_names(destination,team),
+                                   sort_by_date='CALLDATE' in fields,
+                                   sort_by_id='id' in fields)
+        return {'items':[project_call(row, fields) for row in rows]}
     except Exception as e: json_failure(e)
 
 
 @app.get('/api/v1/calls/{call_id}', dependencies=[Depends(require_api)], tags=['Calls'])
 def api_call(call_id: int, request: Request, include_sensitive: bool = False):
     if include_sensitive: api_auth(request, sensitive=True)
+    fields = api_field_access(request, 'api:sensitive' if include_sensitive else 'api:read')
+    if 'id' not in fields:
+        raise HTTPException(403, 'Call ID field required for individual lookup')
     try: result = database.get_call(call_id, sensitive=include_sensitive)
     except Exception as e: json_failure(e)
     if not result: raise HTTPException(404, 'Call not found')
-    return JSONResponse(result, headers={'Cache-Control':'no-store'})
+    return JSONResponse(project_call(result, fields), headers={'Cache-Control':'no-store'})
 
 
 @app.get('/api/v1/stats', dependencies=[Depends(require_metrics_api)], tags=['Analytics'])
-def api_stats(after: date | None = None, before: date | None = None,
+def api_stats(request: Request, after: date | None = None, before: date | None = None,
               operator: str | None = Query(None,max_length=180),
               destination: str | None = Query(None,max_length=80),
               team: str | None = Query(None,max_length=80)):
-    try: return database.stats(after,before,operator=operator,
-                               operator_names=directory_operator_names(destination,team))
+    fields = api_field_access(request)
+    require_field_filters(fields, after=after, before=before, operator=operator,
+                          destination=destination, team=team)
+    try:
+        result = database.stats(after,before,operator=operator,
+                                operator_names=directory_operator_names(destination,team))
+        return project_metrics(result, fields)
     except Exception as e: json_failure(e)
 
 
 @app.get('/api/v1/states', dependencies=[Depends(require_metrics_api)], tags=['Analytics'])
-def api_states():
+def api_states(request: Request):
+    if 'aicallinfostate' not in api_field_access(request):
+        raise HTTPException(403, 'Status field not available')
     try: return {'states':database.statuses()}
     except Exception as e: json_failure(e)
 
@@ -612,6 +697,11 @@ def users_page(request: Request, session: dict = Depends(current_session)):
         },
         'permission_categories': PERMISSION_CATEGORIES,
         'permission_groups': group_options(),
+        'field_catalog': field_catalog(),
+        'default_fields': capability_fields(set(ROLE_GRANTS['analyst'])),
+        'user_fields': {user['id']: effective_fields(
+            permissions(user['role'],user['grants']),user['field_grants'])
+            for user in users},
         'recommended_groups': ROLE_RECOMMENDED_GROUP,
         'admin_only_caps': ADMIN_ONLY,
         'cap_labels': {
@@ -632,10 +722,12 @@ def users_page(request: Request, session: dict = Depends(current_session)):
 @app.post('/dashboard/users', include_in_schema=False)
 def add_user(request: Request, username: str = Form(...), password: str = Form(...),
              role: str = Form(...), csrf: str = Form(...),
-             grants: list[str] = Form([]), session: dict = Depends(current_session)):
+             grants: list[str] = Form([]), fields: list[str] = Form([]),
+             fields_present: bool = Form(False), session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     admin_only(session)
-    try: store.create_user(username.strip(),password,role,grants if role != 'admin' else None)
+    try: store.create_user(username.strip(),password,role,grants if role != 'admin' else None,
+                           fields=fields if fields_present else None)
     except (ValueError, __import__('sqlite3').IntegrityError) as exc:
         raise HTTPException(400, 'Invalid user options or username already exists') from exc
     return RedirectResponse('/dashboard/users',status_code=303)
@@ -644,12 +736,147 @@ def add_user(request: Request, username: str = Form(...), password: str = Form(.
 @app.post('/dashboard/users/{uid}/update', include_in_schema=False)
 def update_user(request: Request, uid: int, role: str = Form(...), csrf: str = Form(...),
                 is_active: bool = Form(False), grants: list[str] = Form([]),
+                fields: list[str] = Form([]), fields_present: bool = Form(False),
                 session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     admin_only(session)
-    try: store.update_user(uid,role,grants if role != 'admin' else None,is_active,session['user_id'])
+    try: store.update_user(uid,role,grants if role != 'admin' else None,is_active,session['user_id'],
+                           fields=fields if fields_present else None)
     except ValueError as exc: raise HTTPException(400,str(exc)) from exc
     return RedirectResponse('/dashboard/users',status_code=303)
+
+
+@app.get('/dashboard/mcp-apps', response_class=HTMLResponse, include_in_schema=False)
+def my_connected_ai_apps(request: Request, session: dict = Depends(current_session)):
+    """Self-service client-bound consent; not an OAuth authorization server."""
+    if not hasattr(store, 'user_access') or not hasattr(store, 'list_mcp_clients'):
+        raise HTTPException(503, 'Consent store unavailable')
+    access = store.user_access(session['user_id'])
+    if access is None:
+        raise HTTPException(403, 'Account disabled')
+    client_rows = []
+    for record in store.list_mcp_clients(session['user_id']):
+        try:
+            client_rows.append({
+                'client_id': record['client_id'],
+                'capabilities': set(json.loads(record['capabilities'])),
+                'fields': set(json.loads(record['fields'])),
+                'approved_at': record['approved_at']
+            })
+        except (TypeError, ValueError, KeyError):
+            continue
+    return templates.TemplateResponse(request, 'mcp_apps.html', {
+        'session': session, 'csrf': session['csrf'],
+        'capabilities': access['capabilities'] & {
+            'calls:read','metrics:read','calls:transcript:read','mcp:use'},
+        'fields': access['fields'] & capability_fields(access['capabilities'] & {
+            'mcp:use','calls:read','metrics:read','calls:transcript:read'}),
+        'field_catalog': field_catalog(),
+        'client_grants': client_rows,
+        'can_manage': 'users:manage' in access['capabilities'],
+        'oauth_mode': oauth_config.mode,
+    }, headers={'Cache-Control':'no-store'})
+
+
+@app.post('/dashboard/mcp-apps/approve', include_in_schema=False)
+def approve_my_ai_app(request: Request, csrf: str = Form(...),
+                      client_id: str = Form(...),
+                      capabilities: list[str] = Form([]),
+                      fields: list[str] = Form([]),
+                      session: dict = Depends(current_session)):
+    csrf_check(request, csrf, session)
+    if not hasattr(store, 'approve_mcp_client'):
+        raise HTTPException(503, 'Consent store unavailable')
+    try:
+        store.approve_mcp_client(session['user_id'], client_id,
+                                 ['mcp:use', *capabilities], fields)
+        store.record_activity(user_id=session['user_id'], surface='auth',
+                              action='MCP client consent updated',
+                              http_status=200, duration_ms=0)
+    except ValueError as exc:
+        raise HTTPException(400, 'Invalid client or delegated permissions') from exc
+    return RedirectResponse('/dashboard/mcp-apps', status_code=303)
+
+
+@app.post('/dashboard/mcp-apps/revoke', include_in_schema=False)
+def revoke_my_ai_app(request: Request, csrf: str = Form(...),
+                     client_id: str = Form(...),
+                     session: dict = Depends(current_session)):
+    csrf_check(request, csrf, session)
+    if not hasattr(store, 'revoke_mcp_client'):
+        raise HTTPException(503, 'Consent store unavailable')
+    store.revoke_mcp_client(session['user_id'], client_id)
+    store.record_activity(user_id=session['user_id'], surface='auth',
+                          action='MCP client consent revoked',
+                          http_status=200, duration_ms=0)
+    return RedirectResponse('/dashboard/mcp-apps', status_code=303)
+
+
+@app.get('/api/v1/me/access', tags=['Authorization'])
+def read_my_access(request: Request):
+    """Self-only metadata, never arbitrary user-id lookup or customer payload."""
+    if not hasattr(store, 'user_access'):
+        raise HTTPException(503, 'Field authorization unavailable')
+    auth = request.headers.get('authorization', '')
+    session = logged_in(request) if not auth else None
+    if session:
+        access = store.user_access(session['user_id'])
+        caps = access['capabilities'] if access else frozenset()
+        fields = access['fields'] if access else frozenset()
+    else:
+        raw = auth[7:] if auth.startswith('Bearer ') else ''
+        if oauth_config.mode == 'oauth':
+            details = oauth_verifier.verify_details(raw) if oauth_verifier else None
+            if not details or not details.get('client_id'):
+                raise HTTPException(401, 'Verified OAuth client required')
+            actor = store.actor_for_oauth(oauth_config.issuer, details['subject'])
+            if actor is None:
+                raise HTTPException(401, 'OAuth account is not linked')
+            delegated = store.mcp_access(actor, oauth_client=details['client_id'])
+            if delegated is None:
+                raise HTTPException(403, 'MCP authorization unavailable')
+            caps, fields = delegated['capabilities'], delegated['fields']
+        else:
+            actor = (store.actor_for_token(raw, 'api:read') or
+                     store.actor_for_token(raw, 'api:sensitive') or
+                     store.actor_for_token(raw, 'mcp:read'))
+            if actor is None:
+                raise HTTPException(401, 'Authentication required')
+            user = store.user_access(actor)
+            if user is None:
+                raise HTTPException(403, 'Account disabled')
+            if store.actor_for_token(raw, 'mcp:read'):
+                delegated = store.mcp_access(actor, legacy_token=raw)
+                if delegated is None:
+                    raise HTTPException(403, 'MCP authorization unavailable')
+                caps = delegated['capabilities']
+                fields = delegated['fields']
+            else:
+                if not hasattr(store, 'api_token_access'):
+                    raise HTTPException(403, 'API authorization unavailable')
+                if store.verify_token(raw, 'api:sensitive'):
+                    requested_scope = 'api:sensitive'
+                elif store.verify_token(raw, 'api:read'):
+                    requested_scope = 'api:read'
+                else:
+                    raise HTTPException(401, 'Token authorization revoked')
+                snapshot = store.api_token_access(actor, raw, requested_scope)
+                if snapshot is None:
+                    raise HTTPException(403, 'Token field authorization unavailable')
+                caps, fields = snapshot['capabilities'], snapshot['fields']
+    if not caps:
+        raise HTTPException(403, 'Account has no active access')
+    return JSONResponse({
+        'schema_version': 1, 'actor': 'self',
+        'capabilities': sorted(caps & {'calls:read','metrics:read',
+                                      'calls:transcript:read','mcp:use'}),
+        'fields': [
+            {'id': item['id'], 'label': item['label'],
+             'category': item['category']}
+            for item in field_catalog() if item['id'] in fields
+        ],
+        'hint': 'To change user grants ask an administrator; AI clients need separate consent.',
+    }, headers={'Cache-Control':'no-store'})
 
 
 @app.get('/dashboard/activity', response_class=HTMLResponse, include_in_schema=False)
@@ -751,9 +978,15 @@ class MCPBearerGate:
         raw = auth[7:] if auth.startswith('Bearer ') else ''
         actor = None
         if oauth_config.mode == 'oauth':
-            subject = oauth_verifier.verify(raw) if oauth_verifier else None
-            valid = bool(subject and store.oauth_identity_has_mcp_access(oauth_config.issuer, subject))
-            if valid: actor=store.actor_for_oauth(oauth_config.issuer,subject)
+            details = oauth_verifier.verify_details(raw) if oauth_verifier else None
+            # An IdP's signed subject alone does not identify the AI client.
+            # An unconsented, signed client may discover consent instructions,
+            # but a token with no signed client identity is rejected here.
+            valid = bool(details and details.get('client_id') and
+                         store.oauth_identity_has_mcp_access(
+                             oauth_config.issuer, details['subject']))
+            if valid:
+                actor = store.actor_for_oauth(oauth_config.issuer, details['subject'])
         else:
             valid = store.verify_token(raw, 'mcp:read')
             if valid: actor=store.actor_for_token(raw, 'mcp:read')

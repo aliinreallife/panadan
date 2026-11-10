@@ -30,38 +30,36 @@ def test_users_sessions_and_token_revocation(tmp_path):
     with pytest.raises(ValueError):store.update_user(admin,'reader',None,True,admin)
 
 
-def test_mcp_requires_calls_and_metrics(tmp_path):
+def test_mcp_requires_any_reporting_capability(tmp_path):
     store=Store(str(tmp_path/'auth.sqlite'))
     store.bootstrap('admin','a-test-password-with-14chars')
     admin=store.verify_login('admin','a-test-password-with-14chars')
-    for invalid in (['mcp:use'], ['calls:read','mcp:use'],
-                    ['metrics:read','mcp:use']):
-        with pytest.raises(ValueError,match='MCP requires'):
-            store.create_user('baduser','another-long-password','reader',invalid)
-    reader=store.create_user('reader1','another-long-password','reader',['calls:read'])
-    for invalid in (['mcp:use'], ['metrics:read','mcp:use']):
-        with pytest.raises(ValueError,match='MCP requires'):
-            store.update_user(reader,'reader',invalid,True,admin)
-    # Refused changes do not revoke unrelated sessions or alter grants.
-    assert store.verify_login('reader1','another-long-password') == reader
-    assert store.list_users()[-1]['grants'] == '["calls:read"]'
-    with pytest.raises(ValueError):store.create_token('bad','mcp:read',30,reader)
+    with pytest.raises(ValueError,match='MCP requires'):
+        store.create_user('baduser','another-long-password','reader',['mcp:use'])
+    # A call-only AI connection must not be forced to get metric access.
+    reader=store.create_user('reader1','another-long-password','reader',
+                             ['calls:read','mcp:use'])
+    metrics=store.create_user('metric1','another-long-password','metrics',
+                              ['metrics:read','mcp:use'])
+    _,calls_token=store.create_token('calls MCP','mcp:read',7,reader)
+    _,metrics_token=store.create_token('metrics MCP','mcp:read',7,metrics)
+    assert store.verify_token(calls_token,'mcp:read')
+    assert store.verify_token(metrics_token,'mcp:read')
+    assert store.mcp_access(reader,legacy_token=calls_token)['capabilities'] == {
+        'calls:read','mcp:use'}
+    assert store.mcp_access(metrics,legacy_token=metrics_token)['capabilities'] == {
+        'metrics:read','mcp:use'}
+    store.update_user(reader,'reader',['calls:read'],True,admin)
+    assert not store.verify_token(calls_token,'mcp:read')
 
 
 def test_legacy_inconsistent_grants_fail_closed():
-    # Historical rows or direct DB edits may contain MCP without its
-    # prerequisites. Never advertise mcp:use as effective authorization.
     from server.security import validate_user_grants
-    for caps in ('["mcp:use"]', '["calls:read","mcp:use"]',
-                 '["metrics:read","mcp:use"]'):
-        effective=permissions('reader',caps)
-        assert 'mcp:use' not in effective
-    assert {'mcp:use','calls:read','metrics:read'} <= permissions(
-        'reader','["mcp:use","calls:read","metrics:read"]'
-    )
+    assert 'mcp:use' not in permissions('reader','["mcp:use"]')
+    assert 'mcp:use' in permissions('reader','["calls:read","mcp:use"]')
+    assert 'mcp:use' in permissions('metrics','["metrics:read","mcp:use"]')
     with pytest.raises(ValueError):
         validate_user_grants('reader',['mcp:use'])
-
 
 
 def test_metrics_only_api_token_cannot_read_calls(tmp_path):
