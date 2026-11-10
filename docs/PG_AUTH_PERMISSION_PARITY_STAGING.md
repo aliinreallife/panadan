@@ -13,11 +13,13 @@ user fields, token snapshots and client approvals survive unchanged.
 
 ## Still blocked before any production cutover
 
-- The PostgreSQL `PgStore` lacks the runtime `user_access`,
-  `api_token_access`, `mcp_access`, `client_grants`,
-  approve/revoke/list-client methods and field-aware account editor present
-  in the SQLite store. Those must be implemented with equivalent revocation
-  and transaction semantics and verified with synthetic HTTP/MCP tests.
+- The PostgreSQL `PgStore` now implements account field-grant editing,
+  immutable token grant snapshots, request-time `user_access` /
+  `api_token_access` / `mcp_access` checks, server-side per-client OAuth
+  consent and revocation, and audited transcript-field checks. Synthetic
+  real-PostgreSQL tests exercise login, admin editing, grants, token
+  revocation, and MCP Streamable HTTP using synthetic Odoo result stubs.
+  **This is isolated staging coverage, not production acceptance.**
 - The runtime selector expressly accepts **only** a disposable local
   `127.0.0.1/panadan_ci` staging database. Do not relax this restriction
   before a separate reviewed production selector and least-privilege role.
