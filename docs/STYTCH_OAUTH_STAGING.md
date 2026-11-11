@@ -213,3 +213,51 @@ uv run --locked python tools/check_mcp_oauth.py \
 
 No production OAuth cutover is approved. Keep the PR in draft until live,
 negative-case and real-client interoperability gates pass.
+
+## Real Stytch Test token → synthetic MCP acceptance (2026-11-11)
+
+**Observed by test operator through the hosted, sanitized callback:**
+`Live staging MCP verification: Accepted: Stytch JWT verified and synthetic MCP tool executed. HTTP status: 200.`
+
+The callback's `probe_mcp=true` path exchanges a fresh Authorization Code + PKCE
+code at the trusted Stytch **Test** project-domain token endpoint, forwards the
+access token only server-to-server to the fixed staging MCP URL, and returns
+only a sanitized result. It does not display, log, or persist bearer tokens.
+
+The Test-issued token's decoded (not independently trustworthy) metadata
+reported RS256, 60-minute TTL, required `panadan:mcp:read` scope, a signed
+Test Connected App client identifier, and an audience array containing both
+the Stytch Test Project ID and the **exact**
+`https://panadan-mcp-oauth-staging.vercel.app/mcp/` resource URL.
+Panadan's staging MCP resource independently verifies RS256 signature using
+the pinned Stytch Test JWKS and enforces issuer, audience, scope, timestamp,
+signed client identity, and the explicitly configured Test-member binding.
+The positive result also required the expected synthetic tool response:
+a bare HTTP 200 without that output is not counted as acceptance.
+
+**What this establishes:** One approved disposable Stytch Test member using
+one explicitly registered Test client can successfully authorize and invoke
+the synthetic MCP staging tool via the real issuer and resource server.
+**What it does not establish:** RFC 8707 `resource` handling and
+dynamic per-resource audiences for CIMD/DCR clients; OAuth refresh;
+revocation effectiveness for already-issued access tokens; key rotation;
+production Panadan account mapping and field-level policy; or interoperability
+with ChatGPT, Claude, and a generic MCP inspector. The hosted client is a
+diagnostic only, not production OAuth client integration.
+
+**Required next negative/live gates before any cutover:**
+
+1. Confirm missing token and malformed token receive `401` with the exact
+   protected-resource metadata challenge in a real deployed request.
+2. Revoke the disposable Test-member binding on the **isolated** staging MCP,
+   confirm freshly issued tokens are denied, then restore the binding.
+   A binding revoke does not imply revoking already-issued JWTs at Stytch.
+3. Test wrong user, wrong client, wrong `aud`, wrong `scope`, expired token,
+   and missing/bad signatures against the deployed staging verifier.
+   Offline synthetic negative-case tests already exist.
+4. Probe RFC 8707 resource parameter in authorization and token requests and
+   verify actual token audiences for independent dynamically registered clients.
+5. Test client reconnection/renewal, consent removal, key rotation and
+   interoperability with actual MCP clients.
+6. Review the production account-binding and consent contract independently.
+   **Keep Panadan production on legacy bearer mode and this PR in draft.**
