@@ -261,3 +261,37 @@ diagnostic only, not production OAuth client integration.
    interoperability with actual MCP clients.
 6. Review the production account-binding and consent contract independently.
    **Keep Panadan production on legacy bearer mode and this PR in draft.**
+
+
+## Live staging member binding revocation and recovery (2026-11-11)
+
+**PASS — reported via operator's sanitized hosted OAuth callback and staged
+Vercel deployment verification.** This test was limited to the isolated Vercel
+project `panadan-mcp-oauth-staging`; Stytch Live, Panadan production, and the
+separate OAuth frontend project were not modified.
+
+| Phase | Staging member binding | Browser's real Stytch Test JWT → synthetic MCP |
+| --- | --- | --- |
+| Baseline | Approved disposable member hash | `200` — signed JWT verified and synthetic tool executed |
+| Revoked | Temporarily replaced only `PANADAN_STAGING_SUBJECT_SHA256` with 64 zeroes; redeployed | `401` — valid Stytch login/token exchange, but MCP authorization denied |
+| Restored | Original approved hash restored as an encrypted env value; redeployed | `200` — signed JWT verified and synthetic tool executed |
+
+The restored Vercel MCP deployment is `dpl_E7XgKWpQVD4vm8twj4EKATgPMbau`
+(`READY`, staging source commit `3413abc`); the stable
+`https://panadan-mcp-oauth-staging.vercel.app` alias points to the restored
+deployment. Health and protected-resource metadata both returned HTTP 200.
+The Test-only `PANADAN_STAGING_CLIENT_ID` and canonical `/mcp/` resource
+audience remained unchanged.
+
+The final recovered access token's **decoded** metadata included the fixed
+Stytch Test issuer, `panadan:mcp:read` scope, 60-minute TTL, Test client ID,
+and both the Stytch Project ID and the canonical staging MCP URL in its `aud`
+array. Crucially, the live probe independently required the exact expected
+synthetic MCP tool result; the callback reported
+`Accepted: Stytch JWT verified and synthetic MCP tool executed` (HTTP 200).
+
+**Scope and limitation:** This is **local MCP member-binding revocation**,
+not Stytch Test token or session revocation. It does not prove immediate
+invalidity of already-issued JWTs, nor the behavior of DCR/CIMD-registered
+clients. Tests for dynamic clients, RFC 8707 resource selection, JWT expiry,
+key rotation, and token renewal remain open. No production cutover is approved.
