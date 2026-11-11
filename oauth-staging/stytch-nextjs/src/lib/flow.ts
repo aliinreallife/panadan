@@ -22,11 +22,11 @@ export function validateAuthorizationParams(query: string): string | null {
 
 /** Prevent sessionStorage return paths from becoming open redirects. */
 export function safeReturnTo(value: string | null): string {
-  if (!value || !value.startsWith('/oauth/authorize?') || value.startsWith('//'))
+  if (!value || !(value.startsWith('/oauth/authorize?') || value.startsWith('/oauth/authorize-compat?')) || value.startsWith('//'))
     return '/';
   try {
     const url = new URL(value, 'http://localhost');
-    if (url.origin !== 'http://localhost' || url.pathname !== '/oauth/authorize')
+    if (url.origin !== 'http://localhost' || !['/oauth/authorize', '/oauth/authorize-compat'].includes(url.pathname))
       return '/';
     return validateAuthorizationParams(url.search) === null
       ? url.pathname + url.search
