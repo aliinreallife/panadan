@@ -102,3 +102,15 @@ npm run dev
 ```
 
 Try a private browser window on the same hostname used for OTP to exclude a stale service worker from another localhost app. CI runs headless Chromium against the *development server* with a syntactically valid nonproduction dummy Test public token and checks for client-side module-loader crashes on `/` and `/login`; it does not prove actual Stytch member login or the OAuth grant.
+
+
+## Local Connected Apps PKCE consent test
+
+Stytch Test member sign-in is confirmed in the browser. To test OAuth separately from MCP:
+
+1. In Stytch **Test → Connected Apps → Settings**, set Authorization URL to `http://127.0.0.1:3000/oauth/authorize` for a browser currently on 127.0.0.1; if using localhost, use `http://localhost:3000/oauth/authorize`. Both must point to the same origin as the authenticated browser session. Stytch's example uses localhost.
+2. In **Test → Connected Apps → Clients**, create a client named `Panadan Local PKCE Test` with type `Third Party Public`; register exact callback URI `http://127.0.0.1:3000/oauth/test-callback` (or localhost form matching your browser); allow the `panadan:mcp:read` scope. No confidential client secret is needed. Do not create in Live.
+3. Go to `/oauth/test-client`, paste its public Client ID, and click `Start Authorization Code + PKCE`.
+4. If Stytch displays consent, approve only the intended Panadan MCP read scope. The client then returns to `/oauth/test-callback` and checks that the authorization code and random `state` match its short-lived browser transaction.
+
+This smoke test does NOT exchange codes for tokens or prove secure JWT validation. Token exchange, RS256 verification, exact `aud` equal to the *staging* MCP resource, issuer/JWKS discovery, signed client identity, authorization scope and expiry, and the real ChatGPT/Claude connection must be implemented/tested separately. The authorization code is not displayed or stored after callback.

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-for (const route of ['/', '/login']) {
+for (const route of ['/', '/login', '/oauth/test-client', '/oauth/test-callback']) {
   test('does not throw a module loader error on ' + route, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));

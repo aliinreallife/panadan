@@ -28,6 +28,7 @@ export default function HomePage() {
           <Link className="primary" href="/login">Sign in with Stytch Test</Link>
         </div>
       )}
+      <p><Link href="/oauth/test-client">Test authorization and consent with a local PKCE client</Link></p>
       <p className="muted">No customer data, Panadan production database or Legacy MCP tokens are used here.</p>
     </section>
   );
