@@ -168,3 +168,48 @@ Keep the previously configured Public Token and Test Project ID. Do not use the 
 The local inspector now fetches the discovered metadata, verifies the `issuer` exactly matches the configured trusted Test domain, and only exchanges codes at `https://same-issuer/v1/oauth2/token`; it does not follow discovery redirects or accept client-controlled token URLs. This prevents mistakenly exchanging PKCE codes at an unrelated or legacy endpoint. The project domain is a configuration value, not a token or private key.
 
 If discovery fails, report the exact sanitized error. If discovery succeeds but exchange remains 403, inspect the sanitized provider identifiers and network path. A non-JSON 403 alone does not prove a proxy problem.
+
+
+## Independent HTTPS MCP staging resource (2026-11-11)
+
+The second, isolated staging-only Vercel project is available at
+`https://panadan-mcp-oauth-staging.vercel.app`, with a canonical MCP resource
+`https://panadan-mcp-oauth-staging.vercel.app/mcp/`. The app source lives in
+`oauth-staging/mcp-resource/` and is served as FastAPI with MCP SDK v2.
+It has **no** Panadan reporting code, Odoo, production VPN, database or legacy
+bearer-token credential. Only a synthetic access tool is installed.
+
+The staging app requires all of the following simultaneously:
+
+- A real RS256-verified access JWT from the pinned Stytch **Test** issuer/JWKS.
+- `aud` containing the canonical staging MCP URL, exact scope
+  `panadan:mcp:read`, valid timestamps, and a signed OAuth client identity.
+- An explicitly permitted Test client ID and SHA-256 hash of the disposable
+  Test member's signed `sub` claim. By default the subject hash environment
+  setting is all zeros, which deliberately denies all member access.
+
+The Test authorization UI's sanitized token inspector returns `sub_sha256`
+so an operator can configure that binding without ever copying a raw token or
+OAuth authorization code. This hash is a persistent pseudonymous identifier
+and should be handled as Test-only access metadata.
+
+**Vercel MCP project**: `panadan-mcp-oauth-staging` in the Personal account,
+root directory `oauth-staging/mcp-resource`. The Stytch authorization UI
+remains a separate Vercel project and the original Panadan production
+deployment stays unchanged.
+
+**Stytch Test follow-up (not yet complete)**: modify only the existing
+disposable Third Party Public Connected App's `access_token_custom_audience`
+to `https://panadan-mcp-oauth-staging.vercel.app/mcp/`; obtain a fresh access
+JWT and confirm the resource appears in its signed `aud` claim. A per-client
+custom audience is not proof that Stytch enforces RFC8707 resource indicators
+for dynamically registered ChatGPT/Claude clients. Test that separately.
+
+Read-only preflight:
+```bash
+uv run --locked python tools/check_mcp_oauth.py \
+  https://panadan-mcp-oauth-staging.vercel.app/mcp/
+```
+
+No production OAuth cutover is approved. Keep the PR in draft until live,
+negative-case and real-client interoperability gates pass.
