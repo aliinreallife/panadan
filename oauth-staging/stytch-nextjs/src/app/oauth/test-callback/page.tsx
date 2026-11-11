@@ -12,6 +12,7 @@ type Transaction = {
 };
 type Inspection = {
   status: string;
+  mcp_probe?: {status: 'accepted' | 'rejected' | 'unexpected' | 'unavailable'; http_status: number | null; verified_by_resource: boolean} | null;
   detail?: string;
   provider_http_status?: number;
   provider_error_type?: string | null;
@@ -59,7 +60,7 @@ export default function TestCallback() {
     }
   }, []);
 
-  async function exchangeOnce() {
+  async function exchangeOnce(testSyntheticMcp: boolean) {
     if (!pending || busy) return;
     const { transaction, code } = pending;
     setPending(null);
@@ -74,6 +75,7 @@ export default function TestCallback() {
           code_verifier: transaction.verifier,
           client_id: transaction.clientId,
           redirect_uri: transaction.redirectUri,
+          probe_mcp: testSyntheticMcp,
         }),
         cache: 'no-store',
       });
@@ -93,8 +95,12 @@ export default function TestCallback() {
       <h1>Authorization result</h1>
       <p role="status">{status}</p>
       {pending && !busy && (
-        <button type="button" className="primary" style={{border:0,cursor:'pointer'}}
-          onClick={exchangeOnce}>Exchange code once &amp; inspect access token</button>
+        <div style={{display:'flex',flexWrap:'wrap',gap:12}}>
+          <button type="button" className="primary" style={{border:0,cursor:'pointer'}}
+            onClick={()=>exchangeOnce(true)}>Exchange code &amp; test synthetic MCP</button>
+          <button type="button" style={{cursor:'pointer',padding:'10px 14px'}}
+            onClick={()=>exchangeOnce(false)}>Inspect token only</button>
+        </div>
       )}
       {busy && <p role="status">Contacting the Stytch Test token endpoint…</p>}
       {inspection?.status === 'error' && (
@@ -127,7 +133,19 @@ export default function TestCallback() {
           <p className="muted">No access token, refresh token, authorization code or PKCE verifier is returned or displayed.</p>
         </section>
       )}
-      <p className="muted">This Test-only diagnostic exchanges the code and shows selected decoded claims. It does not verify token signatures, prove resource authorization, or contact Panadan MCP.</p>
+      {inspection?.status === 'ok' && inspection.mcp_probe && (
+        <section className="session-state" role="status">
+          <h2>Live staging MCP verification</h2>
+          <p><strong>{inspection.mcp_probe.status === 'accepted'
+            ? 'Accepted: Stytch JWT verified and synthetic MCP tool executed.'
+            : inspection.mcp_probe.status === 'rejected'
+              ? 'Rejected: MCP denied this token or member/client binding.'
+              : 'Not verified: staging MCP did not provide the expected synthetic result.'}</strong></p>
+          <p>HTTP status: {inspection.mcp_probe.http_status ?? 'unavailable'}</p>
+          <p className="muted">Only the fixed Test MCP endpoint is contacted server-to-server. No token, claims, user identifier, or tool response is returned by this probe.</p>
+        </section>
+      )}
+      <p className="muted">Test-only OAuth code exchange. The optional MCP probe verifies the signed token on a separate, synthetic-only staging service. It does not contact production Panadan or customer data.</p>
       <Link href="/oauth/test-client">Start another authorization test</Link>
     </section>
   );
