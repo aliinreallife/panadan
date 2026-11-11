@@ -141,3 +141,13 @@ To avoid leaking authorization codes in the dev terminal, `next.config.ts` turns
 If the local token inspection displayed `This diagnostic endpoint is restricted to the local test origin`, the Next.js runtime was comparing its internally normalized `request.nextUrl.origin` to the browser Origin. On Windows-to-WSL localhost forwarding these can differ. The inspector now permits **only** `http://127.0.0.1:3000` or `http://localhost:3000` and validates that the HTTP `Host` matches the submitted browser `Origin`, rather than trusting an internally rewritten request URL. The exact callback redirect must also match that browser origin. Browser CI tests exercise the accepted same-origin request and a blocked hostile origin.
 
 **Any previously rejected callback has already discarded its one-time authorization code in the test UI.** Start a new flow from `/oauth/test-client` and approve consent again before clicking **Exchange code once & inspect access token**. Never send codes, PKCE verifiers or access tokens in chat.
+
+
+## Diagnose token exchange HTTP 403 without leaking credentials
+
+A successful Stytch authorization code plus matching state proves the front-channel consent step, **not** token issuance. If exchanging that code returns 403, the staging inspector now exposes only safe diagnostic identifiers: `provider_http_status`, `provider_error_type`, `oauth_error`, `provider_request_id`, and whether the upstream response was JSON or non-JSON. The provider's raw response, `error_message`, token strings, authorization codes, and PKCE verifiers are not displayed or logged.
+
+- A structured Stytch `provider_error_type` and `provider_request_id` should help isolate the actual rejection and can be used in a Stytch support ticket.
+- A non-JSON response with 403 may indicate an upstream network/proxy response rather than a structured Stytch rejection; investigate WSL proxy settings if so.
+- The client configuration remains Test-only; no role, audience, token TTL or credential changes should be made until the error type is known.
+- Authorization codes are one-time: after pulling this change, start a **new** PKCE authorization/consent flow before using the inspector.

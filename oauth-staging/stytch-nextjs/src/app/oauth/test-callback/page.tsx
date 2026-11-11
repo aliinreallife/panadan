@@ -13,6 +13,11 @@ type Transaction = {
 type Inspection = {
   status: string;
   detail?: string;
+  provider_http_status?: number;
+  provider_error_type?: string | null;
+  oauth_error?: string | null;
+  provider_request_id?: string | null;
+  provider_response_kind?: string;
   access_token_format?: string;
   token_type?: string;
   expires_in?: number;
@@ -92,6 +97,19 @@ export default function TestCallback() {
           onClick={exchangeOnce}>Exchange code once &amp; inspect access token</button>
       )}
       {busy && <p role="status">Contacting the Stytch Test token endpoint…</p>}
+      {inspection?.status === 'error' && (
+        <section className="session-state" role="status">
+          <h2>Sanitized provider diagnostic</h2>
+          <pre style={{overflowWrap:'anywhere',whiteSpace:'pre-wrap'}}>{JSON.stringify({
+            provider_http_status: inspection.provider_http_status,
+            provider_error_type: inspection.provider_error_type,
+            oauth_error: inspection.oauth_error,
+            provider_request_id: inspection.provider_request_id,
+            provider_response_kind: inspection.provider_response_kind,
+          }, null, 2)}</pre>
+          <p className="muted">Only error identifiers are shown. No provider message, authorization code, PKCE verifier or token is displayed.</p>
+        </section>
+      )}
       {inspection?.status === 'ok' && (
         <section className="session-state">
           <h2>Sanitized token metadata</h2>

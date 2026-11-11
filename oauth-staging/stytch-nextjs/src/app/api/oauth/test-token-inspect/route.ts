@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { summarizeProviderFailure } from '@/lib/stytchErrors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -102,8 +103,21 @@ export async function POST(request: NextRequest) {
       signal: AbortSignal.timeout(15000),
     });
 
-    // Never log the provider response or echo opaque error details; they may include tokens.
-    if (!result.ok) return errorResponse('Stytch Test rejected the code exchange (HTTP ' + result.status + '). Start a fresh authorization and verify the configured Project ID.', 502);
+    // Read error details only to extract allowlisted identifiers. Provider
+    // messages and response bodies may be sensitive, so never echo/log them.
+    if (!result.ok) {
+      const rawBody = await result.text();
+      const safe = summarizeProviderFailure(
+        result.status,
+        result.headers.get('content-type') || '',
+        rawBody,
+      );
+      return NextResponse.json({
+        status: 'error',
+        detail: 'Stytch Test rejected the code exchange. Start a fresh authorization after checking the diagnostic values.',
+        ...safe,
+      }, { status: 502, headers: HEADERS });
+    }
     const resultData = await result.json() as Record<string, unknown>;
     const token = resultData.access_token;
     if (typeof token !== 'string' || !token)
