@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'node:crypto';
 import { summarizeProviderFailure } from '@/lib/stytchErrors';
 import { parseTestIssuer, discoveredTokenEndpoint, type StytchOAuthMetadata } from '@/lib/stytchDiscovery';
 import { isAllowedInspectorOrigin, isAllowedInspectorClient } from '@/lib/stytchInspectorOrigin';
@@ -38,6 +39,9 @@ function safeDecodeUnverified(raw: string): Record<string, unknown> | null {
       scopes: scopeList,
       required_scope_present: scopeList.includes('panadan:mcp:read'),
       sub_present: typeof get('sub') === 'string',
+      // Pseudonymous Test member binding for the separate staging MCP.
+      // Decoded only, not proof of identity until resource verifies RS256.
+      sub_sha256: get('sub') ? createHash('sha256').update(get('sub')!, 'utf8').digest('hex') : null,
       client_id: get('client_id'),
       azp: get('azp'),
       token_use: get('token_use'),
