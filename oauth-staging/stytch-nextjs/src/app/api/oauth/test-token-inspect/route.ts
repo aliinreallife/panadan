@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { summarizeProviderFailure } from '@/lib/stytchErrors';
 import { parseTestIssuer, discoveredTokenEndpoint, type StytchOAuthMetadata } from '@/lib/stytchDiscovery';
+import { isAllowedInspectorOrigin, isAllowedInspectorClient } from '@/lib/stytchInspectorOrigin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,13 +58,11 @@ export async function POST(request: NextRequest) {
   // Check the actual browser Origin against the original Host header instead.
   const browserOrigin = request.headers.get('origin');
   const requestHost = request.headers.get('host');
-  const allowedOrigins = new Set([
-    'http://127.0.0.1:3000',
-    'http://localhost:3000',
-  ]);
-  if (!browserOrigin || !allowedOrigins.has(browserOrigin)
-    || requestHost !== new URL(browserOrigin).host)
-    return errorResponse('This diagnostic endpoint is restricted to the local test origin.', 403);
+  const hostedRuntime = process.env.VERCEL === '1' || Boolean(process.env.VERCEL_ENV);
+  if (!isAllowedInspectorOrigin(
+    browserOrigin, requestHost, process.env.STYTCH_TEST_INSPECT_ORIGIN, hostedRuntime,
+  ))
+    return errorResponse('Token inspection is restricted to the configured Test origin.', 403);
 
   const projectId = process.env.STYTCH_TEST_PROJECT_ID;
   if (!projectId || !PROJECT_TEST_ID.test(projectId))
@@ -88,6 +87,10 @@ export async function POST(request: NextRequest) {
     || typeof clientId !== 'string' || !PUBLIC_CLIENT_ID.test(clientId)
     || typeof redirect !== 'string' || redirect !== browserOrigin + '/oauth/test-callback')
     return errorResponse('Malformed one-time code, PKCE verifier, client ID or callback.', 400);
+
+  if (!isAllowedInspectorClient(browserOrigin, clientId, process.env.STYTCH_TEST_CLIENT_ID))
+    return errorResponse('This Connected App is not authorized for hosted Test diagnostics.', 403);
+
 
   // Use this B2B project's published OAuth endpoint instead of a shared
   // public/M2M endpoint. Issuer is explicitly configured locally, never client-supplied.
