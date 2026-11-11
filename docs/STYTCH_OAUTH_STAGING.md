@@ -70,3 +70,18 @@ CI may compile this app, but a successful compilation alone does not prove Stytc
 After entering the email OTP, open `http://localhost:3000/` in the **same browser origin** used to sign in. The app now shows either **Stytch Test member signed in** or **Not signed in**, based on the real `useStytchMemberSession` state. Next.js `GET /login 200` only proves page loading, not successful authentication. Avoid alternating `localhost` and `127.0.0.1`: browser sessions/cookies are origin-sensitive. A signed-in state proves the Test browser member session, **not** OAuth code issuance or Panadan MCP token acceptance.
 
 A repeated `GET /sw.js 404` is generally an optional browser service worker probe; unrelated to the Stytch authentication state. The Next.js workspace-root multiple-lockfiles warning is non-blocking.
+
+## Recovering from a Next.js `undefined.call` module error
+
+If `HomePage` crashes with `Cannot read properties of undefined (reading 'call')` after a hot reload, stop the local dev server and remove the **generated** cache only:
+
+```bash
+cd ~/panadan-stytch-staging
+# Pull the latest PR branch; Git should be clean for tracked files.
+git pull --ff-only
+cd oauth-staging/stytch-nextjs
+rm -rf .next
+npm run dev
+```
+
+Open the same hostname used for OTP (`localhost` or `127.0.0.1`) and force-refresh once. This does not delete `.env.local`, npm dependencies, or Stytch Test sessions. The home page uses a single client-component boundary for the session hook to avoid a separate server-to-client module reference.
