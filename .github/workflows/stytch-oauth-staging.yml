@@ -29,3 +29,9 @@ jobs:
         run: npm run typecheck
       - name: Build staging app with no Stytch secret
         run: npm run build
+      - name: Install Chromium for browser smoke
+        run: npx playwright install --with-deps chromium
+      - name: Test client-side module loading with Turbopack
+        env:
+          NEXT_PUBLIC_STYTCH_PUBLIC_TOKEN: public-token-test-123e4567-e89b-12d3-a456-426614174000
+        run: npm run test:browser

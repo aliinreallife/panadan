@@ -7,6 +7,8 @@ const config: NextConfig = {
   reactStrictMode: false,
   // Prevent a parent home-directory lockfile from becoming this app's root.
   outputFileTracingRoot: path.resolve(__dirname),
+  // Keep the isolated staging app independent of parent lockfiles in dev.
+  turbopack: { root: path.resolve(__dirname) },
 };
 
 export default config;

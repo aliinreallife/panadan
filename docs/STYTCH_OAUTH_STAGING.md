@@ -85,3 +85,20 @@ npm run dev
 ```
 
 Open the same hostname used for OTP (`localhost` or `127.0.0.1`) and force-refresh once. This does not delete `.env.local`, npm dependencies, or Stytch Test sessions. The home page uses a single client-component boundary for the session hook to avoid a separate server-to-client module reference.
+
+
+## Development bundler and browser runtime regression
+
+The isolated staging app now uses Next.js 15 Turbopack for `npm run dev`, bypassing the Webpack module-loading path that repeatedly crashed on `/`. Its Turbopack project root is explicitly pinned to the staging app. Production builds remain on the existing `next build` path.
+
+For a clean local restart, stop the server and run:
+
+```bash
+cd ~/panadan-stytch-staging
+git pull --ff-only
+cd oauth-staging/stytch-nextjs
+rm -rf .next
+npm run dev
+```
+
+Try a private browser window on the same hostname used for OTP to exclude a stale service worker from another localhost app. CI runs headless Chromium against the *development server* with a syntactically valid nonproduction dummy Test public token and checks for client-side module-loader crashes on `/` and `/login`; it does not prove actual Stytch member login or the OAuth grant.
