@@ -114,3 +114,23 @@ Stytch Test member sign-in is confirmed in the browser. To test OAuth separately
 4. If Stytch displays consent, approve only the intended Panadan MCP read scope. The client then returns to `/oauth/test-callback` and checks that the authorization code and random `state` match its short-lived browser transaction.
 
 This smoke test does NOT exchange codes for tokens or prove secure JWT validation. Token exchange, RS256 verification, exact `aud` equal to the *staging* MCP resource, issuer/JWKS discovery, signed client identity, authorization scope and expiry, and the real ChatGPT/Claude connection must be implemented/tested separately. The authorization code is not displayed or stored after callback.
+
+
+## Exchange the OAuth code once, without displaying credentials
+
+The local callback now retains the *validated* short-lived code and PKCE verifier only in the browser's component memory, removes code/query parameters from the visible URL, and provides **Exchange code once & inspect access token**.
+
+Stytch's official Next.js Connected Apps example exchanges with the Test public endpoint:
+`POST https://test.stytch.com/v1/public/{STYTCH_TEST_PROJECT_ID}/oauth2/token` using `grant_type=authorization_code`, `client_id`, `redirect_uri`, `code`, `code_verifier`. The isolated API proxy accepts only same-origin local Test clients and returns **sanitized metadata**, never raw access/refresh tokens.
+
+Before starting a **fresh** authorization, append this to your existing local `.env.local` (preserve your configured public token):
+
+```dotenv
+STYTCH_TEST_PROJECT_ID=project-test-5ce2a5ad-c6a8-4177-a6a4-a918c7add228
+```
+
+This public Test Project ID was observed in the callback issuer parameter. Verify it against your Stytch **Test → Project Overview** before use. Restart Next.js to load the server-only environment setting, then return to `/oauth/test-client` and perform a **new** authorization. Previous codes were deliberately discarded and cannot be exchanged.
+
+The results show `alg`, `iss`, `aud`, scope, client identity, timestamps and token format, but the JWT is only **decoded**, not signature-verified. Compare it with Panadan's strict `server/oauth_mcp.py` requirements; never treat decoded claims as authorization. In particular, Panadan requires an HTTPS issuer, exact staging resource `aud`, RS256, signed client identity, and `panadan:mcp:read`. No production OAuth cutover occurs here.
+
+To avoid leaking authorization codes in the dev terminal, `next.config.ts` turns off incoming-request logging and adds a no-referrer policy for the callback. Other web-server reverse proxies, browser history, observability systems, and network tools may still see the initial OAuth callback request; never share those values.

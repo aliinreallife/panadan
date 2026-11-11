@@ -2,13 +2,21 @@ import type { NextConfig } from 'next';
 import path from 'node:path';
 
 const config: NextConfig = {
-  // The Stytch authorization component can initiate an authorization request
-  // on mount. Avoid React's development-only StrictMode double mounting.
   reactStrictMode: false,
-  // Prevent a parent home-directory lockfile from becoming this app's root.
   outputFileTracingRoot: path.resolve(__dirname),
-  // Keep the isolated staging app independent of parent lockfiles in dev.
   turbopack: { root: path.resolve(__dirname) },
+  // OAuth authorization codes arrive in callback query strings. Do not
+  // print those URLs in the local Next.js development terminal.
+  logging: { incomingRequests: false },
+  async headers() {
+    return [{
+      source: '/oauth/test-callback',
+      headers: [
+        { key: 'Referrer-Policy', value: 'no-referrer' },
+        { key: 'Cache-Control', value: 'no-store' },
+      ],
+    }];
+  },
 };
 
 export default config;
