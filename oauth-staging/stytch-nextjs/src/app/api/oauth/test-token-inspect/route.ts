@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { summarizeProviderFailure } from '@/lib/stytchErrors';
+import { parseTestIssuer, discoveredTokenEndpoint, type StytchOAuthMetadata } from '@/lib/stytchDiscovery';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -88,8 +89,29 @@ export async function POST(request: NextRequest) {
     || typeof redirect !== 'string' || redirect !== browserOrigin + '/oauth/test-callback')
     return errorResponse('Malformed one-time code, PKCE verifier, client ID or callback.', 400);
 
+  // Use this B2B project's published OAuth endpoint instead of a shared
+  // public/M2M endpoint. Issuer is explicitly configured locally, never client-supplied.
+  let issuer: URL;
+  try { issuer = parseTestIssuer(process.env.STYTCH_TEST_ISSUER_URL); }
+  catch {
+    return errorResponse('Set STYTCH_TEST_ISSUER_URL to your Stytch Test Project Domain (https://...customers.stytch.dev) in .env.local and restart.', 400);
+  }
+  let tokenEndpoint: string;
   try {
-    const result = await fetch('https://test.stytch.com/v1/public/' + projectId + '/oauth2/token', {
+    const metadataResponse = await fetch(new URL('/.well-known/oauth-authorization-server', issuer), {
+      headers: { Accept: 'application/json' }, redirect: 'error', cache: 'no-store',
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!metadataResponse.ok)
+      return errorResponse('Stytch Test OAuth discovery failed (HTTP ' + metadataResponse.status + '). Confirm the Test Project Domain.', 502);
+    const metadata = await metadataResponse.json() as StytchOAuthMetadata;
+    tokenEndpoint = discoveredTokenEndpoint(issuer, metadata);
+  } catch {
+    return errorResponse('Stytch Test discovery could not verify the issuer and token endpoint. Check STYTCH_TEST_ISSUER_URL.', 502);
+  }
+
+  try {
+    const result = await fetch(tokenEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({

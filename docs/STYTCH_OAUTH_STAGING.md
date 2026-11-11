@@ -151,3 +151,20 @@ A successful Stytch authorization code plus matching state proves the front-chan
 - A non-JSON response with 403 may indicate an upstream network/proxy response rather than a structured Stytch rejection; investigate WSL proxy settings if so.
 - The client configuration remains Test-only; no role, audience, token TTL or credential changes should be made until the error type is known.
 - Authorization codes are one-time: after pulling this change, start a **new** PKCE authorization/consent flow before using the inspector.
+
+
+## Project-domain Connected Apps token endpoint (2026 update)
+
+The earlier staging token exchange used the shared public/M2M URL `https://test.stytch.com/v1/public/{PROJECT_ID}/oauth2/token`. For Stytch B2B Connected Apps, obtain the actual OAuth token endpoint from your Test Project Domain's `/.well-known/oauth-authorization-server` metadata instead. The expected project-domain token endpoint is `/v1/oauth2/token`.
+
+In Stytch **Test → Project Overview → Project ID & API Keys**, locate **Project Domain** (usually shaped like `https://unique-name.customers.stytch.dev`). Copy the full HTTPS issuer into your local `.env.local`:
+
+```dotenv
+STYTCH_TEST_ISSUER_URL=https://YOUR-TEST-PROJECT.customers.stytch.dev
+```
+
+Keep the previously configured Public Token and Test Project ID. Do not use the shared `test.stytch.com` API host or a Live domain. No secret key is required. Restart Next.js and start a **fresh** authorization from `/oauth/test-client`.
+
+The local inspector now fetches the discovered metadata, verifies the `issuer` exactly matches the configured trusted Test domain, and only exchanges codes at `https://same-issuer/v1/oauth2/token`; it does not follow discovery redirects or accept client-controlled token URLs. This prevents mistakenly exchanging PKCE codes at an unrelated or legacy endpoint. The project domain is a configuration value, not a token or private key.
+
+If discovery fails, report the exact sanitized error. If discovery succeeds but exchange remains 403, inspect the sanitized provider identifiers and network path. A non-JSON 403 alone does not prove a proxy problem.
