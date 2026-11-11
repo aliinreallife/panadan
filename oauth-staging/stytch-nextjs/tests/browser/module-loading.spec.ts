@@ -13,3 +13,25 @@ for (const route of ['/', '/login', '/oauth/test-client', '/oauth/test-callback'
     )).toEqual([]);
   });
 }
+
+
+test('browser same-origin token inspection reaches configuration validation, not 403', async ({ page, request }) => {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const sameOriginStatus = await page.evaluate(async () => {
+    const r = await fetch('/api/oauth/test-token-inspect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    return r.status;
+  });
+  // The CI job has no real Stytch Test Project ID, so we expect the explicit
+  // configuration error rather than a rejected local browser origin.
+  expect(sameOriginStatus).toBe(400);
+
+  const rejected = await request.post('/api/oauth/test-token-inspect', {
+    headers: { origin: 'https://attacker.example' },
+    data: {},
+  });
+  expect(rejected.status()).toBe(403);
+});

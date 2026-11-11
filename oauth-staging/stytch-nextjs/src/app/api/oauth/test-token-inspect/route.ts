@@ -49,11 +49,18 @@ function safeDecodeUnverified(raw: string): Record<string, unknown> | null {
 }
 
 export async function POST(request: NextRequest) {
-  const url = request.nextUrl;
-  // This code-exchange inspector is intentionally *local-only*; don't expose
-  // an unprotected diagnostic token exchange endpoint on a deployed host.
-  if (!['127.0.0.1', 'localhost'].includes(url.hostname)
-    || request.headers.get('origin') !== url.origin)
+  // Never infer the browser-facing origin from request.nextUrl. Next.js 15
+  // may normalize that origin to localhost even if the user is browsing
+  // http://127.0.0.1:3000 (notably with Windows -> WSL2 port forwarding).
+  // Check the actual browser Origin against the original Host header instead.
+  const browserOrigin = request.headers.get('origin');
+  const requestHost = request.headers.get('host');
+  const allowedOrigins = new Set([
+    'http://127.0.0.1:3000',
+    'http://localhost:3000',
+  ]);
+  if (!browserOrigin || !allowedOrigins.has(browserOrigin)
+    || requestHost !== new URL(browserOrigin).host)
     return errorResponse('This diagnostic endpoint is restricted to the local test origin.', 403);
 
   const projectId = process.env.STYTCH_TEST_PROJECT_ID;
@@ -77,7 +84,7 @@ export async function POST(request: NextRequest) {
   if (typeof code !== 'string' || !/^[A-Za-z0-9._~-]{12,4096}$/.test(code)
     || typeof verifier !== 'string' || !PKCE_VERIFIER.test(verifier)
     || typeof clientId !== 'string' || !PUBLIC_CLIENT_ID.test(clientId)
-    || typeof redirect !== 'string' || redirect !== url.origin + '/oauth/test-callback')
+    || typeof redirect !== 'string' || redirect !== browserOrigin + '/oauth/test-callback')
     return errorResponse('Malformed one-time code, PKCE verifier, client ID or callback.', 400);
 
   try {

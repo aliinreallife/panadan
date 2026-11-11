@@ -134,3 +134,10 @@ This public Test Project ID was observed in the callback issuer parameter. Verif
 The results show `alg`, `iss`, `aud`, scope, client identity, timestamps and token format, but the JWT is only **decoded**, not signature-verified. Compare it with Panadan's strict `server/oauth_mcp.py` requirements; never treat decoded claims as authorization. In particular, Panadan requires an HTTPS issuer, exact staging resource `aud`, RS256, signed client identity, and `panadan:mcp:read`. No production OAuth cutover occurs here.
 
 To avoid leaking authorization codes in the dev terminal, `next.config.ts` turns off incoming-request logging and adds a no-referrer policy for the callback. Other web-server reverse proxies, browser history, observability systems, and network tools may still see the initial OAuth callback request; never share those values.
+
+
+## Local token inspector origin guard (WSL / Next.js)
+
+If the local token inspection displayed `This diagnostic endpoint is restricted to the local test origin`, the Next.js runtime was comparing its internally normalized `request.nextUrl.origin` to the browser Origin. On Windows-to-WSL localhost forwarding these can differ. The inspector now permits **only** `http://127.0.0.1:3000` or `http://localhost:3000` and validates that the HTTP `Host` matches the submitted browser `Origin`, rather than trusting an internally rewritten request URL. The exact callback redirect must also match that browser origin. Browser CI tests exercise the accepted same-origin request and a blocked hostile origin.
+
+**Any previously rejected callback has already discarded its one-time authorization code in the test UI.** Start a new flow from `/oauth/test-client` and approve consent again before clicking **Exchange code once & inspect access token**. Never send codes, PKCE verifiers or access tokens in chat.
