@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { summarizeProviderFailure } from '@/lib/stytchErrors';
 import { parseTestIssuer, discoveredTokenEndpoint, type StytchOAuthMetadata } from '@/lib/stytchDiscovery';
-import { isAllowedInspectorOrigin, isAllowedInspectorClient } from '@/lib/stytchInspectorOrigin';
+import { HOSTED_STAGING_ORIGIN, isAllowedInspectorOrigin, isAllowedInspectorClient } from '@/lib/stytchInspectorOrigin';
+import { probeStytchTestMcp } from '@/lib/stytchStagingMcpProbe';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -95,6 +96,10 @@ export async function POST(request: NextRequest) {
   if (!isAllowedInspectorClient(browserOrigin, clientId, process.env.STYTCH_TEST_CLIENT_ID))
     return errorResponse('This Connected App is not authorized for hosted Test diagnostics.', 403);
 
+  // Never forward localhost or arbitrary client requests to the remote MCP staging service.
+  if (data.probe_mcp === true && browserOrigin !== HOSTED_STAGING_ORIGIN)
+    return errorResponse('MCP probing is restricted to the configured HTTPS Test host.', 403);
+
 
   // Use this B2B project's published OAuth endpoint instead of a shared
   // public/M2M endpoint. Issuer is explicitly configured locally, never client-supplied.
@@ -159,6 +164,7 @@ export async function POST(request: NextRequest) {
       expires_in: typeof resultData.expires_in === 'number' ? resultData.expires_in : null,
       refresh_token_returned: typeof resultData.refresh_token === 'string',
       jwt: safeDecodeUnverified(token),
+      mcp_probe: data.probe_mcp === true ? await probeStytchTestMcp(token) : null,
     }, { headers: HEADERS });
   } catch {
     return errorResponse('Could not reach the Stytch Test token endpoint.', 502);
