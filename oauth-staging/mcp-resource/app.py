@@ -75,7 +75,7 @@ class TestOAuthBearerGate:
         if scope["type"] == "websocket":
             await send({"type": "websocket.close", "code": 1008})
             return
-        headers = {key.lower(): value.decode("latin1")
+        headers = {key.decode("latin1").lower(): value.decode("latin1")
                    for key, value in scope.get("headers", [])}
         if not approved_bearer(headers):
             challenge = (
