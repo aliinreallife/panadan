@@ -6,6 +6,7 @@ const good = '?client_id=client-test-abc&response_type=code&redirect_uri=https%3
 test('accepts a well-shaped, scoped PKCE request', () => {
   assert.equal(validateAuthorizationParams(good), null);
   assert.equal(safeReturnTo('/oauth/authorize' + good), '/oauth/authorize' + good);
+  assert.equal(safeReturnTo('/oauth/authorize-compat' + good), '/oauth/authorize-compat' + good);
 });
 test('rejects missing scope, method, challenge and duplicate parameters', () => {
   assert.match(validateAuthorizationParams(good.replace('panadan%3Amcp%3Aread','email')), /scope/);
