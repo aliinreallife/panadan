@@ -64,3 +64,9 @@ CI may compile this app, but a successful compilation alone does not prove Stytc
 - Stytch access JWT meets Panadan's verifier contract (or documented migration required).
 - Independent staging MCP resource accepts valid authorized user and rejects revoked/wrong user/audience/client.
 - ChatGPT, Claude and MCP Inspector independently complete OAuth connection, renewal and revocation tests.
+
+## Check actual Stytch member login in the browser
+
+After entering the email OTP, open `http://localhost:3000/` in the **same browser origin** used to sign in. The app now shows either **Stytch Test member signed in** or **Not signed in**, based on the real `useStytchMemberSession` state. Next.js `GET /login 200` only proves page loading, not successful authentication. Avoid alternating `localhost` and `127.0.0.1`: browser sessions/cookies are origin-sensitive. A signed-in state proves the Test browser member session, **not** OAuth code issuance or Panadan MCP token acceptance.
+
+A repeated `GET /sw.js 404` is generally an optional browser service worker probe; unrelated to the Stytch authentication state. The Next.js workspace-root multiple-lockfiles warning is non-blocking.
