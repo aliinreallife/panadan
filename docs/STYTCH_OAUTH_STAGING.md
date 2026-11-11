@@ -295,3 +295,54 @@ not Stytch Test token or session revocation. It does not prove immediate
 invalidity of already-issued JWTs, nor the behavior of DCR/CIMD-registered
 clients. Tests for dynamic clients, RFC 8707 resource selection, JWT expiry,
 key rotation, and token renewal remain open. No production cutover is approved.
+
+
+## MCP Inspector RFC 9207 authorization-response issuer mismatch (2026-11-11)
+
+**Status: BLOCKED at OAuth authorization callback (before token exchange).**
+
+A real MCP Inspector Streamable HTTP attempt to
+`https://panadan-mcp-oauth-staging.vercel.app/mcp/` reached the authorization
+callback but Inspector rejected it with:
+
+```text
+Issuer mismatch in authorization response (RFC 9207):
+expected: https://viridian-faucet-2753.customers.stytch.dev
+received: stytch.com/project-test-5ce2a5ad-c6a8-4177-a6a4-a918c7add228
+```
+
+This is **not** a failure in the MCP resource's RS256 JWT verifier. The
+initial unauthenticated HTTP 401 is the expected protected-resource challenge.
+Inspector is correctly refusing to proceed with a mismatching
+authorization-response `iss`; no live Inspector access token/tool call is
+confirmed. Panadan currently renders Stytch's `B2BIdentityProvider` on
+`/oauth/authorize`; the provider/SDK handles the redirect to the OAuth client.
+
+RFC 9207 requires an authorization-response `iss` (when present) to match
+the authorization server metadata `issuer` exactly, using a canonical HTTPS
+issuer identifier. The reported `stytch.com/project-test-...` value is not a
+canonical HTTPS URL and does not match our configured Test issuer. A separate
+public Descript MCP report documents the same Stytch-backed mismatch with
+Claude Code (descriptinc/descript-mcp issue #12), suggesting provider- or
+SDK-originated interoperability behavior. This is not proof of the precise
+originating component until a sanitized Stytch authorize response is examined.
+
+**Next steps (Test only):**
+
+1. Ask Stytch support to explain and fix the authorization-response `iss`
+   mismatch with the discovered Test Project Domain issuer, preferably by
+   issuing the canonical HTTPS `iss` in every response when advertising
+   RFC 9207 support. Include Test Project ID, issuer, reproduction details,
+   and redacted screenshot; never include tokens, codes or PKCE verifiers.
+2. Check actual Test AS metadata's
+   `authorization_response_iss_parameter_supported` and the Stytch SDK's
+   behavior. Our prior custom PKCE diagnostic validated state and resource
+   access token but **did not check the RFC 9207 authorization-response `iss`**;
+   that positive test cannot establish strict third-party client compatibility.
+3. Do not disable Inspector issuer checking, rewrite untrusted `iss` values,
+   or publish `stytch.com/project-test-...` as the OAuth issuer.
+4. Once corrected, repeat Inspector authentication. Expect a separate
+   explicit-approval step for Inspector's own dynamically issued client ID
+   and resource-specific audience; the synthetic staging MCP currently pins
+   a single disposable Test Connected App.
+5. Keep the Panadan production legacy bearer mode and PR #104 draft.
