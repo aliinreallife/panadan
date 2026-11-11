@@ -81,7 +81,7 @@ export default function TestCallback() {
       setInspection(result);
       setStatus(response.ok ? 'Stytch Test token exchange completed.' : 'Token exchange failed: ' + (result.detail || 'Unknown error'));
     } catch {
-      setStatus('Token exchange request failed. Check the local server and retry with a new authorization.');
+      setStatus('Token exchange request failed. Check the Test staging server and retry with a new authorization.');
     } finally {
       setBusy(false);
     }
@@ -127,7 +127,7 @@ export default function TestCallback() {
           <p className="muted">No access token, refresh token, authorization code or PKCE verifier is returned or displayed.</p>
         </section>
       )}
-      <p className="muted">This local-only test exchanges the code and shows selected decoded claims. It does not verify token signatures, prove resource authorization, or contact Panadan MCP.</p>
+      <p className="muted">This Test-only diagnostic exchanges the code and shows selected decoded claims. It does not verify token signatures, prove resource authorization, or contact Panadan MCP.</p>
       <Link href="/oauth/test-client">Start another authorization test</Link>
     </section>
   );
