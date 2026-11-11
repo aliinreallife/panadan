@@ -24,3 +24,12 @@ test('dev request logging is disabled to avoid printing OAuth codes', () => {
   assert.match(config, /logging: \{ incomingRequests: false \}/);
   assert.match(config, /Referrer-Policy/);
 });
+
+test('optional live MCP verification remains opt-in and never returns bearer token', () => {
+  assert.match(route, /data\.probe_mcp === true/);
+  assert.match(route, /browserOrigin !== HOSTED_STAGING_ORIGIN/);
+  assert.match(route, /await probeStytchTestMcp\(token\)/);
+  assert.match(callback, /Exchange code &amp; test synthetic MCP/);
+  assert.match(callback, /Inspect token only/);
+  assert.match(callback, /mcp_probe: testSyntheticMcp/);
+});
