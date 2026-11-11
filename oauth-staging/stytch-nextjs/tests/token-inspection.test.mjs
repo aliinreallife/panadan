@@ -9,9 +9,10 @@ const callback = readFileSync(new URL('../src/app/oauth/test-callback/page.tsx',
 test('token inspector never returns raw credentials or secrets', () => {
   assert.match(route, /jwt: safeDecodeUnverified\(token\)/);
   assert.doesNotMatch(route, /access_token:\s*token|refresh_token:\s*resultData\.refresh_token/);
-  assert.match(route, /'http:\/\/127\.0\.0\.1:3000'/);
-  assert.match(route, /'http:\/\/localhost:3000'/);
-  assert.match(route, /requestHost !== new URL\(browserOrigin\)\.host/);
+  assert.match(route, /isAllowedInspectorOrigin/);
+  assert.match(route, /isAllowedInspectorClient/);
+  assert.match(route, /STYTCH_TEST_INSPECT_ORIGIN/);
+  assert.match(route, /STYTCH_TEST_CLIENT_ID/);
   assert.match(route, /STYTCH_TEST_PROJECT_ID/);
 });
 test('callback validates state and erases code URL before exchange', () => {
