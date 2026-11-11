@@ -1,0 +1,31 @@
+name: Stytch OAuth staging UI
+
+on:
+  push:
+    paths:
+      - 'oauth-staging/stytch-nextjs/**'
+      - '.github/workflows/stytch-oauth-staging.yml'
+  pull_request:
+    paths:
+      - 'oauth-staging/stytch-nextjs/**'
+      - '.github/workflows/stytch-oauth-staging.yml'
+
+jobs:
+  staging-ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: oauth-staging/stytch-nextjs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install staging app dependencies
+        run: npm install --no-audit --no-fund
+      - name: Test authorization return handling
+        run: npm test
+      - name: Typecheck staging app
+        run: npm run typecheck
+      - name: Build staging app with no Stytch secret
+        run: npm run build
