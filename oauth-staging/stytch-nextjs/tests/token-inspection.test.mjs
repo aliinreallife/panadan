@@ -31,5 +31,5 @@ test('optional live MCP verification remains opt-in and never returns bearer tok
   assert.match(route, /await probeStytchTestMcp\(token\)/);
   assert.match(callback, /Exchange code &amp; test synthetic MCP/);
   assert.match(callback, /Inspect token only/);
-  assert.match(callback, /mcp_probe: testSyntheticMcp/);
+  assert.match(callback, /probe_mcp: testSyntheticMcp/);
 });
