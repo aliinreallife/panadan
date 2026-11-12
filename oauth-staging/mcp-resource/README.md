@@ -10,7 +10,11 @@ Canonical resource: `https://panadan-mcp-oauth-staging.vercel.app/mcp/`.
 * Test issuer: `https://viridian-faucet-2753.customers.stytch.dev`
 * JWKS: `https://viridian-faucet-2753.customers.stytch.dev/.well-known/jwks.json`
 * Scope: `panadan:mcp:read`
-* Signed client ID + explicitly pinned SHA-256 of Stytch Test `sub` both required.
+* Signed Stytch **Test** client ID + explicitly pinned SHA-256 of Test `sub` required.
+* Default policy is a single pinned client; a narrowly scoped opt-in
+  `any-test-client` policy is available for synthetic-only DCR/CIMD validation.
+  Stytch handles registration; this resource never trusts client-supplied
+  metadata/headers or JWTs without full RS256 verification.
 * A valid access token alone is **not** enough.
 * `oauth_mcp.py` is a verbatim copy of `server/oauth_mcp.py` from the
   same Panadan PR branch; do not weaken the shared verifier.
@@ -25,6 +29,7 @@ PANADAN_OAUTH_JWKS_URL=https://viridian-faucet-2753.customers.stytch.dev/.well-k
 PANADAN_OAUTH_RESOURCE=https://panadan-mcp-oauth-staging.vercel.app/mcp/
 PANADAN_OAUTH_SCOPE=panadan:mcp:read
 PANADAN_STAGING_CLIENT_ID=connected-app-test-e2f5508f-e63e-4a7a-8fab-207276bda582
+PANADAN_STAGING_CLIENT_MODE=pinned
 PANADAN_STAGING_SUBJECT_SHA256=<64-hex-value-for-disposable-Stytch-Test-member>
 ```
 
@@ -56,3 +61,57 @@ The preflight validates public discovery and the unauthenticated 401 challenge,
 
 Never copy Test keys to the production project. Never set the production MCP
 audience on Stytch Test tokens.
+
+
+## DCR/CIMD interoperability test (isolated synthetic staging ONLY)
+
+**Stytch Test already has DCR and CIMD enabled.** They are client
+registration mechanisms, not permission to consume the MCP resource. In
+particular a dynamically registered client's JWT `client_id` may be a
+Stytch internal `connected-app-test-...` value even when the OAuth client
+identified itself with a CIMD metadata URL. JWT `client_id` alone cannot
+prove which registration method was used.
+
+The resource has two deliberate client authorization modes:
+
+| `PANADAN_STAGING_CLIENT_MODE` | Policy |
+| --- | --- |
+| `pinned` (default) | Require exact approved Test Connected App `client_id` plus pinned Test member |
+| `any-test-client` | Accept a **signed Stytch Test Connected App client ID** for that same approved Test member, only if the normal verifier has already validated RS256, pinned Test issuer/JWKS, **exact `/mcp/` audience**, `panadan:mcp:read`, expiry/TTL, and token purpose |
+
+Both modes still require a well-formed, explicitly configured
+`PANADAN_STAGING_CLIENT_ID` and 64-hex
+`PANADAN_STAGING_SUBJECT_SHA256`; missing or invalid values deny all.
+An unknown mode fails application startup. No production service imports this
+staging policy; it only serves a fixed synthetic `get_staging_access` tool.
+
+**DO NOT set `any-test-client` in a service with Panadan customer data,
+production accounts, or real reporting tools.** A dynamic client may be
+self-registered, so Test consent + JWT client identity is not a production
+client trust/approval mechanism. Turn it back to `pinned` after testing.
+
+### Manual live validation
+
+1. Create a new Inspector server config pointing to the canonical MCP
+   `/mcp/` resource. Clear saved credentials and leave **Client ID blank**
+   so the client must discover and register. Set only
+   `openid panadan:mcp:read` scopes; do not disable RFC 9207 validation.
+2. Inspect **Connection Info** and auth network records to determine whether
+   Inspector used CIMD (HTTPS metadata URL as OAuth `client_id`) or DCR
+   (registration POST and opaque `connected-app-test-...` ID). An already
+   listed DCR registration is proof of registration, not tool access.
+3. Complete Test-member login/consent and attempt `get_staging_access`
+   with `any-test-client` enabled **only on the isolated staging project**.
+4. The tool must return only the expected synthetic response. If the attempt
+   fails with 401, check the sanitized token audience in a secure Test-only
+   diagnostic flow; **do not weaken the required audience to the Stytch
+   project ID**, and do not share access tokens, codes or PKCE verifiers.
+5. Restore `pinned` mode when done. Record DCR/CIMD separately; a successful
+   DCR test does **not** establish CIMD compliance.
+
+**Resource indicator limitation:** MCP clients should send the canonical
+resource URI in both authorization and token requests. A custom audience
+configured on the original manually registered Stytch Test client does
+not prove that DCR/CIMD clients automatically get the resource audience.
+If the new JWT contains only the Stytch Project ID, access MUST remain
+denied until the issuer actually produces the exact canonical audience.
