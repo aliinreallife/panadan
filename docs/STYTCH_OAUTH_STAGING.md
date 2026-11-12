@@ -406,3 +406,54 @@ security review before any production adoption.
 (Test-only)** as PASS. Keep PR #104 draft and Panadan production on legacy
 bearer authentication. Plan separate dynamic-client and production
 integration security gates.
+
+
+## Dynamic client onboarding: Test-only policy and remaining audience gate (2026-11-12)
+
+**Configuration observed in Stytch Test dashboard:** Both **CIMD** and
+**Dynamic Client Registration** are already enabled. An MCP Inspector
+third-party public client with creation method **DCR** was visible in
+Connected Apps alongside the manually registered Panadan Local PKCE Test
+client. This proves at least one dynamic client was registered; it does
+**not** establish that the successful Inspector `get_staging_access` call
+used that DCR client, nor that CIMD has been exercised.
+
+**Implemented, with default fail-closed:** The isolated
+`oauth-staging/mcp-resource` now accepts
+`PANADAN_STAGING_CLIENT_MODE` values:
+
+- `pinned` (default) — original exact internal Stytch Test client ID
+  and exact approved Test-member SHA-256 subject binding.
+- `any-test-client` — *only in this synthetic-only Test resource*,
+  after full RS256 JWT verification against a pinned issuer/JWKS,
+  exact canonical resource `aud`, exact scope, lifetime, and valid
+  signed `connected-app-test-UUID` client ID, allow that same
+  approved Test member to use another dynamically registered client.
+  A missing client ID, invalid mode, wrong issuer/audience/scope,
+  Live client ID or wrong Test member still denies access.
+
+This experiment is deliberately **not a production client trust policy**.
+Stytch DCR clients self-identify and must not be silently considered
+trusted by actual Panadan tools. Resource access here is only to the
+static, synthetic `get_staging_access` response. Production legacy
+bearer paths and production databases are unaffected.
+
+**Unresolved mandatory real-world gate:** The manually registered client
+has a configured **custom JWT audience** for the synthetic MCP resource.
+Stytch's public client API exposes a per-client
+`access_token_custom_audience` setting, but that does not prove
+that an arbitrary CIMD or DCR-created client receives the same value.
+MCP OAuth requires clients to send the RFC 8707 `resource`
+parameter at both authorization and token exchange. The resource
+MUST retain exact `aud=https://panadan-mcp-oauth-staging.vercel.app/mcp/`
+validation. Tokens containing only the Stytch Project ID MUST fail
+until proper issuer-side resource binding is established.
+
+**Next manual smoke after deployment:** In MCP Inspector, create or
+reset a separate **Test** server connection, leaving **Client ID
+empty** so Inspector dynamically identifies/registers itself; keep
+OAuth scope `openid panadan:mcp:read`. Confirm authorization page
+uses `/oauth/authorize-compat`, and check `Connection Info` for
+CIMD metadata URL vs DCR registration. Attempt `get_staging_access`.
+Only the expected synthetic tool response establishes success. No
+tokens or PKCE secrets should be copied into logs or ChatGPT.
