@@ -28,3 +28,39 @@ def test_identity_binding_is_explicit_and_pinned():
     assert not permitted_test_identity(details, CLIENT, "")
     assert not permitted_test_identity(details, CLIENT, "0" * 63)
     assert not permitted_test_identity(details, "connected-app-live-11111111-2222-3333-4444-555555555555", SUBJECT_HASH)
+
+
+def test_opt_in_dynamic_test_clients_are_strictly_subject_bound():
+    other_test_client = "connected-app-test-11111111-2222-3333-4444-555555555555"
+    details = {"subject": SUBJECT, "client_id": other_test_client}
+
+    # Default remains pinned even for a correctly shaped Stytch Test client ID.
+    assert not permitted_test_identity(details, CLIENT, SUBJECT_HASH)
+    assert permitted_test_identity(details, CLIENT, SUBJECT_HASH, client_mode="any-test-client")
+    assert permitted_test_identity(
+        {"subject": SUBJECT, "client_id": CLIENT},
+        CLIENT, SUBJECT_HASH, client_mode="any-test-client",
+    )
+
+    for unauthorized in [
+        None, {},
+        {"subject": SUBJECT, "client_id": ""},
+        {"subject": SUBJECT, "client_id": None},
+        {"subject": SUBJECT, "client_id": "connected-app-live-11111111-2222-3333-4444-555555555555"},
+        {"subject": SUBJECT, "client_id": "https://attacker.example/client.json"},
+        {"subject": SUBJECT, "client_id": "connected-app-test-ABC"},
+        {"subject": SUBJECT + "-not-approved", "client_id": other_test_client},
+    ]:
+        assert not permitted_test_identity(
+            unauthorized, CLIENT, SUBJECT_HASH, client_mode="any-test-client"
+        )
+
+    assert not permitted_test_identity(
+        details, CLIENT, "0" * 64, client_mode="any-test-client"
+    )
+    assert not permitted_test_identity(
+        details, "", SUBJECT_HASH, client_mode="any-test-client"
+    )
+    assert not permitted_test_identity(
+        details, CLIENT, SUBJECT_HASH, client_mode="unknown"
+    )
