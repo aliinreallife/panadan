@@ -24,18 +24,28 @@ def permitted_test_identity(
     expected_subject_sha256: str,
     *,
     client_mode: str = "pinned",
+    approved_clients: tuple[str, ...] = (),
 ) -> bool:
     """Require signed Test-client identity and a pinned Test member.
 
     'pinned' preserves the historical per-client allowlist.
-    'any-test-client' is an explicitly opted-in synthetic-only experiment:
+    'approved-test-clients' additionally permits exact Stytch Test client IDs
+    approved in a bounded staging-only allowlist.
+    'any-test-client' is an older explicitly opted-in synthetic-only experiment:
     it admits signed Stytch Test DCR client IDs and the one self-hosted Test
     CIMD client metadata URL, but ONLY after the
     caller has passed the RS256 signature, issuer, audience, scope, timestamp
     and token-purpose verification in OAuthVerifier.verify_details().
     Never use 'any-test-client' for production customer data.
     """
-    if client_mode not in {"pinned", "any-test-client"}:
+    if client_mode not in {"pinned", "any-test-client", "approved-test-clients"}:
+        return False
+    if (not isinstance(approved_clients, tuple)
+            or len(approved_clients) > 8
+            or any(not isinstance(x, str) or not CLIENT_PATTERN.fullmatch(x)
+                   for x in approved_clients)):
+        return False
+    if client_mode == "approved-test-clients" and not approved_clients:
         return False
     if not isinstance(verified_details, dict):
         return False
@@ -51,7 +61,12 @@ def permitted_test_identity(
             or not SUBJECT_HASH_PATTERN.fullmatch(expected_subject_sha256)):
         return False
     digest = hashlib.sha256(subject.encode("utf-8")).hexdigest()
-    return (
-        hmac.compare_digest(digest, expected_subject_sha256)
-        and (client_mode == "any-test-client" or hmac.compare_digest(client, expected_client))
-    )
+    if not hmac.compare_digest(digest, expected_subject_sha256):
+        return False
+    if client_mode == "any-test-client":
+        return True
+    if hmac.compare_digest(client, expected_client):
+        return True
+    if client_mode == "approved-test-clients":
+        return any(hmac.compare_digest(client, allowed) for allowed in approved_clients)
+    return False
