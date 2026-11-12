@@ -17,7 +17,7 @@ CLIENT = "connected-app-test-e2f5508f-e63e-4a7a-8fab-207276bda582"
 SUB = "disposable-user-test-credential"
 
 
-def setup_app(monkeypatch, *, client_mode="pinned"):
+def setup_app(monkeypatch, *, client_mode="pinned", approved_clients=()):
     vars = {
         "PANADAN_MCP_AUTH_MODE": "oauth",
         "PANADAN_OAUTH_ISSUER": ISSUER,
@@ -26,6 +26,7 @@ def setup_app(monkeypatch, *, client_mode="pinned"):
         "PANADAN_OAUTH_SCOPE": "panadan:mcp:read",
         "PANADAN_STAGING_CLIENT_ID": CLIENT,
         "PANADAN_STAGING_CLIENT_MODE": client_mode,
+        "PANADAN_STAGING_APPROVED_CLIENT_IDS": ",".join(approved_clients),
         "PANADAN_STAGING_SUBJECT_SHA256": hashlib.sha256(SUB.encode("utf8")).hexdigest(),
     }
     for name, value in vars.items():
@@ -163,3 +164,46 @@ def test_signed_owned_cimd_url_cannot_bypass_resource_boundaries(monkeypatch):
                 "authorization": "Bearer " + token(**invalid),
             })
             assert denied.status_code == 401, invalid
+
+
+def test_dynamic_client_project_audience_and_eight_hour_ttl_are_both_denied(monkeypatch):
+    new_client = "connected-app-test-548c584f-4a24-4fab-9054-84e463e44acc"
+    app, token = setup_app(
+        monkeypatch, client_mode="approved-test-clients", approved_clients=(new_client,)
+    )
+    payload = {
+        "jsonrpc": "2.0", "id": 12, "method": "tools/call",
+        "params": {"name": "get_staging_access", "arguments": {}},
+    }
+    headers = {"content-type": "application/json", "accept": "application/json, text/event-stream"}
+    now = int(time.time())
+    with TestClient(app, base_url="https://panadan-mcp-oauth-staging.vercel.app") as c:
+        # Mirrors the sanitized CIMD Test result: Stytch project audience and
+        # 28800s token life. EACH violates our resource policy independently.
+        for overrides in (
+            {"aud": ["project-test-5ce2a5ad-c6a8-4177-a6a4-a918c7add228"]},
+            {"iat": now, "exp": now + 28800},
+            {"aud": ["project-test-5ce2a5ad-c6a8-4177-a6a4-a918c7add228"],
+             "iat": now, "exp": now + 28800},
+            {"client_id": "connected-app-test-11111111-2222-3333-4444-555555555555"},
+            {"sub": "not-the-approved-member"},
+        ):
+            denied = c.post("/mcp/", json=payload, headers=headers | {
+                "authorization": "Bearer " + token(client_id=new_client, **overrides),
+            })
+            assert denied.status_code == 401, overrides
+        valid = c.post("/mcp/", json=payload, headers=headers | {
+            "authorization": "Bearer " + token(client_id=new_client, iat=now, exp=now + 3600),
+        })
+        assert valid.status_code == 200, valid.text
+        assert "synthetic-only" in valid.text
+
+
+def test_allowlist_env_is_validated_before_startup(monkeypatch):
+    for ids in (
+        (), ("connected-app-test-548c584f-4a24-4fab-9054-84e463e44acc",) * 2,
+        ("connected-app-live-11111111-2222-3333-4444-555555555555",),
+        ("https://attacker.example/client.json",),
+    ):
+        with pytest.raises(RuntimeError, match="PANADAN_STAGING_APPROVED_CLIENT_IDS"):
+            setup_app(monkeypatch, client_mode="approved-test-clients", approved_clients=ids)
