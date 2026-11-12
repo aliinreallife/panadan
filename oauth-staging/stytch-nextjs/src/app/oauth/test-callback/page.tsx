@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { hasCanonicalAuthorizationResponseIssuer } from '@/lib/stytchTestIssuerCompat';
+import { unverifiedMcpRejectionHints } from '@/lib/stagingMcpRejectionHints';
 
 const KEY = 'panadan_stytch_pkce_test_v1';
 type Transaction = {
@@ -145,6 +146,19 @@ export default function TestCallback() {
               ? 'Rejected: MCP denied this token or member/client binding.'
               : 'Not verified: staging MCP did not provide the expected synthetic result.'}</strong></p>
           <p>HTTP status: {inspection.mcp_probe.http_status ?? 'unavailable'}</p>
+          {inspection.mcp_probe.status === 'rejected' &&
+            unverifiedMcpRejectionHints(inspection.jwt).length > 0 && (
+              <div aria-label="Unverified token compatibility hints">
+                <p><strong>Likely issuer-side configuration problems</strong></p>
+                <ul>
+                  {unverifiedMcpRejectionHints(inspection.jwt).map(hint => (
+                    <li key={hint}>{hint}</li>
+                  ))}
+                </ul>
+                <p className="muted">These hints use decoded, unverified JWT metadata.
+                  They cannot authorize access and do not replace the MCP resource server's cryptographic checks.</p>
+              </div>
+            )}
           <p className="muted">Only the fixed Test MCP endpoint is contacted server-to-server. No token, claims, user identifier, or tool response is returned by this probe.</p>
         </section>
       )}
