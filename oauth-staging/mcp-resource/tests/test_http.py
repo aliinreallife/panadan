@@ -7,6 +7,7 @@ import time
 from types import SimpleNamespace
 
 import jwt
+import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
@@ -16,7 +17,7 @@ CLIENT = "connected-app-test-e2f5508f-e63e-4a7a-8fab-207276bda582"
 SUB = "disposable-user-test-credential"
 
 
-def setup_app(monkeypatch):
+def setup_app(monkeypatch, *, client_mode="pinned"):
     vars = {
         "PANADAN_MCP_AUTH_MODE": "oauth",
         "PANADAN_OAUTH_ISSUER": ISSUER,
@@ -24,6 +25,7 @@ def setup_app(monkeypatch):
         "PANADAN_OAUTH_RESOURCE": RESOURCE,
         "PANADAN_OAUTH_SCOPE": "panadan:mcp:read",
         "PANADAN_STAGING_CLIENT_ID": CLIENT,
+        "PANADAN_STAGING_CLIENT_MODE": client_mode,
         "PANADAN_STAGING_SUBJECT_SHA256": hashlib.sha256(SUB.encode("utf8")).hexdigest(),
     }
     for name, value in vars.items():
@@ -92,3 +94,44 @@ def test_discovery_challenge_and_synthetic_mcp_access(monkeypatch):
         assert ok.status_code == 200, ok.text
         assert "synthetic-only" in ok.text
         assert "customer" not in ok.text.lower()
+
+
+def test_signed_dcr_cimd_test_client_mode_remains_subject_and_audience_bound(monkeypatch):
+    app, token = setup_app(monkeypatch, client_mode="any-test-client")
+    dcr_client_id = "connected-app-test-11111111-2222-3333-4444-555555555555"
+    payload = {
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": {"name": "get_staging_access", "arguments": {}},
+    }
+    headers = {"content-type": "application/json", "accept": "application/json, text/event-stream"}
+    with TestClient(app, base_url="https://panadan-mcp-oauth-staging.vercel.app") as client:
+        # The JWT is actually RSA-signed in this test. DCR/CIMD registration
+        # is external to the resource verifier; signed JWT client_id is the
+        # Stytch internal ID in both registration modes.
+        allowed = client.post("/mcp/", json=payload, headers=headers | {
+            "authorization": "Bearer " + token(client_id=dcr_client_id),
+        })
+        assert allowed.status_code == 200, allowed.text
+        assert "synthetic-only" in allowed.text
+
+        for bad in (
+            {"aud": "project-test-only"},
+            {"aud": "https://wrong.example/mcp/"},
+            {"scope": "openid"},
+            {"iss": "https://wrong.example"},
+            {"sub": "not-the-approved-test-member"},
+            {"client_id": "connected-app-live-11111111-2222-3333-4444-555555555555"},
+            {"client_id": "https://untrusted.example/client.json"},
+            {"client_id": None},
+            {"token_use": "id"},
+            {"exp": int(time.time()) - 120},
+        ):
+            denied = client.post("/mcp/", json=payload, headers=headers | {
+                "authorization": "Bearer " + token(**bad),
+            })
+            assert denied.status_code == 401, (bad, denied.text)
+
+
+def test_unknown_client_mode_fails_closed_at_startup(monkeypatch):
+    with pytest.raises(RuntimeError, match="PANADAN_STAGING_CLIENT_MODE"):
+        setup_app(monkeypatch, client_mode="accept_everything")
