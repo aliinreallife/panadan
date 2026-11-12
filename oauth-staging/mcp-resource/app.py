@@ -15,7 +15,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
 from oauth_mcp import OAuthConfig, OAuthVerifier
-from policy import STAGING_RESOURCE, STYTCH_TEST_ISSUER, permitted_test_identity
+from policy import STAGING_RESOURCE, STYTCH_TEST_ISSUER, CLIENT_PATTERN, permitted_test_identity
 
 
 def build_oauth_config() -> OAuthConfig:
@@ -33,8 +33,14 @@ verifier = OAuthVerifier(config)
 expected_client = os.getenv("PANADAN_STAGING_CLIENT_ID", "")
 expected_subject_sha256 = os.getenv("PANADAN_STAGING_SUBJECT_SHA256", "")
 client_mode = os.getenv("PANADAN_STAGING_CLIENT_MODE", "pinned").strip()
-if client_mode not in ("pinned", "any-test-client"):
-    raise RuntimeError("PANADAN_STAGING_CLIENT_MODE must be pinned or any-test-client")
+if client_mode not in ("pinned", "any-test-client", "approved-test-clients"):
+    raise RuntimeError("PANADAN_STAGING_CLIENT_MODE must be a supported test-only mode")
+approved_clients_raw = os.getenv("PANADAN_STAGING_APPROVED_CLIENT_IDS", "")
+approved_clients = tuple(s.strip() for s in approved_clients_raw.split(",") if s.strip())
+if (len(approved_clients) > 8 or len(set(approved_clients)) != len(approved_clients)
+        or any(not CLIENT_PATTERN.fullmatch(s) for s in approved_clients)
+        or (client_mode == "approved-test-clients" and not approved_clients)):
+    raise RuntimeError("PANADAN_STAGING_APPROVED_CLIENT_IDS must be 1-8 unique Test client IDs")
 
 mcp = MCPServer(
     "Panadan Stytch OAuth Staging",
@@ -51,7 +57,8 @@ def approved_bearer(headers: dict[str, str]) -> bool:
         return False
     details = verifier.verify_details(raw)
     return permitted_test_identity(
-        details, expected_client, expected_subject_sha256, client_mode=client_mode
+        details, expected_client, expected_subject_sha256,
+        client_mode=client_mode, approved_clients=approved_clients,
     )
 
 
