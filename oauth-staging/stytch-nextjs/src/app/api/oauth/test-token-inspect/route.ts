@@ -4,6 +4,7 @@ import { summarizeProviderFailure } from '@/lib/stytchErrors';
 import { parseTestIssuer, discoveredTokenEndpoint, type StytchOAuthMetadata } from '@/lib/stytchDiscovery';
 import { HOSTED_STAGING_ORIGIN, isAllowedInspectorOrigin, isAllowedInspectorClient } from '@/lib/stytchInspectorOrigin';
 import { probeStytchTestMcp } from '@/lib/stytchStagingMcpProbe';
+import { STAGING_CIMD_CLIENT_ID } from '@/lib/testCimdClient';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -89,7 +90,7 @@ export async function POST(request: NextRequest) {
   const redirect = data.redirect_uri;
   if (typeof code !== 'string' || !/^[A-Za-z0-9._~-]{12,4096}$/.test(code)
     || typeof verifier !== 'string' || !PKCE_VERIFIER.test(verifier)
-    || typeof clientId !== 'string' || !PUBLIC_CLIENT_ID.test(clientId)
+    || typeof clientId !== 'string' || !(PUBLIC_CLIENT_ID.test(clientId) || clientId === STAGING_CIMD_CLIENT_ID)
     || typeof redirect !== 'string' || redirect !== browserOrigin + '/oauth/test-callback')
     return errorResponse('Malformed one-time code, PKCE verifier, client ID or callback.', 400);
 
@@ -132,6 +133,10 @@ export async function POST(request: NextRequest) {
         redirect_uri: redirect,
         code,
         code_verifier: verifier,
+        // Only the fixed self-hosted CIMD experiment sends a resource
+        // indicator. The original manual-client baseline is unchanged.
+        ...(clientId === STAGING_CIMD_CLIENT_ID
+          ? { resource: 'https://panadan-mcp-oauth-staging.vercel.app/mcp/' } : {}),
       }),
       cache: 'no-store',
       signal: AbortSignal.timeout(15000),
