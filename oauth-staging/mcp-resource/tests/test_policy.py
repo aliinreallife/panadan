@@ -84,3 +84,33 @@ def test_cimd_client_requires_exact_self_owned_url_and_experimental_mode():
         {"subject": "different-test-member", "client_id": STAGING_CIMD_CLIENT_ID},
         CLIENT, SUBJECT_HASH, client_mode="any-test-client"
     )
+
+
+def test_explicit_dynamic_client_allowlist_denies_unapproved_clients():
+    new_client = "connected-app-test-548c584f-4a24-4fab-9054-84e463e44acc"
+    unknown = "connected-app-test-11111111-2222-3333-4444-555555555555"
+    details = {"subject": SUBJECT, "client_id": new_client}
+    allow = (new_client,)
+    assert not permitted_test_identity(details, CLIENT, SUBJECT_HASH)
+    assert not permitted_test_identity(details, CLIENT, SUBJECT_HASH,
+                                      client_mode="approved-test-clients")
+    assert permitted_test_identity(details, CLIENT, SUBJECT_HASH,
+                                   client_mode="approved-test-clients",
+                                   approved_clients=allow)
+    assert permitted_test_identity(
+        {"subject": SUBJECT, "client_id": CLIENT}, CLIENT, SUBJECT_HASH,
+        client_mode="approved-test-clients", approved_clients=allow)
+    for other in (unknown, STAGING_CIMD_CLIENT_ID, "", "connected-app-live-" + "1" * 36):
+        assert not permitted_test_identity(
+            {"subject": SUBJECT, "client_id": other}, CLIENT, SUBJECT_HASH,
+            client_mode="approved-test-clients", approved_clients=allow)
+    assert not permitted_test_identity(
+        {"subject": "wrong-member", "client_id": new_client},
+        CLIENT, SUBJECT_HASH, client_mode="approved-test-clients",
+        approved_clients=allow)
+    assert not permitted_test_identity(
+        details, CLIENT, SUBJECT_HASH, client_mode="approved-test-clients",
+        approved_clients=("https://attacker.example/client.json",))
+    assert not permitted_test_identity(
+        details, CLIENT, SUBJECT_HASH, client_mode="approved-test-clients",
+        approved_clients=(new_client,) * 9)
