@@ -1,5 +1,6 @@
 /** Minimal request-shape validation; Stytch remains the actual OAuth authority. */
 export const RETURN_TO_KEY = 'panadan_stytch_oauth_return_to';
+export const CANONICAL_TEST_RESOURCE = 'https://panadan-mcp-oauth-staging.vercel.app/mcp/';
 
 export function validateAuthorizationParams(query: string): string | null {
   const params = new URLSearchParams(query);
@@ -9,6 +10,9 @@ export function validateAuthorizationParams(query: string): string | null {
   };
   if (one('response_type') !== 'code') return 'Authorization code response is required.';
   if (!one('client_id')) return 'Missing OAuth client_id.';
+  const resources = params.getAll('resource');
+  if (resources.length > 1 || (resources.length === 1 && resources[0] !== CANONICAL_TEST_RESOURCE))
+    return 'Unexpected OAuth resource indicator.';
   if (!one('redirect_uri')) return 'Missing OAuth redirect_uri.';
   if (one('code_challenge_method') !== 'S256') return 'PKCE S256 is required.';
   const challenge = one('code_challenge');
