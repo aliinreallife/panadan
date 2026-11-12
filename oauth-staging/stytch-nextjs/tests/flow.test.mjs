@@ -19,3 +19,13 @@ test('does not accept arbitrary redirects or unvalidated return paths', () => {
     assert.equal(safeReturnTo(p), '/');
   }
 });
+
+// The original registered client is still allowed to omit resource, but
+// dynamically testing CIMD must request ONLY this canonical synthetic MCP.
+test('optional resource indicator is exact and single-valued', () => {
+  const resource = 'https%3A%2F%2Fpanadan-mcp-oauth-staging.vercel.app%2Fmcp%2F';
+  assert.equal(validateAuthorizationParams(good + '&resource=' + resource), null);
+  assert.match(validateAuthorizationParams(good + '&resource=https%3A%2F%2Fevil.example%2Fmcp%2F'), /resource/);
+  assert.match(validateAuthorizationParams(good + '&resource=' + resource + '&resource=' + resource), /resource/);
+  assert.match(validateAuthorizationParams(good + '&resource='), /resource/);
+});
