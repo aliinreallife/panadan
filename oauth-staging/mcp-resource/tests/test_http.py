@@ -189,7 +189,7 @@ def test_dynamic_client_project_audience_and_eight_hour_ttl_are_both_denied(monk
             {"sub": "not-the-approved-member"},
         ):
             denied = c.post("/mcp/", json=payload, headers=headers | {
-                "authorization": "Bearer " + token(client_id=new_client, **overrides),
+                "authorization": "Bearer " + token(**({"client_id": new_client} | overrides)),
             })
             assert denied.status_code == 401, overrides
         valid = c.post("/mcp/", json=payload, headers=headers | {
