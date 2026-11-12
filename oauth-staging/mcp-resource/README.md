@@ -115,3 +115,44 @@ configured on the original manually registered Stytch Test client does
 not prove that DCR/CIMD clients automatically get the resource audience.
 If the new JWT contains only the Stytch Project ID, access MUST remain
 denied until the issuer actually produces the exact canonical audience.
+
+
+## Hosted Test CIMD client smoke (2026-11-12)
+
+The independent Stytch Test authorization frontend hosts one static HTTPS
+OAuth Client ID Metadata Document (CIMD):
+
+`https://panadan-stytch-oauth-staging.vercel.app/.well-known/panadan-test-cimd.json`
+
+It declares an exact owned HTTPS client ID and redirects only to
+`https://panadan-stytch-oauth-staging.vercel.app/oauth/test-callback`.
+No keys or client secrets are published or required.
+
+When **and only when** the isolated synthetic MCP resource is explicitly in
+`PANADAN_STAGING_CLIENT_MODE=any-test-client`, its policy recognizes a
+Stytch-Test-signed `client_id` equal to that **exact** owned URL in
+addition to Stytch's internal Test UUID client IDs. Other URL client IDs,
+Stytch Live IDs, wrong members and tokens without the canonical `/mcp/`
+audience are denied.
+
+To test from a browser with an existing Stytch Test member session:
+
+1. Open `https://panadan-stytch-oauth-staging.vercel.app/oauth/test-client`.
+2. Select **CIMD: HTTPS metadata document (experimental)**.
+3. Start authorization, sign into Stytch Test if prompted, and consent.
+4. The custom PKCE callback now also requires the exact HTTPS RFC 9207
+   authorization-response issuer; legacy issuer and duplicate `iss` deny.
+5. Click **Exchange code & test synthetic MCP**. Only sanitized token
+   metadata and a safe synthetic-probe verdict will appear.
+6. Confirm the result's `aud` includes the exact canonical MCP URI.
+   If the provider rejects the `resource` parameter or only issues a
+   project-audience JWT, report the sanitized error but DO NOT weaken
+   `OAuthVerifier` or grant actual Panadan data permissions.
+
+**Important limitation:** This browser diagnostic emits the `resource`
+parameter in the incoming authorization URL and at Stytch token exchange,
+but Stytch's installed headless `idp.oauthAuthorizeSubmit` SDK currently
+does not expose a typed `resource` field. Consequently this test alone
+cannot prove the SDK forwarded the RFC 8707 resource at authorization-submit.
+A compliant external MCP client's actual authorization and token requests
+must be separately verified. DCR remains an independent test mode.
