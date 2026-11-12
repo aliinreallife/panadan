@@ -156,3 +156,59 @@ does not expose a typed `resource` field. Consequently this test alone
 cannot prove the SDK forwarded the RFC 8707 resource at authorization-submit.
 A compliant external MCP client's actual authorization and token requests
 must be separately verified. DCR remains an independent test mode.
+
+
+## CIMD 401 diagnosis and restricted client approval (2026-11-12)
+
+A real Stytch Test **CIMD browser PKCE flow** completed code exchange,
+but the live synthetic MCP probe correctly returned **HTTP 401**.
+The token metadata was **decoded only** in the UI, not independently
+signature-verified at that point. The observed signed-claim candidates:
+
+- `aud` included only
+  `project-test-5ce2a5ad-c6a8-4177-a6a4-a918c7add228`, **not**
+  `https://panadan-mcp-oauth-staging.vercel.app/mcp/`.
+- `exp - iat = 28800` seconds (8 hours), **above** Panadan's
+  3600-second staging maximum.
+- `scope` contained `panadan:mcp:read`; internal signed Stytch
+  client ID was `connected-app-test-548c584f-4a24-4fab-9054-84e463e44acc`
+  for this CIMD registration. The internal client ID is normal even when
+  the OAuth client identifier sent in the request was an HTTPS CIMD URL.
+
+Both wrong audience and excessive lifetime **independently** cause
+the strict Python MCP resource verifier to return 401, irrespective of
+client approval. Do not change the trusted resource audience, 1-hour TTL
+gate, signature validation, or Stytch Test member binding.
+
+**Safer rollout:** New `approved-test-clients` mode accepts ONLY the
+existing pinned Test client and an explicit, bounded (max 8 unique IDs)
+comma-separated `PANADAN_STAGING_APPROVED_CLIENT_IDS` allowlist of
+Stytch `connected-app-test-UUID` IDs. All clients still need valid
+signed Test JWTs, exact resource audience, scope, and pinned Test member.
+An unknown/unconfigured allowlist fails startup; random DCR clients
+do not gain access just by registering. The older `any-test-client`
+experiment stays supported for historical tests, but the deployed
+synthetic staging project should use `approved-test-clients` while
+evaluating this specific CIMD registration.
+
+**Next external issuer-side configuration (Stytch Test only):**
+In **Management → Connected Apps → Apps**, open the new Test client by
+its internal `connected-app-test-548c...` ID. Under its settings,
+set **Custom JWT Audience** to the exact canonical `/mcp/` URL and
+**Access Token Expiry** to **60 minutes**. Save, then generate a
+**fresh authorization code and new token** via the owned CIMD test
+page, choosing **Exchange code & test synthetic MCP**. Old tokens
+retain their original aud and exp and will not become valid retroactively.
+
+Stytch's Connected Apps Clients management API also exposes
+`access_token_custom_audience` and `access_token_expiry_minutes`;
+if the dynamically registered client cannot be edited in the Test
+dashboard, verify this option in the Test-only Management API.
+Do not send Stytch secrets or raw tokens in chat.
+
+**Architectural limitation:** Per-client audience configuration is
+sufficient only for this known client, not proof of automatic
+RFC 8707 resource-specific audience issuance for arbitrary CIMD/DCR
+clients. An issuer-level secure policy is still required before an
+unrestricted production rollout. Current Panadan production is
+unchanged and PR #104 stays draft.
