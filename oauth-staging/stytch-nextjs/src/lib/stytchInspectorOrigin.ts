@@ -7,7 +7,7 @@ const LOCAL_ORIGINS = new Set([
   'http://127.0.0.1:3000',
   'http://localhost:3000',
 ]);
-import { STAGING_CIMD_CLIENT_ID } from './testCimdClient';
+import { STAGING_CIMD_CLIENT_ID } from './testCimdClient.ts';
 
 const TEST_CLIENT_ID = /^connected-app-test-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
