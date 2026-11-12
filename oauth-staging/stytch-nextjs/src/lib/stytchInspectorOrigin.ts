@@ -7,6 +7,8 @@ const LOCAL_ORIGINS = new Set([
   'http://127.0.0.1:3000',
   'http://localhost:3000',
 ]);
+import { STAGING_CIMD_CLIENT_ID } from './testCimdClient';
+
 const TEST_CLIENT_ID = /^connected-app-test-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 export function isAllowedInspectorOrigin(
@@ -32,7 +34,10 @@ export function isAllowedInspectorClient(
   configuredTestClientId: string | undefined,
 ): boolean {
   if (browserOrigin !== HOSTED_STAGING_ORIGIN) return true;
-  // Hosted diagnostics work with one explicitly registered disposable Test client.
+  // The one self-owned HTTPS CIMD metadata document is explicitly allowed;
+  // never accept arbitrary URL-form client IDs from untrusted browsers.
+  if (clientId === STAGING_CIMD_CLIENT_ID) return true;
+  // The existing manual-client baseline is otherwise unchanged.
   return !!configuredTestClientId && TEST_CLIENT_ID.test(configuredTestClientId)
     && clientId === configuredTestClientId;
 }
