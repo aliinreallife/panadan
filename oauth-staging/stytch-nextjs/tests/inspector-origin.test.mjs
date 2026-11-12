@@ -28,10 +28,24 @@ test('hosted inspector requires exact HTTPS origin, host and opt-in', () => {
   ]) assert.equal(isAllowedInspectorOrigin(origin, requestHost, enabledOrigin, true), false);
 });
 
-test('hosted inspector only allows one explicitly configured Stytch Test client', () => {
+test('hosted diagnostics allow only pinned client or explicitly owned CIMD URL', () => {
   assert.equal(isAllowedInspectorClient(HOSTED_STAGING_ORIGIN, client, client), true);
   assert.equal(isAllowedInspectorClient(HOSTED_STAGING_ORIGIN, client, undefined), false);
   assert.equal(isAllowedInspectorClient(HOSTED_STAGING_ORIGIN, client, 'connected-app-test-other'), false);
   assert.equal(isAllowedInspectorClient(HOSTED_STAGING_ORIGIN, 'connected-app-test-11111111-2222-3333-4444-555555555555', client), false);
   assert.equal(isAllowedInspectorClient('http://127.0.0.1:3000', client, undefined), true);
+});
+
+test('hosted Test CIMD is exact and does not open arbitrary URL clients', async () => {
+  const { STAGING_CIMD_CLIENT_ID } = await import('../src/lib/testCimdClient.ts');
+  assert.equal(isAllowedInspectorClient(HOSTED_STAGING_ORIGIN, STAGING_CIMD_CLIENT_ID, client), true);
+  assert.equal(isAllowedInspectorClient(HOSTED_STAGING_ORIGIN, STAGING_CIMD_CLIENT_ID, undefined), true);
+  for (const untrusted of [
+    'https://attacker.example/client.json',
+    STAGING_CIMD_CLIENT_ID + '?version=2',
+    STAGING_CIMD_CLIENT_ID.replace('https://', 'http://'),
+    STAGING_CIMD_CLIENT_ID.replace('/.well-known/', '/different/'),
+  ]) {
+    assert.equal(isAllowedInspectorClient(HOSTED_STAGING_ORIGIN, untrusted, client), false);
+  }
 });
