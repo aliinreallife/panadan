@@ -457,3 +457,40 @@ uses `/oauth/authorize-compat`, and check `Connection Info` for
 CIMD metadata URL vs DCR registration. Attempt `get_staging_access`.
 Only the expected synthetic tool response establishes success. No
 tokens or PKCE secrets should be copied into logs or ChatGPT.
+
+
+## Dynamic test-client smoke deployment (2026-11-12)
+
+**Deployed to the isolated synthetic MCP staging Vercel project only:**
+`panadan-mcp-oauth-staging`
+(`prj_wMA2HK5oXsAxuKRstsvVFCLf1vMc`, Vercel stable alias
+`https://panadan-mcp-oauth-staging.vercel.app`).
+
+- Deployment: `dpl_7kuFDPT8dQVzUi212WioxioPdQnJ` — **READY**
+- Source commit: `2f32bda528906568834f789f844739560bda9e75`
+- Only in this synthetic-only staging project's Vercel production **deployment
+  target**: `PANADAN_STAGING_CLIENT_MODE=any-test-client`.
+  This does *not* mean the real Panadan production service was changed.
+- Existing encrypted, approved Test subject hash binding and Test client
+  fallback configuration left intact.
+- Independent `GET /healthz` returned 200 and
+  `GET /.well-known/oauth-protected-resource` returned 200 with the canonical
+  `/mcp/` resource and trusted Stytch Test issuer.
+- Independent unauthenticated `POST /mcp/` returned **401** with
+  `WWW-Authenticate: Bearer ... resource_metadata=...` and
+  `scope="panadan:mcp:read"`; the new policy is not a no-token bypass.
+- All three GitHub Action workflows passed for this commit (full CI,
+  staging UI, synthetic MCP resource). Unit/integration tests cover
+  signed dynamic Test client access and rejection of wrong
+  audience, issuer, scope, subject, Live client and missing client identity.
+
+**NOT YET PASSED:** A *real* DCR/CIMD-issued Test JWT with the canonical MCP
+audience successfully executing the synthetic tool. This requires a
+new, unpinned MCP client connection and actual Test-member consent. If
+Stytch issues a DCR/CIMD token with only its default project audience,
+the exact resource audience check rejects it, as intended.
+
+**Rollback:** On the isolated MCP staging Vercel project, set
+`PANADAN_STAGING_CLIENT_MODE=pinned` and redeploy; no production Panadan
+or Stytch Live changes are involved. Restore default once experimentation
+is complete. Keep PR #104 draft.
