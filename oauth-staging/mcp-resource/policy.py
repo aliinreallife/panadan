@@ -19,8 +19,20 @@ def permitted_test_identity(
     verified_details: dict | None,
     expected_client: str,
     expected_subject_sha256: str,
+    *,
+    client_mode: str = "pinned",
 ) -> bool:
-    """Require a pinned client and user binding; no configuration means no access."""
+    """Require signed Test-client identity and a pinned Test member.
+
+    'pinned' preserves the historical per-client allowlist.
+    'any-test-client' is an explicitly opted-in synthetic-only experiment:
+    it admits newly DCR/CIMD-registered Test client IDs, but ONLY after the
+    caller has passed the RS256 signature, issuer, audience, scope, timestamp
+    and token-purpose verification in OAuthVerifier.verify_details().
+    Never use 'any-test-client' for production customer data.
+    """
+    if client_mode not in {"pinned", "any-test-client"}:
+        return False
     if not isinstance(verified_details, dict):
         return False
     client = verified_details.get("client_id")
@@ -32,5 +44,7 @@ def permitted_test_identity(
             or not SUBJECT_HASH_PATTERN.fullmatch(expected_subject_sha256)):
         return False
     digest = hashlib.sha256(subject.encode("utf-8")).hexdigest()
-    return (hmac.compare_digest(client, expected_client)
-            and hmac.compare_digest(digest, expected_subject_sha256))
+    return (
+        hmac.compare_digest(digest, expected_subject_sha256)
+        and (client_mode == "any-test-client" or hmac.compare_digest(client, expected_client))
+    )
