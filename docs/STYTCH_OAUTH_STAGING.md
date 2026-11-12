@@ -494,3 +494,35 @@ the exact resource audience check rejects it, as intended.
 `PANADAN_STAGING_CLIENT_MODE=pinned` and redeploy; no production Panadan
 or Stytch Live changes are involved. Restore default once experimentation
 is complete. Keep PR #104 draft.
+
+
+## Hosted Test CIMD client smoke (2026-11-12)
+
+A **read-only, publicly retrievable** Test CIMD metadata document and
+a distinct Test-only browser PKCE mode were added under the Stytch
+authorization frontend. The existing manual registered-client test
+remains the default and unchanged.
+
+The new browser flow:
+- restricts the advertised CIMD client to the single
+  `https://panadan-stytch-oauth-staging.vercel.app/.well-known/panadan-test-cimd.json`
+  URL and exact hosted HTTPS callback;
+- includes the canonical `/mcp/` resource in the initial authorization
+  request and at the token exchange (in CIMD mode);
+- requires the exact trusted HTTPS `iss` in the browser callback
+  (RFC 9207), and forbids duplicated `iss`, `state`, or `code`;
+- retains single-use PKCE verifier/state and removes authorization codes
+  from browser history;
+- permits only the owned URL in synthetic resource `any-test-client`
+  mode, never arbitrary URL client IDs; the signed JWT and pinned Test
+  member/resource/scope checks are unchanged.
+
+**Live CIMD Test authorization/tool success is still PENDING.**
+Stytch's headless SDK lacks a typed `resource` parameter for its
+authorize-submit call, so end-to-end RFC 8707 resource forwarding has
+not been established. A project-only JWT audience must fail MCP access
+until corrected at the issuer, not via a verifier bypass.
+
+This new metadata is a disposable synthetic Test client only and must
+not be confused with production OAuth client metadata. Keep PR #104 draft,
+no Stytch Live updates, and no production cutover.
