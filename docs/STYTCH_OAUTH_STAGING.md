@@ -526,3 +526,61 @@ until corrected at the issuer, not via a verifier bypass.
 This new metadata is a disposable synthetic Test client only and must
 not be confused with production OAuth client metadata. Keep PR #104 draft,
 no Stytch Live updates, and no production cutover.
+
+
+## CIMD browser diagnostics deployed and preflight verified (2026-11-12)
+
+**Implementation deployed — live CIMD authorization remains pending.**
+Source commit `e711222888adb7d8236eeb982b14d1574900bc10`
+passed all three GitHub Actions workflows (CI, Stytch OAuth staging UI,
+and isolated MCP resource). Two distinct staging Vercel projects were
+deployed from this exact revision:
+
+- Stytch Test OAuth frontend:
+  `dpl_H7Sro2sDawp3pKpyhmUiR7gdNAB4` — **READY**,
+  `https://panadan-stytch-oauth-staging.vercel.app`.
+- Isolated synthetic MCP resource:
+  `dpl_4oLh9UzEBDJwearfueDwTtozBYk1` — **READY**,
+  `https://panadan-mcp-oauth-staging.vercel.app`.
+
+**Live public preflight results:**
+
+- `GET /.well-known/panadan-test-cimd.json` on the OAuth frontend:
+  **200**. The published `client_id`, one exact HTTPS callback,
+  public-client authentication method `none`, and grant type matched
+  our pinned test metadata.
+- `GET /oauth/test-client`: **200**; separate opt-in CIMD test option
+  is present. `GET /oauth/authorize-compat`: **200**.
+- The Stytch Test issuer's OAuth authorization-server metadata:
+  **200**; `client_id_metadata_document_supported=true`,
+  `registration_endpoint=/v1/oauth2/register`,
+  `authorization_response_iss_parameter_supported=true`,
+  and `authorization_endpoint` points to the compat page.
+- Isolated MCP `GET /healthz`: **200**, synthetic-only.
+  Protected resource metadata: **200**, correct Stytch Test issuer and
+  canonical `/mcp/` audience.
+- Unauthenticated `POST /mcp/`: **401** with proper OAuth
+  `WWW-Authenticate` protected-resource metadata challenge. The resource
+  is still fail-closed when no JWT is present.
+- The isolated MCP project retains the encrypted, approved Test-member
+  subject binding and the temporary Test-only
+  `PANADAN_STAGING_CLIENT_MODE=any-test-client`. No production Panadan
+  service or Stytch Live environment was changed.
+
+**Manual next step requiring the Stytch Test member browser session:**
+Visit `https://panadan-stytch-oauth-staging.vercel.app/oauth/test-client`;
+choose **CIMD: HTTPS metadata document (experimental)**; initiate
+authorization; approve Test consent; then click **Exchange code & test
+synthetic MCP**. Record only the sanitized result (`aud` includes canonical
+resource or not, `mcp_probe.status`, and HTTP status), never tokens or
+authorization codes. Until this passes, the new CIMD flow is **NOT**
+considered end-to-end verified.
+
+**Known limitations:** The installed Stytch headless authorize-submit SDK
+does not expose a typed `resource` option. An authorization URL containing
+`resource` and a token request with `resource` do not alone prove the
+provider bound the authorization code to that resource. A correct signed
+audience must be observed and confirmed independently by the MCP verifier.
+Do not bypass exact audience validation. Restore staging client mode to
+`pinned` after the dynamic-client experiment is complete, then redeploy.
+Keep PR #104 draft.
