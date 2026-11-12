@@ -346,3 +346,63 @@ originating component until a sanitized Stytch authorize response is examined.
    and resource-specific audience; the synthetic staging MCP currently pins
    a single disposable Test Connected App.
 5. Keep the Panadan production legacy bearer mode and PR #104 draft.
+
+
+## Live MCP Inspector compatibility and synthetic tool execution — PASS (2026-11-12)
+
+**PASS — user-observed real MCP Inspector connection and tool call; Test-only synthetic resource.**
+This result supersedes the earlier `BLOCKED` status in the RFC 9207
+investigation above for the current staging configuration. The older failure
+and its reproduction remain documented for regression tracking.
+
+**Observed through MCP Inspector screenshots:**
+
+- `panadan-mcp-oauth-staging` displayed **Connected** using **HTTP /
+  Streamable HTTP**, negotiated **MCP 2025-11-25 (Legacy)**.
+- `tools/list`, `prompts/list`, `resources/list`, and
+  `resources/templates/list` showed **OK**.
+- The **Tools** tab listed exactly one synthetic tool:
+  `get_staging_access` (Synthetic staging access).
+- Executing `tools/call get_staging_access` showed **OK** and returned
+  the expected synthetic-only payload:
+
+  ```json
+  {
+    "environment": "stytch-test",
+    "data": "synthetic-only",
+    "actor": "authorized-test-member",
+    "capabilities": ["mcp:staging:read"]
+  }
+  ```
+
+**Relevant compatibility fix:** The original Stytch Test frontend path
+`/oauth/authorize` previously still rendered the Stytch
+`B2BIdentityProvider` widget and issued a legacy
+`iss=stytch.com/project-test-...` authorization response, which strict
+RFC 9207 clients reject. In the isolated staging Next.js project,
+`/oauth/authorize` now preserves the request and navigates to
+`/oauth/authorize-compat`, where the Test-only headless Stytch consent
+flow requires the exact configured Test issuer/client/callback constraints
+and canonicalizes only the known Stytch Test issuer mismatch. The new
+authorization frontend was deployed and verified on the staging alias.
+Clients must continue validating issuer, state and PKCE; never disable
+issuer verification.
+
+**What is now established:** An independent MCP Inspector instance can
+complete authorization, connect to the **isolated** synthetic staging MCP,
+discover its tool and execute an authorized real `tools/call` successfully.
+No production customer data or Odoo service was involved.
+
+**What is NOT established:** Arbitrary dynamically registered CIMD/DCR
+clients, refresh and logout semantics, immediate upstream token revocation,
+key rotation, production account mapping or field-level authorization, or
+compatibility with ChatGPT and Claude MCP clients. The live Inspector test
+was performed with an explicitly configured Test Connected App, not proof
+of hands-off dynamic client registration. The isolated Test-only issuer
+compatibility shim still requires a provider-level correction or separate
+security review before any production adoption.
+
+**Disposition:** Mark **manual independent MCP Inspector interoperability
+(Test-only)** as PASS. Keep PR #104 draft and Panadan production on legacy
+bearer authentication. Plan separate dynamic-client and production
+integration security gates.
