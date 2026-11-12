@@ -35,3 +35,32 @@ test('browser same-origin token inspection reaches configuration validation, not
   });
   expect(rejected.status()).toBe(403);
 });
+
+test('legacy authorization URL forwards to the Test-only issuer compatibility flow', async ({ page }) => {
+  const observed: string[] = [];
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) observed.push(frame.url());
+  });
+  const query = new URLSearchParams({
+    response_type: 'code',
+    client_id: 'connected-app-test-example',
+    redirect_uri: 'http://127.0.0.1:6274/oauth/callback',
+    scope: 'openid panadan:mcp:read',
+    code_challenge: 'a'.repeat(43),
+    code_challenge_method: 'S256',
+    state: 'regression-test-state',
+  });
+  const response = await page.goto('/oauth/authorize?' + query.toString(), { waitUntil: 'domcontentloaded' });
+  expect(response?.status()).toBe(200);
+  // The user may be sent to Test login immediately after reaching compat.
+  // Record top-level navigations instead of asserting a stable final URL.
+  await expect.poll(() => observed.some((u) => {
+    try {
+      const url = new URL(u);
+      return url.pathname === '/oauth/authorize-compat' &&
+        url.searchParams.get('state') === 'regression-test-state' &&
+        url.searchParams.get('redirect_uri') === 'http://127.0.0.1:6274/oauth/callback';
+    } catch { return false; }
+  }), { timeout: 15_000 }).toBe(true);
+  expect(observed.some(u => u.includes('evil.example'))).toBe(false);
+});
