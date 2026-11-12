@@ -640,3 +640,43 @@ RFC 8707 resource-specific audience issuance for arbitrary CIMD/DCR
 clients. An issuer-level secure policy is still required before an
 unrestricted production rollout. Current Panadan production is
 unchanged and PR #104 stays draft.
+
+
+## Deployment gate after CIMD 401 diagnostics (2026-11-12)
+
+**Code committed, NOT YET DEPLOYED**: After observing the real CIMD token
+with a project-only `aud` and 8-hour lifetime, we implemented:
+- `approved-test-clients`: exact explicitly configured Stytch Test client ID
+  allowlist (maximum 8) for the same pinned Test member, retaining all
+  RS256, issuer, JWKS, scope, TTL, purpose, and canonical audience checks;
+- RSA-signed negative tests proving project-only audience and an 8-hour
+  access-token lifetime each separately cause 401;
+- a client-side unverified diagnostic showing only the audience and
+  lifetime configuration issues alongside the real MCP probe rejection.
+
+**CI:** The updated isolated MCP resource security suite passed after a
+test-harness typo was corrected; the staging UI diagnostic tests previously
+passed. PR #104 remains draft.
+
+**Deployment blocker:** Vercel's API returned **HTTP 402**
+`api-deployments-free-per-day` (daily deployment limit) when trying to
+deploy the tested branch revision. No new Vercel deployment was created.
+There was no authenticated Vercel CLI available in the execution
+environment. The isolated MCP project's `PANADAN_STAGING_CLIENT_MODE`
+was promptly **restored to `any-test-client`**, its previous deployed
+setting; existing live Vercel deployments are unchanged.
+`PANADAN_STAGING_APPROVED_CLIENT_IDS` was preconfigured with the one
+specific new Test client ID but is **not active** until a future tested
+deployment supports `approved-test-clients` mode. Do not claim the
+allowlist or new UI diagnostic is live until redeployed and independently
+verified.
+
+**Immediate issuer-side step:** Under Stytch **Test** Connected Apps,
+find `connected-app-test-548c584f-4a24-4fab-9054-84e463e44acc`.
+If editable, configure `access_token_custom_audience` to the exact
+`https://panadan-mcp-oauth-staging.vercel.app/mcp/` and
+`access_token_expiry_minutes=60`. Generate a brand-new CIMD PKCE
+authorization and use **Exchange code & test synthetic MCP**. Record
+only sanitized audience, `ttl_seconds`, probe status and HTTP status.
+Per-client configuration is an integration test, not a generic
+production-ready dynamic audience policy. Do not weaken MCP validation.
