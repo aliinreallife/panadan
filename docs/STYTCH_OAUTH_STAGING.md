@@ -680,3 +680,61 @@ authorization and use **Exchange code & test synthetic MCP**. Record
 only sanitized audience, `ttl_seconds`, probe status and HTTP status.
 Per-client configuration is an integration test, not a generic
 production-ready dynamic audience policy. Do not weaken MCP validation.
+
+
+## Live CIMD-initiated Test authorization → synthetic MCP verification — PASS (2026-11-12)
+
+**PASS — user-observed, real Stytch Test authorization + signed JWT verification
++ synthetic MCP tool execution using the new CIMD-initiated Test client.**
+
+After the initial CIMD token was rejected for a project-only audience and
+8-hour expiration, a subsequent **fresh Stytch Test authorization** returned
+the following sanitized, decoded token metadata:
+
+- Authorization-code + PKCE token exchange completed.
+- `iss=https://viridian-faucet-2753.customers.stytch.dev`;
+  `alg=RS256`; `kid` present.
+- `aud` includes **both** the Stytch Test Project ID and exact canonical
+  `https://panadan-mcp-oauth-staging.vercel.app/mcp/` resource.
+- `scope` includes `openid` and `panadan:mcp:read`.
+- Signed `client_id` is the internal Stytch Test Connected App
+  `connected-app-test-548c584f-4a24-4fab-9054-84e463e44acc`.
+  It is not itself an HTTPS CIMD metadata URL; distinguish the OAuth
+  registration method from the access token's internal client identity.
+- Test-member SHA-256 binding matches the previously approved synthetic
+  staging member (not reproducing the pseudonymous hash here).
+- `exp-iat=3600` seconds; `expires_in=3600`;
+  no refresh token returned.
+- The independent **Live staging MCP verification** declared
+  **"Accepted: Stytch JWT verified and synthetic MCP tool executed."**
+  Its tool-call HTTP status was **200**.
+
+**Conclusion:** This specific, manually audience-configured
+CIMD-initiated Stytch Test client can exchange PKCE authorization, receive
+a resource-audience access token within the 1-hour TTL constraint, and
+access only the isolated synthetic `get_staging_access` tool. The token
+metadata is decoded/unverified in the browser inspector; the separate
+MCP resource performed the actual signed-token verification. No raw
+tokens, authorization codes, customer records, VPN or Odoo data were
+returned to the browser diagnostic.
+
+**Still not established:** Automatic resource-specific `aud` issuance
+for **arbitrary** newly registered CIMD/DCR clients without per-client
+manual configuration; general independent third-party CIMD interoperability
+(e.g. a second MCP Inspector client with no preconfigured ID); full token
+revocation/refresh/key-rotation semantics; or production permissions.
+
+**Deployment status:** The latest `approved-test-clients` resource
+allowlist and the new browser rejection-hint improvements remain committed
+but **not deployed**, due to Vercel daily deployment quota (HTTP 402).
+Live staging still uses the prior synthetic-only `any-test-client`
+mode and the resource's immutable cryptographic/issuer/audience/scope/TTL
+checks. Do not imply the newer allowlist is active until its own
+deployment is READY and verified. After its deployment, switch the
+isolated MCP project's `PANADAN_STAGING_CLIENT_MODE` to
+`approved-test-clients` and redeploy with the approved Test client ID
+allowlist; preserve the existing pinned member binding.
+
+**Status:** CIMD-initiated Test PKCE → staging synthetic MCP **PASS**;
+generic DCR/CIMD automatic onboarding **PENDING**; PR #104 draft and
+unmerged; Panadan production and Stytch Live unchanged.
