@@ -66,3 +66,9 @@ export function canonicalStytchTestRedirect(
   after.searchParams.set('iss', TEST_DISCOVERED_ISSUER);
   return after.toString();
 }
+
+/** Callback mix-up protection, separate from JWT iss verification. */
+export function hasCanonicalAuthorizationResponseIssuer(params: URLSearchParams): boolean {
+  const issuers = params.getAll('iss');
+  return issuers.length === 1 && issuers[0] === TEST_DISCOVERED_ISSUER;
+}
