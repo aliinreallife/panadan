@@ -2,7 +2,7 @@
 import hashlib
 import pytest
 
-from policy import STAGING_RESOURCE, permitted_test_identity
+from policy import STAGING_RESOURCE, STAGING_CIMD_CLIENT_ID, permitted_test_identity
 
 CLIENT = "connected-app-test-e2f5508f-e63e-4a7a-8fab-207276bda582"
 SUBJECT = "user-test-disposable-test-subject"
@@ -63,4 +63,24 @@ def test_opt_in_dynamic_test_clients_are_strictly_subject_bound():
     )
     assert not permitted_test_identity(
         details, CLIENT, SUBJECT_HASH, client_mode="unknown"
+    )
+
+
+def test_cimd_client_requires_exact_self_owned_url_and_experimental_mode():
+    owned = {"subject": SUBJECT, "client_id": STAGING_CIMD_CLIENT_ID}
+    assert not permitted_test_identity(owned, CLIENT, SUBJECT_HASH)
+    assert permitted_test_identity(owned, CLIENT, SUBJECT_HASH, client_mode="any-test-client")
+    for alternate in (
+        STAGING_CIMD_CLIENT_ID + "/",
+        STAGING_CIMD_CLIENT_ID.replace("panadan-stytch-oauth-staging", "evil-example"),
+        "https://evil.example/metadata.json",
+        STAGING_CIMD_CLIENT_ID.replace("https://", "http://"),
+    ):
+        assert not permitted_test_identity(
+            {"subject": SUBJECT, "client_id": alternate},
+            CLIENT, SUBJECT_HASH, client_mode="any-test-client"
+        )
+    assert not permitted_test_identity(
+        {"subject": "different-test-member", "client_id": STAGING_CIMD_CLIENT_ID},
+        CLIENT, SUBJECT_HASH, client_mode="any-test-client"
     )
