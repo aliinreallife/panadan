@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canonicalStytchTestRedirect, TEST_DISCOVERED_ISSUER, TEST_LEGACY_ISSUER } from '../src/lib/stytchTestIssuerCompat.ts';
+import { canonicalStytchTestRedirect, TEST_DISCOVERED_ISSUER, TEST_LEGACY_ISSUER, hasCanonicalAuthorizationResponseIssuer } from '../src/lib/stytchTestIssuerCompat.ts';
 
 const callback = 'http://localhost:6274/oauth/callback?client_param=keep';
 const state = 'state123';
@@ -53,4 +53,16 @@ test('rejects redirect substitution, unexpected state, code mismatch and injecti
   assert.throws(() => canonicalStytchTestRedirect('https://user:pass@client.example/cb', state, providerResponse()));
   assert.throws(() => canonicalStytchTestRedirect('http://evil.example/callback', state, providerResponse()));
   assert.throws(() => canonicalStytchTestRedirect(callback, '', providerResponse()));
+});
+
+// RFC 9207 is checked on the actual browser callback as well as inside
+// our Test-only trusted SDK redirect compatibility boundary.
+test('authorization callback rejects wrong, absent, duplicated issuers', () => {
+  for (const issuer of [TEST_DISCOVERED_ISSUER, TEST_LEGACY_ISSUER]) {
+    const params = new URLSearchParams({ iss: issuer });
+    assert.equal(hasCanonicalAuthorizationResponseIssuer(params), issuer === TEST_DISCOVERED_ISSUER);
+    params.append('iss', issuer);
+    assert.equal(hasCanonicalAuthorizationResponseIssuer(params), false);
+  }
+  assert.equal(hasCanonicalAuthorizationResponseIssuer(new URLSearchParams('state=abc')), false);
 });
