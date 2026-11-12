@@ -32,6 +32,9 @@ config = build_oauth_config()
 verifier = OAuthVerifier(config)
 expected_client = os.getenv("PANADAN_STAGING_CLIENT_ID", "")
 expected_subject_sha256 = os.getenv("PANADAN_STAGING_SUBJECT_SHA256", "")
+client_mode = os.getenv("PANADAN_STAGING_CLIENT_MODE", "pinned").strip()
+if client_mode not in ("pinned", "any-test-client"):
+    raise RuntimeError("PANADAN_STAGING_CLIENT_MODE must be pinned or any-test-client")
 
 mcp = MCPServer(
     "Panadan Stytch OAuth Staging",
@@ -47,7 +50,9 @@ def approved_bearer(headers: dict[str, str]) -> bool:
     if not raw:
         return False
     details = verifier.verify_details(raw)
-    return permitted_test_identity(details, expected_client, expected_subject_sha256)
+    return permitted_test_identity(
+        details, expected_client, expected_subject_sha256, client_mode=client_mode
+    )
 
 
 @mcp.tool(title="Synthetic staging access", annotations=READ_ONLY)
