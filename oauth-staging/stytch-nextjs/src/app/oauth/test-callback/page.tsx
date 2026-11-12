@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { hasCanonicalAuthorizationResponseIssuer } from '@/lib/stytchTestIssuerCompat';
 
 const KEY = 'panadan_stytch_pkce_test_v1';
-const EXPECTED_AUTHORIZATION_RESPONSE_ISSUER = 'https://viridian-faucet-2753.customers.stytch.dev';
 type Transaction = {
   state: string;
   verifier: string;
@@ -38,7 +38,6 @@ export default function TestCallback() {
     const returnedError = query.get('error');
     const code = query.get('code');
     const state = query.get('state');
-    const issuer = query.getAll('iss');
     let stored: Transaction | null = null;
     try {
       const raw = sessionStorage.getItem(KEY);
@@ -54,7 +53,7 @@ export default function TestCallback() {
       || typeof stored.verifier !== 'string' || !/^[A-Za-z0-9_-]{43,128}$/.test(stored.verifier)
       || typeof stored.clientId !== 'string'
       || query.getAll('code').length !== 1 || query.getAll('state').length !== 1
-      || issuer.length !== 1 || issuer[0] !== EXPECTED_AUTHORIZATION_RESPONSE_ISSUER
+      || !hasCanonicalAuthorizationResponseIssuer(query)
       || !code || typeof state !== 'string' || stored.state !== state
       || stored.redirectUri !== window.location.origin + window.location.pathname) {
       setStatus('Callback rejected: invalid issuer (RFC 9207), code, state, or expired local PKCE request.');
