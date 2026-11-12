@@ -135,3 +135,31 @@ def test_signed_dcr_cimd_test_client_mode_remains_subject_and_audience_bound(mon
 def test_unknown_client_mode_fails_closed_at_startup(monkeypatch):
     with pytest.raises(RuntimeError, match="PANADAN_STAGING_CLIENT_MODE"):
         setup_app(monkeypatch, client_mode="accept_everything")
+
+
+def test_signed_owned_cimd_url_cannot_bypass_resource_boundaries(monkeypatch):
+    from policy import STAGING_CIMD_CLIENT_ID
+    app, token = setup_app(monkeypatch, client_mode="any-test-client")
+    payload = {
+        "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+        "params": {"name": "get_staging_access", "arguments": {}},
+    }
+    headers = {"content-type": "application/json", "accept": "application/json, text/event-stream"}
+    with TestClient(app, base_url="https://panadan-mcp-oauth-staging.vercel.app") as client:
+        accepted = client.post("/mcp/", json=payload, headers=headers | {
+            "authorization": "Bearer " + token(client_id=STAGING_CIMD_CLIENT_ID),
+        })
+        assert accepted.status_code == 200
+        assert "synthetic-only" in accepted.text
+        for invalid in [
+            {"client_id": "https://evil.example/client.json"},
+            {"client_id": STAGING_CIMD_CLIENT_ID + "?version=1"},
+            {"client_id": STAGING_CIMD_CLIENT_ID, "aud": "project-test-only"},
+            {"client_id": STAGING_CIMD_CLIENT_ID, "sub": "different-test-user"},
+            {"client_id": STAGING_CIMD_CLIENT_ID, "scope": "openid"},
+            {"client_id": STAGING_CIMD_CLIENT_ID, "iss": "https://not-stytch.example"},
+        ]:
+            denied = client.post("/mcp/", json=payload, headers=headers | {
+                "authorization": "Bearer " + token(**invalid),
+            })
+            assert denied.status_code == 401, invalid
