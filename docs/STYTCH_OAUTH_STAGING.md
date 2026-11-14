@@ -738,3 +738,66 @@ allowlist; preserve the existing pinned member binding.
 **Status:** CIMD-initiated Test PKCE → staging synthetic MCP **PASS**;
 generic DCR/CIMD automatic onboarding **PENDING**; PR #104 draft and
 unmerged; Panadan production and Stytch Live unchanged.
+
+
+## Restricted-client staging deployment and independent authorized retest — PASS (2026-11-14 UTC)
+
+**PASS — real signed Test access token accepted after the stricter
+`approved-test-clients` policy was deployed.** This supersedes the earlier
+NOT YET DEPLOYED / quota-blocked status *above* for the MCP resource.
+
+**Staging-only deployment evidence**
+- Vercel project `panadan-mcp-oauth-staging` only
+  (`prj_wMA2HK5oXsAxuKRstsvVFCLf1vMc`).
+- Deployment `dpl_HJgAQ7NPPwikdkbmWzzsPpCjDvkL`: **READY** on
+  `https://panadan-mcp-oauth-staging.vercel.app`, Git commit
+  `55af56a8a29445ba0d5b8697a262bf80e96de908`.
+- All three GitHub workflows on this exact revision passed.
+- Vercel staging project's production-target environment is
+  `PANADAN_STAGING_CLIENT_MODE=approved-test-clients`; its single explicitly
+  approved additional Test client ID is
+  `connected-app-test-548c584f-4a24-4fab-9054-84e463e44acc`.
+  The original pinned Test client ID is separately retained.
+  The approved disposable Test-member SHA-256 binding remains encrypted
+  and configured. This **Vercel target is the isolated staging project**,
+  not Panadan's real production service.
+- Public `GET /healthz` and protected-resource OAuth metadata returned
+  **200**, pointing to the pinned Test issuer and canonical resource.
+- Independent unauthenticated and malformed-bearer HTTP POSTs to `/mcp/`
+  both returned **401**; the unauthorized OAuth challenge advertised
+  the correct protected-resource metadata. No runtime error clusters
+  were seen immediately after deployment.
+
+**Real user-operated fresh CIMD PKCE retest after deployment**
+- Stytch Test authorization-code exchange: **completed**.
+- Decoded metadata (not signature proof by itself):
+  `iss=https://viridian-faucet-2753.customers.stytch.dev`,
+  JWT header `alg=RS256` and `kid` present;
+  `aud` includes the Stytch Test Project ID **and the canonical
+  `https://panadan-mcp-oauth-staging.vercel.app/mcp/` resource**;
+  scopes `openid` and `panadan:mcp:read`;
+  `client_id=connected-app-test-548c584f-4a24-4fab-9054-84e463e44acc`;
+  `iat=1794635277`, `exp=1794638877`,
+  `ttl_seconds=3600`, `expires_in=3600`;
+  refresh token not returned.
+- The **separate, protected synthetic MCP service** reported:
+  **"Accepted: Stytch JWT verified and synthetic MCP tool executed."**
+  The actual MCP tool-call HTTP status was **200**. No raw token was
+  exposed in the diagnostic response.
+- This establishes real acceptance of the **explicitly approved**
+  CIMD-initiated Test client by the **new stricter policy**, not merely
+  acceptance under the former permissive `any-test-client` policy.
+
+**Remaining release gates:** We have not live-tested a distinct,
+otherwise valid *unapproved* Test client token against the new policy,
+nor automatic per-client audience issuance for arbitrary CIMD/DCR
+clients without manual configuration. Independent external clients,
+replay/expiry/revocation after consent, refresh, issuer JWKS rollover,
+and real production user mapping and authorization still require
+separate acceptance and security reviews. A `200` for the approved
+client must not be described as unrestricted production-ready CIMD.
+
+**Disposition:** Strict synthetic-only `approved-test-clients` staging
+deployment **PASS**, fresh approved-client JWT/tool execution **PASS**.
+Keep GitHub PR #104 **draft/unmerged**. Leave Panadan production on its
+current legacy bearer authentication and leave Stytch Live unchanged.
