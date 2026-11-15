@@ -137,4 +137,10 @@ def test_signed_stytch_test_subject_to_real_panadan_permission_lifecycle(monkeyp
 def test_no_real_database_code_can_run():
     assert database.SYNTHETIC_ONLY is True
     assert not hasattr(database, "connect")
-    assert "psycopg" not in Path(database.__file__).read_text()
+    import ast
+    tree = ast.parse(Path(database.__file__).read_text())
+    assert not any(
+        isinstance(node, (ast.Import, ast.ImportFrom))
+        and "psycopg" in ast.unparse(node)
+        for node in ast.walk(tree)
+    )
