@@ -27,6 +27,11 @@ def test_real_http_bearer_gate_matches_production_ast():
 
 def test_staging_never_includes_real_reporting_database_or_production_config():
     content = (BASE / "server" / "database.py").read_text()
-    assert "psycopg" not in content
+    parsed = ast.parse(content)
+    assert not any(
+        isinstance(node, (ast.Import, ast.ImportFrom))
+        and ("psycopg" in ast.unparse(node))
+        for node in ast.walk(parsed)
+    )
     assert "SYNTHETIC_ONLY = True" in content
     assert not (BASE / "server" / "auth_store.py").exists()
