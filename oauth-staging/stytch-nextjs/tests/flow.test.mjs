@@ -20,12 +20,27 @@ test('does not accept arbitrary redirects or unvalidated return paths', () => {
   }
 });
 
-// The original registered client is still allowed to omit resource, but
-// dynamically testing CIMD must request ONLY this canonical synthetic MCP.
-test('optional resource indicator is exact and single-valued', () => {
-  const resource = 'https%3A%2F%2Fpanadan-mcp-oauth-staging.vercel.app%2Fmcp%2F';
-  assert.equal(validateAuthorizationParams(good + '&resource=' + resource), null);
-  assert.match(validateAuthorizationParams(good + '&resource=https%3A%2F%2Fevil.example%2Fmcp%2F'), /resource/);
-  assert.match(validateAuthorizationParams(good + '&resource=' + resource + '&resource=' + resource), /resource/);
-  assert.match(validateAuthorizationParams(good + '&resource='), /resource/);
+// Both deployed Stytch Test MCP resources have explicit, independently
+// pinned OAuth audiences; none of the arbitrary client-supplied URIs work.
+test('optional resource indicator accepts only exact staging resources', () => {
+  const syntheticResource = 'https://panadan-mcp-oauth-staging.vercel.app/mcp/';
+  const integrationResource = 'https://panadan-authz-integration-staging.vercel.app/mcp/';
+  for (const resource of [syntheticResource, integrationResource]) {
+    const request = good + '&resource=' + encodeURIComponent(resource);
+    assert.equal(validateAuthorizationParams(request), null);
+    assert.equal(safeReturnTo('/oauth/authorize' + request), '/oauth/authorize' + request);
+    assert.equal(safeReturnTo('/oauth/authorize-compat' + request), '/oauth/authorize-compat' + request);
+    assert.match(validateAuthorizationParams(request + '&resource=' + encodeURIComponent(resource)), /resource/);
+  }
+  for (const resource of [
+    '', 'https://evil.example/mcp/',
+    'http://panadan-authz-integration-staging.vercel.app/mcp/',
+    'https://panadan-authz-integration-staging.vercel.app/mcp',
+    'https://panadan-authz-integration-staging.vercel.app/mcp/evil',
+    'https://panadan-authz-integration-staging.vercel.app.evil/mcp/',
+  ]) {
+    const request = good + '&resource=' + encodeURIComponent(resource);
+    assert.match(validateAuthorizationParams(request), /resource/);
+    assert.equal(safeReturnTo('/oauth/authorize-compat' + request), '/');
+  }
 });
