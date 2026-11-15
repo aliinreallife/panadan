@@ -107,3 +107,73 @@ a separately approved acceptance plan covers real user mapping, client
 consent, reporting-field restrictions, incident rollback and operational
 monitoring. Avoid raw tokens, PII, source call rows or client secrets in
 logs, screenshots or reports.
+
+
+## Disposable real-authorization staging: deployed and negative checks PASS
+
+**Deployment:** Dedicated Vercel project `panadan-authz-integration-staging`
+(`prj_vQH5KZpXcSXuU2uxm6uzxJuchaJO`), source snapshot from tested
+PR commit `099bfc91447739e39e90ee4135f7efa628429f09`.
+Deployment `dpl_EoddUMx8N2umXQdrsQ6NREPjfmUz` is **READY** at:
+
+`https://panadan-authz-integration-staging.vercel.app/mcp/`
+
+The new service was uploaded as **ten explicitly reviewed source files**
+through Vercel's source-file API because Git-backed deployment failed
+under GitHub's API rate limit. No Panadan production project or production
+configuration was deployed. All four GitHub workflows passed on the source
+commit, including the isolated real-authorization integration tests.
+
+**Public smoke, independent of real credentials:**
+- `GET /healthz` = 200, `synthetic-only`,
+  `authorization=panadan-real-policy`.
+- `GET /.well-known/oauth-protected-resource` = 200, exact
+  canonical staging resource and Stytch **Test** issuer.
+- Unauthenticated and invalid-bearer `POST /mcp/` = 401, correct
+  WWW-Authenticate protected-resource metadata challenge.
+- `GET /dashboard`, `GET /api/v1/calls`, `GET /docs` = 404.
+- No runtime errors found in the examined Vercel window.
+- Project has **zero Odoo/VPN/PostgreSQL/production Stytch env vars**.
+  Its approved subject hash is stored as an encrypted Vercel env var.
+  The synthetic auth DB is ephemeral SQLite in a /tmp function instance;
+  no cross-instance revocation persistence is claimed.
+
+**The Test client configured for this new isolated project** is the
+existing, previously registered **MCP Inspector DCR** Connected App,
+`connected-app-test-2d48e426-3f1c-4aa9-b30b-27f7ee5780e1`.
+It is NOT approved on the older synthetic resource.
+The disposable Test member's SHA-256 identity is pinned; no user profile
+or raw JWT is stored in this documentation.
+
+### Human steps needed for real Stytch Test JWT acceptance
+
+1. In Stytch **Test → Connected Apps → Apps**, edit only the above
+   **MCP Inspector** client. Change **Custom JWT Audience** to the exact
+   `https://panadan-authz-integration-staging.vercel.app/mcp/`.
+   Keep **Access Token Expiry = 60 minutes**. Do not edit the existing
+   CIMD Test client or Stytch Live configuration.
+2. In MCP Inspector, create/select a **separate** Streamable HTTP
+   connection to that new /mcp/ URL. Set Client ID explicitly to the
+   DCR client ID above, Client Secret empty, scopes
+   `openid panadan:mcp:read`, Authorization URL override
+   `https://panadan-stytch-oauth-staging.vercel.app/oauth/authorize-compat`,
+   Token URL override empty, refresh token request OFF. The expected
+   redirect is `http://127.0.0.1:6274/oauth/callback`.
+   **Do not clear the stored client registration**, or a new DCR client
+   may be created.
+3. Re-authorize using the SAME disposable Stytch Test member as the
+   successful CIMD Test run. Open MCP tools and call:
+   - `get_my_access`: only `id` and `CALLDATE` are delegated;
+   - `list_recent_calls`: only synthetic call `73104` with
+     `id` and `CALLDATE`, no confidential sentinel;
+   - `get_call_metrics`: `permission_denied`.
+4. Share **only sanitized tool output and HTTP status**, never the JWT,
+   auth code, PKCE verifier, session cookies, or user subject.
+
+A real Test JWT/tool invocation on this new service is **PENDING** until
+the browser steps above complete. Durable permission-revocation semantics
+require an isolated, persistent auth store; the current /tmp SQLite
+fixture tests in-instance revocation and is not a production architecture.
+
+Keep PR #104 draft/unmerged and the real Panadan server in legacy bearer
+mode. Do not merge or cut over production from this result.
