@@ -68,3 +68,37 @@ credentials or live reporting sources. Startup refuses remote DB settings.
 python -m pip install -r requirements.txt pytest httpx
 python -m pytest -q tests
 ```
+
+
+## Live Test verification (manual Test login required)
+
+A separate Vercel project has been deployed to
+`https://panadan-authz-integration-staging.vercel.app/mcp/`.
+Health/discovery returned 200, and missing/invalid bearer requests
+returned 401. Signed Stytch Test client access still requires the user's
+browser session; do not claim full live integration before that succeeds.
+
+The isolated app accepts only the already registered MCP Inspector
+DCR Test client:
+`connected-app-test-2d48e426-3f1c-4aa9-b30b-27f7ee5780e1`.
+
+In **Stytch Test**, set this client's Custom JWT Audience to
+`https://panadan-authz-integration-staging.vercel.app/mcp/`
+and Access Token Expiry to **60 minutes**. Keep the original CIMD
+client's audience unchanged.
+
+In **MCP Inspector**, select a separate Streamable HTTP connection to
+the new MCP URL, explicitly enter the DCR client ID (do NOT force a
+fresh DCR registration), scopes `openid panadan:mcp:read`, Auth URL
+override `https://panadan-stytch-oauth-staging.vercel.app/oauth/authorize-compat`,
+no token override and no refresh-token request. Use the same Test member
+as the earlier synthetic PASS.
+
+Expected permitted tools: `get_my_access` shows only `id` and
+`CALLDATE`, `list_recent_calls` returns only synthetic call
+`73104`, and `get_call_metrics` reports `permission_denied`.
+This is intentionally *not* connected to any production reports.
+
+`/tmp` auth state is ephemeral and may be reset on Vercel cold starts
+or across instances. Only CI verifies local consent/revocation behavior;
+never represent in-instance tests as durable live revocation.
