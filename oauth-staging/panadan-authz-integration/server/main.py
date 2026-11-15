@@ -28,8 +28,8 @@ from .oauth_mcp import OAuthConfig, OAuthVerifier
 TEST_ISSUER = "https://viridian-faucet-2753.customers.stytch.dev"
 TEST_RESOURCE = "https://panadan-authz-integration-staging.vercel.app/mcp/"
 TEST_JWKS = TEST_ISSUER + "/.well-known/jwks.json"
-CLIENT_PATTERN = re.compile(r"connected-app-test-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\\Z", re.I)
-HASH_PATTERN = re.compile(r"[0-9a-f]{64}\\Z")
+CLIENT_PATTERN = re.compile(r"connected-app-test-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z", re.I)
+HASH_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 
 if os.getenv("PANADAN_INTEGRATION_STAGING_ENABLE") != "YES":
     raise RuntimeError("synthetic integration requires explicit staging flag")
