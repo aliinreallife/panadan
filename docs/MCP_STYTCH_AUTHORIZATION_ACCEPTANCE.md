@@ -177,3 +177,49 @@ fixture tests in-instance revocation and is not a production architecture.
 
 Keep PR #104 draft/unmerged and the real Panadan server in legacy bearer
 mode. Do not merge or cut over production from this result.
+
+
+## Stytch Test authorization-request compatibility fix — 2026-11-15
+
+**Root cause:** The Stytch Test authorization frontend's
+`src/lib/flow.ts::validateAuthorizationParams` previously accepted only the
+older synthetic MCP `resource` URI. MCP Inspector correctly sent the
+**separate integration staging** resource, so the frontend showed
+"Invalid authorization request" *before* Stytch Test consent. This was
+not a JWT, issuer, member, or scope failure.
+
+**Change:** The exact two trusted Stytch Test resources are now explicitly
+allowlisted. Arbitrary resource URLs, altered paths, duplicates and empty
+resource values still fail closed. No PKCE, callback, issuer, or signed
+access-token checks were weakened.
+
+**GitHub:** PR #104 remains draft/unmerged. All four CI workflows passed on
+commit `40062f61f978abbfb49f8495f4f871f025b108f6`.
+
+**Vercel:** The existing dedicated Test authorization UI project
+`panadan-stytch-oauth-staging` deployed commit `40062f6` as
+`dpl_6QYQb5j5XUVk5PSshAGQ9d9tCpAi`, READY with the canonical
+`https://panadan-stytch-oauth-staging.vercel.app` alias.
+
+**Browser smoke without credentials:** A synthetic well-formed request
+containing `resource=https://panadan-authz-integration-staging.vercel.app/mcp/`
+reached `/login` rather than the invalid-request screen. An otherwise
+identical request with an untrusted resource URL was rejected on
+`/oauth/authorize-compat` with "Invalid authorization request".
+These checks do **not** prove Stytch Test login/consent, token exchange,
+or signed JWT acceptance on the new integration service.
+
+**Remaining manual gate:** In MCP Inspector, start **new** authorization
+against `https://panadan-authz-integration-staging.vercel.app/mcp/`
+with the **existing** approved Stytch Test DCR client
+`connected-app-test-2d48e426-3f1c-4aa9-b30b-27f7ee5780e1`.
+Keep its Stytch Test audience set to this exact integration resource,
+60-minute token expiration, and redirect
+`http://127.0.0.1:6274/oauth/callback`. Do not clear stored client
+registration, add new client approvals, or touch Stytch Live.
+
+Expected successful synthetic outputs: only `id` and `CALLDATE` in
+`get_my_access`; one synthetic call `73104` in `list_recent_calls`;
+`permission_denied` for `get_call_metrics`. Preserve screenshots
+without JWTs, auth codes, PKCE verifiers, cookies, or local Inspector API
+tokens.
