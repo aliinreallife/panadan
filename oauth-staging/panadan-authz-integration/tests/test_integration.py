@@ -107,6 +107,36 @@ def test_signed_stytch_test_subject_to_real_panadan_permission_lifecycle(monkeyp
         assert parse_result(post(client, unapproved, "get_my_access"))["columns"] == []
         assert parse_result(post(client, unapproved, "list_recent_calls"))["error"] == "permission_denied"
 
+        # ChatGPT's exact HTTPS CIMD client ID is separately approved ONLY
+        # for this pinned synthetic Test subject, never a production account.
+        chatgpt = token(client_id=main.CHATGPT_CIMD_CLIENT_ID)
+        chatgpt_access = parse_result(post(client, chatgpt, "get_my_access"))
+        assert {f["id"] for f in chatgpt_access["columns"]} == {"id", "CALLDATE"}
+        chatgpt_rows = post(client, chatgpt, "list_recent_calls")
+        assert chatgpt_rows.status_code == 200
+        assert "73104" in chatgpt_rows.text
+        assert "SYNTHETIC_SECRET_MUST_NOT_LEAK" not in chatgpt_rows.text
+        assert parse_result(post(client, chatgpt, "get_call_metrics"))["error"] == "permission_denied"
+
+        # A lookalike CIMD URL, arbitrary HTTPS URL, and wrong Test member
+        # must NOT be silently registered or granted synthetic fields.
+        for forbidden in (
+            "https://chatgpt.com/oauth/client.json.evil",
+            "https://chatgpt.com/oauth/unknown/client.json",
+            "https://other.example/oauth/client.json",
+        ):
+            raw = token(client_id=forbidden)
+            assert parse_result(post(client, raw, "get_my_access"))["columns"] == []
+            assert parse_result(post(client, raw, "list_recent_calls"))["error"] == "permission_denied"
+        wrong_subject = token(client_id=main.CHATGPT_CIMD_CLIENT_ID, sub="wrong-member")
+        assert post(client, wrong_subject, "get_my_access").status_code == 401
+
+        main.store.revoke_mcp_client(main.synthetic_user_id, main.CHATGPT_CIMD_CLIENT_ID)
+        assert parse_result(post(client, chatgpt, "list_recent_calls"))["error"] == "permission_denied"
+        assert main.store.client_grants(main.synthetic_user_id, main.CHATGPT_CIMD_CLIENT_ID) is None
+        # Revoking ChatGPT's client does not revoke the Inspector grant.
+        assert "73104" in post(client, valid, "list_recent_calls").text
+
         main.store.revoke_mcp_client(main.synthetic_user_id, CLIENT_ID)
         revoked = parse_result(post(client, valid, "list_recent_calls"))
         assert revoked["error"] == "permission_denied"
