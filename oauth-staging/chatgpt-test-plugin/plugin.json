@@ -1,0 +1,18 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "panadan-chatgpt-staging-check",
+  "version": "0.1.0",
+  "description": "Private synthetic-only Panadan Stytch Test MCP OAuth compatibility check. Never accesses real Panadan reporting or production data.",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Panadan ChatGPT OAuth Test",
+        "shortDescription": "Stytch Test to Panadan synthetic MCP",
+        "longDescription": "Validate ChatGPT OAuth client metadata registration, signed Stytch Test tokens and the Panadan synthetic-only field-level MCP tools. This test does not access customer reporting or production services.",
+        "developerName": "Panadan",
+        "category": "Developer Tools",
+        "capabilities": ["Read"]
+      }
+    }
+  }
+}
