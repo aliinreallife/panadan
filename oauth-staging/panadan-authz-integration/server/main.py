@@ -50,6 +50,11 @@ if (oauth_config.issuer != TEST_ISSUER or oauth_config.resource != TEST_RESOURCE
 oauth_verifier = OAuthVerifier(oauth_config)
 
 approved_client = os.getenv("PANADAN_INTEGRATION_APPROVED_CLIENT_ID", "").strip()
+# Only the canonical ChatGPT CIMD URL is recognized, and only for the
+# already pinned disposable Test subject. Neither arbitrary HTTPS client IDs
+# nor callback-specific variants receive automatic synthetic permission.
+CHATGPT_CIMD_CLIENT_ID = "https://chatgpt.com/oauth/client.json"
+APPROVED_CLIENTS = frozenset((approved_client, CHATGPT_CIMD_CLIENT_ID))
 subject_hash = os.getenv("PANADAN_INTEGRATION_TEST_SUBJECT_SHA256", "").strip()
 if not CLIENT_PATTERN.fullmatch(approved_client) or not HASH_PATTERN.fullmatch(subject_hash):
     raise RuntimeError("explicit approved Test client and Test-member hash are required")
@@ -73,32 +78,38 @@ def directory_operator_names(destination=None, team=None):
     return []
 
 _provision_lock = threading.RLock()
-_provisioned = False
+_provisioned_clients: set[str] = set()
 
 def provision_disposable_identity(raw: str) -> bool:
-    """An explicit Test client AND exact pinned hashed subject can seed a
-    synthetic local account exactly once per instance. A revoked grant never
-    silently reappears during the lifetime of that instance.
+    """Only the pinned Test subject and two explicit Test OAuth clients may
+    seed synthetic consent once per client per instance. A locally revoked
+    client grant never silently reappears on the same running instance.
+
+    This is a disposable test fixture, not a production consent flow.
     """
-    global _provisioned
-    if _provisioned:
-        return False
     details = oauth_verifier.verify_details(raw)
-    if not details or not hmac.compare_digest(details.get("client_id") or "", approved_client):
+    if not details:
+        return False
+    client_id = details.get("client_id")
+    if not isinstance(client_id, str) or client_id not in APPROVED_CLIENTS:
         return False
     digest = hashlib.sha256(details["subject"].encode("utf-8")).hexdigest()
     if not hmac.compare_digest(digest, subject_hash):
         return False
     with _provision_lock:
-        if _provisioned:
+        if client_id in _provisioned_clients:
             return False
-        if store.actor_for_oauth(oauth_config.issuer, details["subject"]) is None:
+        actor = store.actor_for_oauth(oauth_config.issuer, details["subject"])
+        if actor is None:
             store.bind_oauth_identity(oauth_config.issuer, details["subject"], synthetic_user_id)
-        if store.client_grants(synthetic_user_id, approved_client) is None:
+            actor = synthetic_user_id
+        # Revoke-safe within this process; only the initial verified Test
+        # token can create this client grant. Each client is independent.
+        if store.client_grants(actor, client_id) is None:
             store.approve_mcp_client(
-                synthetic_user_id, approved_client,
+                actor, client_id,
                 ["mcp:use", "calls:read"], ["id", "CALLDATE"])
-        _provisioned = True
+        _provisioned_clients.add(client_id)
     return True
 
 
