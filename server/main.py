@@ -34,6 +34,7 @@ from .transcript_ai import transcript_for_ai, MAX_TRANSCRIPT_CHARS
 from .mcp_tools import mcp
 from mcp.server.transport_security import TransportSecuritySettings
 from .oauth_mcp import OAuthConfig, OAuthVerifier
+from .oauth_discovery import VerifiedOAuthDiscovery
 from .security import SESSION_SECONDS, CAPABILITIES, ROLE_GRANTS, permissions, has_capability, is_rate_limited, record_failure
 from .auth_store import create_auth_store
 
@@ -1089,12 +1090,21 @@ def mcp_transport_settings() -> TransportSecuritySettings:
     )
 
 
-# SDK v2 requires stateless/JSON and transport path on the ASGI factory,
-# not on MCPServer's constructor. Keep the source reporting tools read-only.
-app.mount('/mcp', MCPBearerGate(mcp.streamable_http_app(
+# SDK v2 requires stateless/JSON and transport path on the ASGI factory.
+# OAuth tool metadata can be discovered after full JWT verification even
+# before an administrator binds the member to a Panadan account. No report
+# tools bypass MCPBearerGate or the per-tool delegation checks. In the legacy
+# mode, preserve the existing MCP transport and bearer behavior byte-for-byte.
+_mcp_transport = mcp.streamable_http_app(
     streamable_http_path='/',
     stateless_http=True,
     json_response=True,
     host='0.0.0.0',
     transport_security=mcp_transport_settings(),
-)))
+)
+_mcp_authenticated = MCPBearerGate(_mcp_transport)
+if oauth_config.mode == 'oauth':
+    _mcp_authenticated = VerifiedOAuthDiscovery(
+        _mcp_authenticated, _mcp_transport, oauth_verifier.verify_details
+    )
+app.mount('/mcp', _mcp_authenticated)
