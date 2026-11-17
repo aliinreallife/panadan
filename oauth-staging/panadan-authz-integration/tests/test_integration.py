@@ -10,6 +10,7 @@ from types import SimpleNamespace
 # Exact disposable Stytch Test issuer/resource; no bearer or personal data.
 SUBJECT = "isolated-synthetic-member"
 CLIENT_ID = "connected-app-test-11111111-2222-3333-4444-555555555555"
+CHATGPT_CLIENT_ID = "connected-app-test-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 BASE = "https://panadan-authz-integration-staging.vercel.app"
 os.environ.update({
     "PANADAN_INTEGRATION_STAGING_ENABLE": "YES",
@@ -20,6 +21,7 @@ os.environ.update({
     "PANADAN_OAUTH_SCOPE": "panadan:mcp:read",
     "PANADAN_OAUTH_MAX_TOKEN_TTL": "3600",
     "PANADAN_INTEGRATION_APPROVED_CLIENT_ID": CLIENT_ID,
+    "PANADAN_INTEGRATION_CHATGPT_STYTCH_CLIENT_ID": CHATGPT_CLIENT_ID,
     "PANADAN_INTEGRATION_TEST_SUBJECT_SHA256": hashlib.sha256(SUBJECT.encode()).hexdigest(),
 })
 
@@ -86,6 +88,20 @@ def test_signed_stytch_test_subject_to_real_panadan_permission_lifecycle(monkeyp
         assert post(client, token(sub="unknown-member"), "get_my_access").status_code == 401
         assert post(client, unapproved, "get_my_access").status_code == 401
 
+        # Safe metadata discovery for valid signed OAuth tokens is possible
+        # without a Panadan client grant; data-bearing calls stay blocked.
+        def tools_list(raw):
+            return client.post("/mcp/", json={
+                "jsonrpc": "2.0", "id": 4, "method": "tools/list",
+            }, headers={
+                "authorization": "Bearer " + raw,
+                "accept": "application/json, text/event-stream",
+                "content-type": "application/json",
+            })
+        assert tools_list(unapproved).status_code == 200
+        assert "get_my_access" in tools_list(unapproved).text
+        assert tools_list(token(aud="https://evil.test/mcp/")).status_code == 401
+
         # The approved, signed Test subject and exact signed client seed
         # ONLY this disposable Panadan account. The actual verifier,
         # Store and per-tool permission code are reused without edits.
@@ -107,9 +123,9 @@ def test_signed_stytch_test_subject_to_real_panadan_permission_lifecycle(monkeyp
         assert parse_result(post(client, unapproved, "get_my_access"))["columns"] == []
         assert parse_result(post(client, unapproved, "list_recent_calls"))["error"] == "permission_denied"
 
-        # ChatGPT's exact HTTPS CIMD client ID is separately approved ONLY
-        # for this pinned synthetic Test subject, never a production account.
-        chatgpt = token(client_id=main.CHATGPT_CIMD_CLIENT_ID)
+        # ChatGPT CIMD is represented by Stytch's *internal signed* client UUID,
+        # not the public HTTPS CIMD metadata URL presented at authorization.
+        chatgpt = token(client_id=CHATGPT_CLIENT_ID)
         chatgpt_access = parse_result(post(client, chatgpt, "get_my_access"))
         assert {f["id"] for f in chatgpt_access["columns"]} == {"id", "CALLDATE"}
         chatgpt_rows = post(client, chatgpt, "list_recent_calls")
@@ -128,12 +144,12 @@ def test_signed_stytch_test_subject_to_real_panadan_permission_lifecycle(monkeyp
             raw = token(client_id=forbidden)
             assert parse_result(post(client, raw, "get_my_access"))["columns"] == []
             assert parse_result(post(client, raw, "list_recent_calls"))["error"] == "permission_denied"
-        wrong_subject = token(client_id=main.CHATGPT_CIMD_CLIENT_ID, sub="wrong-member")
+        wrong_subject = token(client_id=CHATGPT_CLIENT_ID, sub="wrong-member")
         assert post(client, wrong_subject, "get_my_access").status_code == 401
 
-        main.store.revoke_mcp_client(main.synthetic_user_id, main.CHATGPT_CIMD_CLIENT_ID)
+        main.store.revoke_mcp_client(main.synthetic_user_id, CHATGPT_CLIENT_ID)
         assert parse_result(post(client, chatgpt, "list_recent_calls"))["error"] == "permission_denied"
-        assert main.store.client_grants(main.synthetic_user_id, main.CHATGPT_CIMD_CLIENT_ID) is None
+        assert main.store.client_grants(main.synthetic_user_id, CHATGPT_CLIENT_ID) is None
         # Revoking ChatGPT's client does not revoke the Inspector grant.
         assert "73104" in post(client, valid, "list_recent_calls").text
 

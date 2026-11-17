@@ -24,6 +24,8 @@ from . import database
 from .mcp_tools import mcp
 from .security import Store
 from .oauth_mcp import OAuthConfig, OAuthVerifier
+from .staging_discovery import VerifiedDiscoveryGate
+import jwt
 
 TEST_ISSUER = "https://viridian-faucet-2753.customers.stytch.dev"
 TEST_RESOURCE = "https://panadan-authz-integration-staging.vercel.app/mcp/"
@@ -50,14 +52,20 @@ if (oauth_config.issuer != TEST_ISSUER or oauth_config.resource != TEST_RESOURCE
 oauth_verifier = OAuthVerifier(oauth_config)
 
 approved_client = os.getenv("PANADAN_INTEGRATION_APPROVED_CLIENT_ID", "").strip()
-# Only the canonical ChatGPT CIMD URL is recognized, and only for the
-# already pinned disposable Test subject. Neither arbitrary HTTPS client IDs
-# nor callback-specific variants receive automatic synthetic permission.
-CHATGPT_CIMD_CLIENT_ID = "https://chatgpt.com/oauth/client.json"
-APPROVED_CLIENTS = frozenset((approved_client, CHATGPT_CIMD_CLIENT_ID))
+# Stytch CIMD authorizes using ChatGPT's HTTPS metadata URL, but the
+# *signed access token* contains Stytch's internal connected-app-test UUID.
+# Never mistake the public metadata URL for the JWT client_id.
+CHATGPT_STYTCH_CLIENT_ID = os.getenv(
+    "PANADAN_INTEGRATION_CHATGPT_STYTCH_CLIENT_ID", ""
+).strip()
 subject_hash = os.getenv("PANADAN_INTEGRATION_TEST_SUBJECT_SHA256", "").strip()
 if not CLIENT_PATTERN.fullmatch(approved_client) or not HASH_PATTERN.fullmatch(subject_hash):
     raise RuntimeError("explicit approved Test client and Test-member hash are required")
+if CHATGPT_STYTCH_CLIENT_ID and not CLIENT_PATTERN.fullmatch(CHATGPT_STYTCH_CLIENT_ID):
+    raise RuntimeError("ChatGPT Test client must be Stytch's exact signed client UUID")
+APPROVED_CLIENTS = frozenset(
+    [approved_client] + ([CHATGPT_STYTCH_CLIENT_ID] if CHATGPT_STYTCH_CLIENT_ID else [])
+)
 
 # /tmp is local to one disposable Vercel function instance, never durable.
 # The actual Panadan Store class handles grants and local revocations.
@@ -80,21 +88,56 @@ def directory_operator_names(destination=None, team=None):
 _provision_lock = threading.RLock()
 _provisioned_clients: set[str] = set()
 
-def provision_disposable_identity(raw: str) -> bool:
-    """Only the pinned Test subject and two explicit Test OAuth clients may
-    seed synthetic consent once per client per instance. A locally revoked
-    client grant never silently reappears on the same running instance.
+def _token_rejection_reason(raw: str) -> str:
+    """Diagnostics only: never use partially verified claims for authorization."""
+    try:
+        if len(raw) > 8192 or raw.count(".") != 2:
+            return "invalid_token_shape"
+        header = jwt.get_unverified_header(raw)
+        if header.get("alg") != "RS256":
+            return "unexpected_token_algorithm"
+        key = oauth_verifier.jwks.get_signing_key_from_jwt(raw)
+        # Signature verification is mandatory even for *diagnostic* claims.
+        claims = jwt.decode(
+            raw, key.key, algorithms=["RS256"],
+            options={"verify_aud": False, "verify_iss": False,
+                     "verify_exp": False, "verify_nbf": False,
+                     "verify_iat": False},
+        )
+        if claims.get("iss") != TEST_ISSUER:
+            return "issuer_mismatch"
+        audience = claims.get("aud", [])
+        if TEST_RESOURCE not in ([audience] if isinstance(audience, str) else
+                                audience if isinstance(audience, list) else []):
+            return "audience_mismatch"
+        scopes = claims.get("scope", claims.get("scp", ""))
+        granted = scopes.split() if isinstance(scopes, str) else (
+            scopes if isinstance(scopes, list) else [])
+        if "panadan:mcp:read" not in granted:
+            return "scope_missing"
+        if not claims.get("client_id") and not claims.get("azp"):
+            return "signed_client_id_missing"
+        return "jwt_other_validation"
+    except Exception:
+        return "signature_or_claim_rejected"
 
-    This is a disposable test fixture, not a production consent flow.
+
+def provision_disposable_identity(raw: str) -> bool:
+    """An exact approved, signed Stytch client and pinned Test member can seed
+    one disposable synthetic grant per client and serverless instance.
+    Never use this first-use bootstrap for production data.
     """
     details = oauth_verifier.verify_details(raw)
     if not details:
+        print("panadan_test_auth stage=" + _token_rejection_reason(raw), flush=True)
         return False
     client_id = details.get("client_id")
     if not isinstance(client_id, str) or client_id not in APPROVED_CLIENTS:
+        print("panadan_test_auth stage=client_not_approved", flush=True)
         return False
     digest = hashlib.sha256(details["subject"].encode("utf-8")).hexdigest()
     if not hmac.compare_digest(digest, subject_hash):
+        print("panadan_test_auth stage=test_subject_not_approved", flush=True)
         return False
     with _provision_lock:
         if client_id in _provisioned_clients:
@@ -103,12 +146,11 @@ def provision_disposable_identity(raw: str) -> bool:
         if actor is None:
             store.bind_oauth_identity(oauth_config.issuer, details["subject"], synthetic_user_id)
             actor = synthetic_user_id
-        # Revoke-safe within this process; only the initial verified Test
-        # token can create this client grant. Each client is independent.
+        # If this grant is locally revoked, do not re-provision it.
         if store.client_grants(actor, client_id) is None:
             store.approve_mcp_client(
-                actor, client_id,
-                ["mcp:use", "calls:read"], ["id", "CALLDATE"])
+                actor, client_id, ["mcp:use", "calls:read"], ["id", "CALLDATE"]
+            )
         _provisioned_clients.add(client_id)
     return True
 
@@ -262,28 +304,31 @@ def protected_resource_metadata():
     return JSONResponse(oauth_config.metadata(), headers={"Cache-Control": "no-store"})
 
 
+_mcp_transport = mcp.streamable_http_app(
+    streamable_http_path="/",
+    stateless_http=True,
+    json_response=True,
+    host="0.0.0.0",
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[
+            "panadan-authz-integration-staging.vercel.app",
+            "127.0.0.1:*", "localhost:*",
+        ],
+        allowed_origins=[
+            "https://panadan-authz-integration-staging.vercel.app",
+            "https://panadan-stytch-oauth-staging.vercel.app",
+            "http://127.0.0.1:*", "http://localhost:*",
+        ],
+    ),
+)
 app.mount(
     "/mcp",
     PinnedTestSubjectProvisioning(
-        MCPBearerGate(
-            mcp.streamable_http_app(
-                streamable_http_path="/",
-                stateless_http=True,
-                json_response=True,
-                host="0.0.0.0",
-                transport_security=TransportSecuritySettings(
-                    enable_dns_rebinding_protection=True,
-                    allowed_hosts=[
-                        "panadan-authz-integration-staging.vercel.app",
-                        "127.0.0.1:*", "localhost:*",
-                    ],
-                    allowed_origins=[
-                        "https://panadan-authz-integration-staging.vercel.app",
-                        "https://panadan-stytch-oauth-staging.vercel.app",
-                        "http://127.0.0.1:*", "http://localhost:*",
-                    ],
-                ),
-            )
+        VerifiedDiscoveryGate(
+            MCPBearerGate(_mcp_transport),
+            _mcp_transport,
+            oauth_verifier.verify_details,
         )
     ),
 )
