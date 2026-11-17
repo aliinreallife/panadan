@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "panadan-stytch-test": {
+      "type": "streamable-http",
+      "url": "https://panadan-authz-integration-staging.vercel.app/mcp/",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {"mode": "cimd"},
+            "authorizationUrl": "https://panadan-stytch-oauth-staging.vercel.app/oauth/authorize-compat",
+            "tokenUrl": "https://viridian-faucet-2753.customers.stytch.dev/v1/oauth2/token",
+            "resource": "https://panadan-authz-integration-staging.vercel.app/mcp/",
+            "baseScopes": ["openid", "panadan:mcp:read"]
+          }
+        }
+      }
+    }
+  }
+}

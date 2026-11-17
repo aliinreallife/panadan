@@ -1,0 +1,33 @@
+name: Isolated Stytch MCP staging resource
+
+on:
+  push:
+    paths:
+      - 'oauth-staging/mcp-resource/**'
+      - '.github/workflows/stytch-mcp-staging.yml'
+      - 'server/oauth_mcp.py'
+  pull_request:
+    paths:
+      - 'oauth-staging/mcp-resource/**'
+      - '.github/workflows/stytch-mcp-staging.yml'
+      - 'server/oauth_mcp.py'
+
+permissions:
+  contents: read
+
+jobs:
+  staging-mcp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Ensure strict staging verifier matches production verifier
+        run: cmp server/oauth_mcp.py oauth-staging/mcp-resource/oauth_mcp.py
+      - name: Install isolated staging dependencies
+        working-directory: oauth-staging/mcp-resource
+        run: python -m pip install -r requirements.txt pytest httpx
+      - name: Test strict JWT, user/client binding and synthetic MCP HTTP
+        working-directory: oauth-staging/mcp-resource
+        run: python -m pytest -q tests

@@ -1,0 +1,16 @@
+{
+  "client_id": "https://panadan-stytch-oauth-staging.vercel.app/.well-known/panadan-test-cimd.json",
+  "client_name": "Panadan CIMD Test Client (synthetic only)",
+  "client_uri": "https://panadan-stytch-oauth-staging.vercel.app",
+  "redirect_uris": [
+    "https://panadan-stytch-oauth-staging.vercel.app/oauth/test-callback"
+  ],
+  "grant_types": [
+    "authorization_code"
+  ],
+  "response_types": [
+    "code"
+  ],
+  "token_endpoint_auth_method": "none",
+  "scope": "openid panadan:mcp:read"
+}

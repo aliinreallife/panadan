@@ -319,3 +319,61 @@ def test_real_signed_oauth_clients_are_isolated_on_mcp_http(
         assert result(request(calls_jwt, 'get_my_access'))['columns'] == []
         assert result(request(metrics_jwt, 'get_call_metrics')) == {
             'total': 1, 'sold_out': 0}
+
+        # A new, correctly signed client with the same bound member is NOT
+        # automatically given reporting access by an OAuth consent screen.
+        # Stytch registration and Panadan client consent are separate gates.
+        another_jwt = mint(client_id='different-dcr-test-client')
+        assert result(request(another_jwt, 'list_recent_calls')) == {
+            'error': 'permission_denied', 'capability': 'calls:read'}
+        assert client.get('/api/v1/me/access', headers={
+            'authorization': 'Bearer ' + another_jwt}).status_code == 403
+
+        # Reapproval is explicit; a narrower grant immediately redacts a
+        # previously allowed column, even for the SAME unexpired signed JWT.
+        main.store.approve_mcp_client(user_id, 'calls-client',
+            ['mcp:use', 'calls:read'], ['id', 'CALLDATE'])
+        assert result(request(calls_jwt, 'list_recent_calls')) == {
+            'id': 93, 'CALLDATE': '2026-11-09'}
+        main.store.approve_mcp_client(user_id, 'calls-client',
+            ['mcp:use', 'calls:read'], ['id'])
+        narrow = request(calls_jwt, 'list_recent_calls')
+        assert narrow.status_code == 200
+        assert result(narrow) == {'id': 93}
+        assert secret not in narrow.text
+        narrowed_access = client.get('/api/v1/me/access', headers={
+            'authorization': 'Bearer ' + calls_jwt})
+        assert narrowed_access.status_code == 200
+        assert {item['id'] for item in narrowed_access.json()['fields']} == {'id'}
+        assert result(request(metrics_jwt, 'get_call_metrics')) == {
+            'total': 1, 'sold_out': 0}
+        assert result(request(another_jwt, 'list_recent_calls'))['error'] == 'permission_denied'
+
+        # Unlinking an IdP subject invalidates otherwise well-formed signed
+        # tokens at the HTTP bearer gate for *every* client immediately.
+        bound = main.store.list_oauth_identities(oauth_config.issuer)
+        assert len(bound) == 1
+        main.store.revoke_oauth_identity(oauth_config.issuer, bound[0]['id'])
+        for token in (calls_jwt, metrics_jwt, another_jwt):
+            denied = request(token, 'get_my_access')
+            assert denied.status_code == 401
+            assert secret not in denied.text
+        assert client.get('/api/v1/me/access', headers={
+            'authorization': 'Bearer ' + calls_jwt}).status_code == 401
+
+        # Rebinding restores ONLY the previously consented local client
+        # permissions; it never turns an unknown client into an approved one.
+        main.store.bind_oauth_identity(oauth_config.issuer,
+                                       'provider-user-123', user_id)
+        assert result(request(calls_jwt, 'list_recent_calls')) == {'id': 93}
+        assert result(request(another_jwt, 'list_recent_calls'))['error'] == 'permission_denied'
+
+        # Disabling the user invalidates the binding and all client grants.
+        # Existing Stytch tokens must not survive local account removal.
+        main.store.update_user(user_id, 'analyst',
+            ['calls:read', 'metrics:read', 'mcp:use'], False, 0,
+            fields=['id', 'CALLDATE', 'aicallinfostate'])
+        assert not main.store.oauth_identity_has_mcp_access(
+            oauth_config.issuer, 'provider-user-123')
+        for token in (calls_jwt, metrics_jwt, another_jwt):
+            assert request(token, 'get_my_access').status_code == 401

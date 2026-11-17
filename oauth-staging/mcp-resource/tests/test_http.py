@@ -1,0 +1,209 @@
+"""Hermetic HTTP + signed JWT tests for the isolated synthetic MCP resource."""
+import hashlib
+import importlib
+import json
+import sys
+import time
+from types import SimpleNamespace
+
+import jwt
+import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
+from fastapi.testclient import TestClient
+
+ISSUER = "https://viridian-faucet-2753.customers.stytch.dev"
+RESOURCE = "https://panadan-mcp-oauth-staging.vercel.app/mcp/"
+CLIENT = "connected-app-test-e2f5508f-e63e-4a7a-8fab-207276bda582"
+SUB = "disposable-user-test-credential"
+
+
+def setup_app(monkeypatch, *, client_mode="pinned", approved_clients=()):
+    vars = {
+        "PANADAN_MCP_AUTH_MODE": "oauth",
+        "PANADAN_OAUTH_ISSUER": ISSUER,
+        "PANADAN_OAUTH_JWKS_URL": ISSUER + "/.well-known/jwks.json",
+        "PANADAN_OAUTH_RESOURCE": RESOURCE,
+        "PANADAN_OAUTH_SCOPE": "panadan:mcp:read",
+        "PANADAN_STAGING_CLIENT_ID": CLIENT,
+        "PANADAN_STAGING_CLIENT_MODE": client_mode,
+        "PANADAN_STAGING_APPROVED_CLIENT_IDS": ",".join(approved_clients),
+        "PANADAN_STAGING_SUBJECT_SHA256": hashlib.sha256(SUB.encode("utf8")).hexdigest(),
+    }
+    for name, value in vars.items():
+        monkeypatch.setenv(name, value)
+    sys.modules.pop("app", None)
+    module = importlib.import_module("app")
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    module.verifier.jwks = SimpleNamespace(
+        get_signing_key_from_jwt=lambda _: SimpleNamespace(key=private_key.public_key())
+    )
+
+    def token(**updates):
+        now = int(time.time())
+        claims = {
+            "iss": ISSUER, "aud": RESOURCE, "iat": now,
+            "exp": now + 300, "sub": SUB,
+            "scope": "panadan:mcp:read", "client_id": CLIENT,
+        }
+        claims.update(updates)
+        return jwt.encode(claims, private_key, algorithm="RS256", headers={"kid":"synthetic-only"})
+
+    return module.app, token
+
+
+def test_discovery_challenge_and_synthetic_mcp_access(monkeypatch):
+    app, token = setup_app(monkeypatch)
+    with TestClient(app, base_url="https://panadan-mcp-oauth-staging.vercel.app") as client:
+        assert client.get("/healthz").json()["data"] == "synthetic-only"
+        for path in ("/.well-known/oauth-protected-resource",
+                     "/.well-known/oauth-protected-resource/mcp"):
+            r = client.get(path)
+            assert r.status_code == 200
+            assert r.json()["resource"] == RESOURCE
+            assert r.json()["authorization_servers"] == [ISSUER]
+
+        payload = {
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name":"get_staging_access", "arguments":{}},
+        }
+        headers = {
+            "content-type": "application/json",
+            "accept": "application/json, text/event-stream",
+        }
+        unauth = client.post("/mcp/", json=payload, headers=headers)
+        assert unauth.status_code == 401
+        challenge = unauth.headers.get("www-authenticate", "")
+        assert '/.well-known/oauth-protected-resource' in challenge
+        assert 'scope="panadan:mcp:read"' in challenge
+        for jwt_value in [
+            "malformed",
+            token(aud="https://some-other.example/mcp/"),
+            token(iss="https://wrong.example"),
+            token(scope="other:scope"),
+            token(sub="unauthorized-other-member"),
+            token(client_id="connected-app-test-11111111-2222-3333-4444-555555555555"),
+            token(exp=int(time.time()) - 60),
+        ]:
+            denied = client.post("/mcp/", json=payload, headers=headers | {
+                "authorization": "Bearer " + jwt_value,
+            })
+            assert denied.status_code == 401
+
+        ok = client.post("/mcp/", json=payload, headers=headers | {
+            "authorization": "Bearer " + token(),
+        })
+        assert ok.status_code == 200, ok.text
+        assert "synthetic-only" in ok.text
+        assert "customer" not in ok.text.lower()
+
+
+def test_signed_dcr_cimd_test_client_mode_remains_subject_and_audience_bound(monkeypatch):
+    app, token = setup_app(monkeypatch, client_mode="any-test-client")
+    dcr_client_id = "connected-app-test-11111111-2222-3333-4444-555555555555"
+    payload = {
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": {"name": "get_staging_access", "arguments": {}},
+    }
+    headers = {"content-type": "application/json", "accept": "application/json, text/event-stream"}
+    with TestClient(app, base_url="https://panadan-mcp-oauth-staging.vercel.app") as client:
+        # The JWT is actually RSA-signed in this test. DCR/CIMD registration
+        # is external to the resource verifier; signed JWT client_id is the
+        # Stytch internal ID in both registration modes.
+        allowed = client.post("/mcp/", json=payload, headers=headers | {
+            "authorization": "Bearer " + token(client_id=dcr_client_id),
+        })
+        assert allowed.status_code == 200, allowed.text
+        assert "synthetic-only" in allowed.text
+
+        for bad in (
+            {"aud": "project-test-only"},
+            {"aud": "https://wrong.example/mcp/"},
+            {"scope": "openid"},
+            {"iss": "https://wrong.example"},
+            {"sub": "not-the-approved-test-member"},
+            {"client_id": "connected-app-live-11111111-2222-3333-4444-555555555555"},
+            {"client_id": "https://untrusted.example/client.json"},
+            {"client_id": None},
+            {"token_use": "id"},
+            {"exp": int(time.time()) - 120},
+        ):
+            denied = client.post("/mcp/", json=payload, headers=headers | {
+                "authorization": "Bearer " + token(**bad),
+            })
+            assert denied.status_code == 401, (bad, denied.text)
+
+
+def test_unknown_client_mode_fails_closed_at_startup(monkeypatch):
+    with pytest.raises(RuntimeError, match="PANADAN_STAGING_CLIENT_MODE"):
+        setup_app(monkeypatch, client_mode="accept_everything")
+
+
+def test_signed_owned_cimd_url_cannot_bypass_resource_boundaries(monkeypatch):
+    from policy import STAGING_CIMD_CLIENT_ID
+    app, token = setup_app(monkeypatch, client_mode="any-test-client")
+    payload = {
+        "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+        "params": {"name": "get_staging_access", "arguments": {}},
+    }
+    headers = {"content-type": "application/json", "accept": "application/json, text/event-stream"}
+    with TestClient(app, base_url="https://panadan-mcp-oauth-staging.vercel.app") as client:
+        accepted = client.post("/mcp/", json=payload, headers=headers | {
+            "authorization": "Bearer " + token(client_id=STAGING_CIMD_CLIENT_ID),
+        })
+        assert accepted.status_code == 200
+        assert "synthetic-only" in accepted.text
+        for invalid in [
+            {"client_id": "https://evil.example/client.json"},
+            {"client_id": STAGING_CIMD_CLIENT_ID + "?version=1"},
+            {"client_id": STAGING_CIMD_CLIENT_ID, "aud": "project-test-only"},
+            {"client_id": STAGING_CIMD_CLIENT_ID, "sub": "different-test-user"},
+            {"client_id": STAGING_CIMD_CLIENT_ID, "scope": "openid"},
+            {"client_id": STAGING_CIMD_CLIENT_ID, "iss": "https://not-stytch.example"},
+        ]:
+            denied = client.post("/mcp/", json=payload, headers=headers | {
+                "authorization": "Bearer " + token(**invalid),
+            })
+            assert denied.status_code == 401, invalid
+
+
+def test_dynamic_client_project_audience_and_eight_hour_ttl_are_both_denied(monkeypatch):
+    new_client = "connected-app-test-548c584f-4a24-4fab-9054-84e463e44acc"
+    app, token = setup_app(
+        monkeypatch, client_mode="approved-test-clients", approved_clients=(new_client,)
+    )
+    payload = {
+        "jsonrpc": "2.0", "id": 12, "method": "tools/call",
+        "params": {"name": "get_staging_access", "arguments": {}},
+    }
+    headers = {"content-type": "application/json", "accept": "application/json, text/event-stream"}
+    now = int(time.time())
+    with TestClient(app, base_url="https://panadan-mcp-oauth-staging.vercel.app") as c:
+        # Mirrors the sanitized CIMD Test result: Stytch project audience and
+        # 28800s token life. EACH violates our resource policy independently.
+        for overrides in (
+            {"aud": ["project-test-5ce2a5ad-c6a8-4177-a6a4-a918c7add228"]},
+            {"iat": now, "exp": now + 28800},
+            {"aud": ["project-test-5ce2a5ad-c6a8-4177-a6a4-a918c7add228"],
+             "iat": now, "exp": now + 28800},
+            {"client_id": "connected-app-test-11111111-2222-3333-4444-555555555555"},
+            {"sub": "not-the-approved-member"},
+        ):
+            denied = c.post("/mcp/", json=payload, headers=headers | {
+                "authorization": "Bearer " + token(**({"client_id": new_client} | overrides)),
+            })
+            assert denied.status_code == 401, overrides
+        valid = c.post("/mcp/", json=payload, headers=headers | {
+            "authorization": "Bearer " + token(client_id=new_client, iat=now, exp=now + 3600),
+        })
+        assert valid.status_code == 200, valid.text
+        assert "synthetic-only" in valid.text
+
+
+def test_allowlist_env_is_validated_before_startup(monkeypatch):
+    for ids in (
+        (), ("connected-app-test-548c584f-4a24-4fab-9054-84e463e44acc",) * 2,
+        ("connected-app-live-11111111-2222-3333-4444-555555555555",),
+        ("https://attacker.example/client.json",),
+    ):
+        with pytest.raises(RuntimeError, match="PANADAN_STAGING_APPROVED_CLIENT_IDS"):
+            setup_app(monkeypatch, client_mode="approved-test-clients", approved_clients=ids)
