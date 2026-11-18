@@ -130,6 +130,11 @@ class OAuthVerifier:
                 options={"require": ["iss", "aud", "exp", "iat", "sub"]},
                 leeway=30,
             )
+            # A synthetic-token holder must never bring a multi-audience JWT
+            # that also targets the real production reporting resource.
+            aud_values = payload["aud"] if isinstance(payload["aud"], list) else [payload["aud"]]
+            if "https://dan.panafor.com/mcp/" in aud_values:
+                return None
             sub = payload.get("sub")
             if not isinstance(sub, str) or not 1 <= len(sub) <= 256:
                 return None
