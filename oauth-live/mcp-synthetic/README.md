@@ -40,8 +40,12 @@ audience.
 - `GET /.well-known/oauth-protected-resource` -> exact canonical resource,
   Live issuer, required scope
 - `GET /.well-known/oauth-protected-resource/mcp` -> same metadata
-- `POST /mcp/` without a valid Live JWT+explicit pilot binding -> 401,
-  no tool discovery; `WWW-Authenticate` points to protected resource metadata
+- `POST /mcp/` with no/invalid Live JWT -> 401 and a protected resource challenge
+- With an RS256-verified Live access JWT and signed `client_id`, only the
+  `initialize`, `tools/list`, `notifications/initialized` and `ping`
+  MCP handshake methods are allowed before local pilot binding
+- `tools/call` and all other data-bearing RPCs require BOTH the exact approved
+  client ID and approved Live member hash; no client is approved by default
 - `GET /openapi.json` -> 404 (API docs disabled)
 
 Use an independently signed RS256 JWT fixture in offline tests to check
@@ -60,5 +64,12 @@ recovery and per-app grant gates are satisfied.
 - The Live authorization UI source was updated in draft PR #107 to allow this exact additional resource, with passing CI; the deployed UI has **not** been updated. Its Git-source preview failed `git_info_fail`, and the alternate source-file deployment was blocked by Vercel's daily free API-deployment quota (HTTP 402).
 - Before full acceptance: deploy the updated authorization UI; verify that Stytch issues a **signed access token** whose audience includes this distinct synthetic resource (not production), with scope and signed client ID. Then approve ONE known pilot member/client and configure the explicit pilot binding env vars; perform human-consented tool discovery and call plus negative/revocation tests. Do not disclose JWTs, raw identity claims, secrets, or personal contact details.
 - No live customer-data access was enabled. The production VPS continues with legacy bearer authentication. Independent backup/rollback and row/tenant authorization prerequisites remain unresolved for real reporting access.
+
+
+**Source update (2026-11-18):** Added `VerifiedOAuthDiscovery` metadata-only
+handshake, with positive and negative unit tests passing GitHub CI. The running
+Vercel deployment predates this change; it needs an explicit source-file
+redeployment once Vercel's daily API deployment capacity permits. No real
+data was added, and production reporting authentication is unchanged.
 
 The source is versioned in GitHub but **this Vercel project is not Git-connected**. Any future source change needs an explicit redeployment of reviewed source files; pushing the branch alone does not update the synthetic site.
