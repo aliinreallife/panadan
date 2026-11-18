@@ -16,6 +16,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
 from oauth_mcp import OAuthConfig, OAuthVerifier
+from oauth_discovery import VerifiedOAuthDiscovery
 from policy import (
     LIVE_ISSUER, LIVE_JWKS, SYNTHETIC_RESOURCE, REQUIRED_SCOPE, approved_live_pilot,
 )
@@ -139,25 +140,32 @@ def oauth_metadata():
     return JSONResponse(config.metadata(), headers={"Cache-Control": "no-store"})
 
 
+# Metadata-only MCP handshake needs a correctly signed Live access JWT
+# but not yet local client/member approval. Execution remains fail-closed.
+# Identical trust split to production VerifiedOAuthDiscovery; this app only
+# offers a synthetic tool and never reads the Panadan reporting database.
+sdk_app = mcp.streamable_http_app(
+    streamable_http_path="/",
+    stateless_http=True,
+    json_response=True,
+    host="0.0.0.0",
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[
+            "panadan-mcp-live-synthetic.vercel.app", "localhost:*", "127.0.0.1:*",
+        ],
+        allowed_origins=[
+            "https://panadan-stytch-oauth-live.vercel.app",
+            "https://panadan-mcp-live-synthetic.vercel.app",
+            "http://localhost:*", "http://127.0.0.1:*",
+        ],
+    ),
+)
 app.mount(
     "/mcp",
-    RequireLiveOAuth(
-        mcp.streamable_http_app(
-            streamable_http_path="/",
-            stateless_http=True,
-            json_response=True,
-            host="0.0.0.0",
-            transport_security=TransportSecuritySettings(
-                enable_dns_rebinding_protection=True,
-                allowed_hosts=[
-                    "panadan-mcp-live-synthetic.vercel.app", "localhost:*", "127.0.0.1:*"
-                ],
-                allowed_origins=[
-                    "https://panadan-stytch-oauth-live.vercel.app",
-                    "https://panadan-mcp-live-synthetic.vercel.app",
-                    "http://localhost:*", "http://127.0.0.1:*",
-                ],
-            ),
-        )
+    VerifiedOAuthDiscovery(
+        authenticated_app=RequireLiveOAuth(sdk_app),
+        metadata_app=sdk_app,
+        verify_details=verifier.verify_details,
     ),
 )
