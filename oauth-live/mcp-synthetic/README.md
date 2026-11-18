@@ -73,3 +73,16 @@ redeployment once Vercel's daily API deployment capacity permits. No real
 data was added, and production reporting authentication is unchanged.
 
 The source is versioned in GitHub but **this Vercel project is not Git-connected**. Any future source change needs an explicit redeployment of reviewed source files; pushing the branch alone does not update the synthetic site.
+
+## Revocation behavior
+
+The synthetic deployment verifies RS256 JWTs locally using a cached JWKS and
+checks a *static* pilot client/member allowlist on each request. Revoking a
+Stytch-side token or refresh authorization does not automatically make an
+otherwise valid, unexpired JWT fail local signature validation; do **not**
+claim immediate issuer-side revocation with this implementation. To deny
+synthetic access before token expiry, remove the pilot binding and redeploy,
+and verify tool calls are rejected after the change. Production Panadan's
+local user/app grant store is separate and must enforce per-call revocation.
+An independently reviewed introspection/denylist policy is needed if
+immediate Stytch-side JWT revocation is required.
