@@ -39,7 +39,7 @@ export function validateAuthorizationParams(query: string): string | null {
   if (!scopes.includes('panadan:mcp:read'))
     return 'Panadan MCP read scope is required.';
   const resources = params.getAll('resource');
-  if (resources.length > 1 || (resources.length === 1 && ![CANONICAL_RESOURCE, LIVE_SYNTHETIC_RESOURCE].includes(resources[0])))
+  if (resources.length !== 1 || ![CANONICAL_RESOURCE, LIVE_SYNTHETIC_RESOURCE].includes(resources[0]))
     return 'Unexpected MCP resource.';
   const state = exactlyOne(params, 'state');
   if (!state || state.length > 1024 || !/^[\x21-\x7e]+$/.test(state))
