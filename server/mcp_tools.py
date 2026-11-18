@@ -96,8 +96,11 @@ def get_my_access(ctx: Context) -> dict:
         "suggested_tools": sorted(
             ({"list_recent_calls", "get_call_summary"}
              if "calls:read" in access["capabilities"] else set())
-            | ({"get_call_metrics", "compare_call_metrics"}
+            | ({"get_call_metrics"}
                if "metrics:read" in access["capabilities"] else set())
+            | ({"compare_call_metrics"}
+               if "metrics:read" in access["capabilities"]
+               and "CALLDATE" in access["fields"] else set())
             | ({"get_daily_call_counts"}
                if "metrics:read" in access["capabilities"]
                and {"id", "CALLDATE"} <= access["fields"] else set())
