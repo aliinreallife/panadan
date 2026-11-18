@@ -110,12 +110,13 @@ with TestClient(main.app, base_url="http://localhost:8508") as client:
     assert initialize.status_code == 200
     tools = extract(post(client, alice_token, "tools/list", request_id=2))["tools"]
     names = {t["name"] for t in tools}
-    # Seven current reporting/access tools plus the staging-only profile.
+    # Nine reporting/access tools plus the staging-only profile.
     # Discovery can advertise tools, but authorization occurs per call.
     expected_tools = {
         "get_profile", "get_my_access", "explain_access",
         "list_recent_calls", "get_call_summary", "get_call_metrics",
         "get_available_states", "get_redacted_call_transcript",
+        "compare_call_metrics", "get_daily_call_counts",
     }
     assert names == expected_tools
     assert len(tools) == len(names), "duplicate tool names"
