@@ -142,6 +142,8 @@ def test_mcp_real_transport_enforces_calls_only_metrics_only_and_columns(
         "total":1, "sold_out":0, "scored_calls":1, "avg_ai_score":70,
         "avg_voice_length":15
     })
+    monkeypatch.setattr(main.database,"daily_call_counts",
+                        lambda *_args, **_kwargs:[{"day":"2026-11-09","total":2}])
     with TestClient(main.app,base_url="http://localhost:8508") as client:
         owner=main.store.create_user(
             "scopedcalls","password-for-scopedcalls","reader",
@@ -149,8 +151,12 @@ def test_mcp_real_transport_enforces_calls_only_metrics_only_and_columns(
         analyst=main.store.create_user(
             "scopedmetrics","password-for-scopedmetrics","metrics",
             ["metrics:read","mcp:use"],fields=["id","aicallinfostate"])
+        trend_user=main.store.create_user(
+            "scopedtrend","password-for-scopedtrend","analyst",
+            ["calls:read","metrics:read","mcp:use"],fields=["id","CALLDATE"])
         _,call_token=main.store.create_token("calls","mcp:read",7,owner)
         _,metric_token=main.store.create_token("metrics","mcp:read",7,analyst)
+        _,trend_token=main.store.create_token("trend","mcp:read",7,trend_user)
         def post(token,name,arguments=None,seq=3):
             return client.post("/mcp/",headers={
                 "accept":"application/json, text/event-stream",
@@ -193,3 +199,32 @@ def test_mcp_real_transport_enforces_calls_only_metrics_only_and_columns(
         denied_states=unwrap(post(call_token,"get_available_states",seq=8))
         assert denied_states == {
             "error":"permission_denied","field":"aicallinfostate"}
+        # Real MCP HTTP tool calls: the new analytics tools must work with
+        # an approved account, but never bypass the effective field policy.
+        denied_compare=unwrap(post(metric_token,"compare_call_metrics",{
+            "previous_after":"2026-11-01","previous_before":"2026-11-07",
+            "current_after":"2026-11-08","current_before":"2026-11-14",
+        },seq=9))
+        assert denied_compare["error"]=="permission_denied"
+        denied_trend=unwrap(post(call_token,"get_daily_call_counts",{
+            "after":"2026-11-09","before":"2026-11-11"
+        },seq=10))
+        assert denied_trend["error"]=="permission_denied"
+        comparison=unwrap(post(trend_token,"compare_call_metrics",{
+            "previous_after":"2026-11-01","previous_before":"2026-11-07",
+            "current_after":"2026-11-08","current_before":"2026-11-14",
+        },seq=11))
+        assert comparison["previous"]=={"total":1}
+        assert comparison["current"]=={"total":1}
+        assert comparison["change"]["total"]["absolute"]==0
+        assert "avg_voice_length" not in str(comparison)
+        trend=unwrap(post(trend_token,"get_daily_call_counts",{
+            "after":"2026-11-09","before":"2026-11-11"
+        },seq=12))
+        assert trend["total"]==2
+        assert trend["days"]==[
+            {"date":"2026-11-09","total":2},
+            {"date":"2026-11-10","total":0},
+            {"date":"2026-11-11","total":0},
+        ]
+        assert secret not in str(comparison)+str(trend)
