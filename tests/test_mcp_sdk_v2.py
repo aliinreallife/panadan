@@ -27,6 +27,7 @@ def test_modern_mcp_protocol_tool_discovery():
             assert names == {
                 "list_recent_calls", "get_call_summary",
                 "get_call_metrics", "get_available_states",
+                "compare_call_metrics", "get_daily_call_counts",
                 "get_redacted_call_transcript",
                 # Permission discovery returns only the caller's own policy
                 # metadata. It never reads customer rows or mutates grants.
