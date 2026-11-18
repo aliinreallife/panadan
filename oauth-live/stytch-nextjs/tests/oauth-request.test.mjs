@@ -59,3 +59,13 @@ test('only exact synthetic Live resource is additionally allowed', () => {
     assert.notEqual(validateAuthorizationParams('?' + q), null, rejected);
   }
 });
+
+test('reject missing or duplicated resource indicator', () => {
+  const noResource = good(); noResource.delete('resource');
+  assert.notEqual(validateAuthorizationParams('?' + noResource), null);
+  const emptyResource = good(); emptyResource.set('resource', '');
+  assert.notEqual(validateAuthorizationParams('?' + emptyResource), null);
+  const duplicated = good(); duplicated.append('resource', CANONICAL_RESOURCE);
+  assert.notEqual(validateAuthorizationParams('?' + duplicated), null);
+  assert.equal(safeReturnTo('/oauth/authorize?' + noResource), '/');
+});
