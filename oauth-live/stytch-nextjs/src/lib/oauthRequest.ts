@@ -3,6 +3,8 @@
  *  OAuth response issuance and token signing. This is NOT an OAuth server.
  */
 export const CANONICAL_RESOURCE = 'https://dan.panafor.com/mcp/';
+/** Distinct synthetic-only resource. This audience cannot authorize production MCP. */
+export const LIVE_SYNTHETIC_RESOURCE = 'https://panadan-mcp-live-synthetic.vercel.app/mcp/';
 export const AUTHORIZATION_PATH = '/oauth/authorize';
 export const RETURN_TO_KEY = 'panadan_live_oauth_return_to';
 
@@ -37,7 +39,7 @@ export function validateAuthorizationParams(query: string): string | null {
   if (!scopes.includes('panadan:mcp:read'))
     return 'Panadan MCP read scope is required.';
   const resources = params.getAll('resource');
-  if (resources.length > 1 || (resources.length === 1 && resources[0] !== CANONICAL_RESOURCE))
+  if (resources.length > 1 || (resources.length === 1 && ![CANONICAL_RESOURCE, LIVE_SYNTHETIC_RESOURCE].includes(resources[0])))
     return 'Unexpected MCP resource.';
   const state = exactlyOne(params, 'state');
   if (!state || state.length > 1024 || !/^[\x21-\x7e]+$/.test(state))
