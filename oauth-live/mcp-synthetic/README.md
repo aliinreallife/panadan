@@ -51,3 +51,14 @@ rejected. No secrets, tokens or user records should be written to logs.
 Keep the original Stytch Test projects unchanged and leave
 `dan.panafor.com` in its existing legacy mode until the independent
 recovery and per-app grant gates are satisfied.
+
+## Deployment evidence and remaining blockers (2026-11-18)
+
+- Separate Personal Vercel project `panadan-mcp-live-synthetic`, ID `prj_4X2hAjBBGkW7xu9RqZ3swAMZv4lr`. It was deployed from this PR's exact source files because the Personal Vercel account could not create a new automatic GitHub Login Connection for `aliinreallife/panadan`.
+- Verified deployment `dpl_FZ3Ts3n53FVQV34qWD8jaYmZcSaq` is READY at `https://panadan-mcp-live-synthetic.vercel.app`.
+- `GET /healthz` returned 200 with `data: synthetic-only` and `pilot_authorization: not-configured`. Both OAuth protected-resource metadata routes returned 200 and advertised the synthetic resource URL and **Live** Stytch issuer. `GET /openapi.json` returned 404. Offline policy/RS256 tests passed CI. A valid Live signed-token tool call has **not** yet occurred.
+- The Live authorization UI source was updated in draft PR #107 to allow this exact additional resource, with passing CI; the deployed UI has **not** been updated. Its Git-source preview failed `git_info_fail`, and the alternate source-file deployment was blocked by Vercel's daily free API-deployment quota (HTTP 402).
+- Before full acceptance: deploy the updated authorization UI; verify that Stytch issues a **signed access token** whose audience includes this distinct synthetic resource (not production), with scope and signed client ID. Then approve ONE known pilot member/client and configure the explicit pilot binding env vars; perform human-consented tool discovery and call plus negative/revocation tests. Do not disclose JWTs, raw identity claims, secrets, or personal contact details.
+- No live customer-data access was enabled. The production VPS continues with legacy bearer authentication. Independent backup/rollback and row/tenant authorization prerequisites remain unresolved for real reporting access.
+
+The source is versioned in GitHub but **this Vercel project is not Git-connected**. Any future source change needs an explicit redeployment of reviewed source files; pushing the branch alone does not update the synthetic site.
