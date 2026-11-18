@@ -57,6 +57,7 @@ def test_only_non_sensitive_read_only_mcp_tools_exist():
     assert names == {
         "list_recent_calls", "get_call_summary", "get_call_metrics", "get_available_states",
         "get_redacted_call_transcript", "get_my_access", "explain_access",
+        "compare_call_metrics", "get_daily_call_counts",
     }
     by_name = {tool.name: tool for tool in mcp_tools.mcp._tool_manager.list_tools()}
     # Access-discovery tools can only inspect the caller's current policy.
