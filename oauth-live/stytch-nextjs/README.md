@@ -42,7 +42,7 @@ or authorization-code echo endpoint.
   authentication tables. A Stytch Live member session does not grant
   reporting access.
 - `/oauth/authorize` accepts only Authorization Code + PKCE S256 with
-  either exact allowlisted MCP resource if supplied, and required scope.
+  exactly one mandatory, explicitly allowlisted MCP resource and the required scope.
   Stytch performs the authoritative client/redirect/consent validation.
 - The callback authorization code is issued by Stytch directly to
   the OAuth client; it is never displayed or stored by this app.
