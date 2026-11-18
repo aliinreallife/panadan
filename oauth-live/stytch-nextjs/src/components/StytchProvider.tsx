@@ -12,11 +12,15 @@ export function StytchProvider({ children }: { children: ReactNode }) {
   });
   if (!client) {
     return (
-      <section role="alert" className="content">
-        <h1>Live authentication is not configured</h1>
-        <p>This dedicated Live authorization application requires its own
-        Stytch <strong>Production Public Token</strong>.</p>
-        <p>No customer data can be authorized until configuration is complete.</p>
+      <section className="content">
+        <div className="hero-symbol" aria-hidden="true">!</div>
+        <p className="eyebrow">CONNECTION SETUP</p>
+        <h1>Panadan connections are not available yet.</h1>
+        <p className="lede">Your Panadan administrator is finishing the secure sign-in setup.</p>
+        <div className="info-note"><span className="note-icon" aria-hidden="true">i</span>
+          <p>If you are the administrator, add the Stytch Production Public Token to the Live authorization project's environment settings and redeploy it.</p>
+        </div>
+        <p className="small-print">No report data is exposed while setup is incomplete.</p>
       </section>
     );
   }

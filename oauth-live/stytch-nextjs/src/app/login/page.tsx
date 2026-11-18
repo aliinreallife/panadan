@@ -24,9 +24,13 @@ export default function LoginPage() {
 
   return (
     <section className="content">
-      <div className="eyebrow">Stytch Live organization sign-in</div>
-      <h1>Sign in to Panadan</h1>
-      <p>Use an approved Stytch Live organization member account.</p>
+      <div className="flow-progress" aria-label="Step 1 of 2">
+        <span className="current">1. Sign in</span><span className="flow-dot" />
+        <span>2. Approve access</span>
+      </div>
+      <div className="eyebrow">SECURE ACCOUNT CONNECTION</div>
+      <h1>Sign in with your work email.</h1>
+      <p className="subhead">Enter the email your Panadan administrator approved. We'll send you a one-time code.</p>
       <div className="stytch-widget">
         <StytchB2B config={config} callbacks={{
           onEvent: (event) => {
@@ -34,7 +38,7 @@ export default function LoginPage() {
           },
         }} />
       </div>
-      <p className="muted">This login does not replace your existing Panadan dashboard account.</p>
+      <p className="session-note">After sign-in, you'll review access and return to ChatGPT automatically.</p>
     </section>
   );
 }
