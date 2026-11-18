@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateAuthorizationParams, safeReturnTo, CANONICAL_RESOURCE } from '../src/lib/oauthRequest.ts';
+import { validateAuthorizationParams, safeReturnTo, CANONICAL_RESOURCE, LIVE_SYNTHETIC_RESOURCE } from '../src/lib/oauthRequest.ts';
 const good = () => new URLSearchParams({
   response_type: 'code',
   client_id: 'https://chatgpt.com/oauth/client.json',
@@ -39,4 +39,23 @@ test('reject duplicates, arbitrary callbacks and missing state', () => {
 test('never resume login to external or invalid return paths', () => {
   for(const path of [null,'//evil.example','https://evil.example','/login','/oauth/authorize?state=bad'])
     assert.equal(safeReturnTo(path),'/');
+});
+
+test('only exact synthetic Live resource is additionally allowed', () => {
+  const synthetic = good(); synthetic.set('resource', LIVE_SYNTHETIC_RESOURCE);
+  assert.equal(validateAuthorizationParams('?' + synthetic), null);
+  assert.equal(safeReturnTo('/oauth/authorize?' + synthetic),
+               '/oauth/authorize?' + synthetic);
+  const productionPlusSynthetic = good();
+  productionPlusSynthetic.append('resource', LIVE_SYNTHETIC_RESOURCE);
+  assert.notEqual(validateAuthorizationParams('?' + productionPlusSynthetic), null);
+  for (const rejected of [
+    LIVE_SYNTHETIC_RESOURCE.replace('/mcp/', '/mcp'),
+    LIVE_SYNTHETIC_RESOURCE.replace('https:', 'http:'),
+    'https://panadan-mcp-oauth-staging.vercel.app/mcp/',
+    'https://dan.panafor.com/mcp-extra/',
+  ]) {
+    const q = good(); q.set('resource', rejected);
+    assert.notEqual(validateAuthorizationParams('?' + q), null, rejected);
+  }
 });
