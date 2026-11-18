@@ -42,7 +42,7 @@ or authorization-code echo endpoint.
   authentication tables. A Stytch Live member session does not grant
   reporting access.
 - `/oauth/authorize` accepts only Authorization Code + PKCE S256 with
-  the exact Panadan MCP resource if supplied, and required scope.
+  either exact allowlisted MCP resource if supplied, and required scope.
   Stytch performs the authoritative client/redirect/consent validation.
 - The callback authorization code is issued by Stytch directly to
   the OAuth client; it is never displayed or stored by this app.
@@ -53,3 +53,9 @@ or authorization-code echo endpoint.
 - The real dashboard's SQLite authorization and per-column MCP grants
   continue to apply at the resource server. Existing live legacy bearer
   mode stays active until a reviewed, backed-up cutover.
+
+## Live synthetic-resource test (not production reporting)
+
+The UI source now also allows **exactly** `https://panadan-mcp-live-synthetic.vercel.app/mcp/` for an isolated, synthetic-only resource. Duplicate or arbitrary resource values remain rejected. Its distinct JWT audience cannot authorize real Panadan MCP, and the Stytch Test issuer remains forbidden.
+
+**Status 2026-11-18:** GitHub source and tests are updated and CI passes, but the updated Live UI **has not been deployed**. The Git-source preview failed with `git_info_fail`; the direct-source preview was then blocked by the Personal Vercel account's daily API deployment quota (HTTP 402). The active Live UI continues to allow the production resource only. Do not claim end-to-end Live synthetic OAuth acceptance until the new UI is deployed, the distinct audience is issued by Stytch, and an approved user completes consent.
