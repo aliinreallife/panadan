@@ -259,6 +259,36 @@ def stats(after: date | None = None, before: date | None = None,
     return normalized(row)
 
 
+
+def daily_call_counts(after: date, before: date, *,
+                      operator: str | None = None,
+                      operator_names: list[str] | None = None) -> list[dict]:
+    """Bounded daily COUNTS ONLY, no customer columns or free-form SQL.
+
+    MCP layer guarantees both dates are present and the date span is at most
+    31 days. Recheck at the query boundary to prevent future callers from
+    accidentally running an unbounded report.
+    """
+    if (not isinstance(after, date) or not isinstance(before, date)
+            or after > before or (before - after).days >= 31):
+        raise ValueError('Daily MCP trend must cover 1-31 calendar days')
+    if operator and len(operator) > 180:
+        raise ValueError('Invalid operator')
+    where, params = filters(after, before, None, operator=operator,
+                            operator_names=operator_names)
+    # Static identifiers and parameterized predicates. Every report access
+    # goes through connect() -> SET TRANSACTION READ ONLY.
+    q = ('SELECT "CALLDATE" AS day, COUNT(*) AS total FROM ' + VIEW +
+         where + ' GROUP BY "CALLDATE" ORDER BY "CALLDATE" ASC LIMIT 31')
+    with connect() as c:
+        rows = c.execute(q, params).fetchall()
+    return normalized_rows(rows)
+
+
+def normalized_rows(rows: list[dict]) -> list[dict]:
+    return [normalized(row) for row in rows]
+
+
 def statuses():
     with connect() as c:
         rows = c.execute('SELECT DISTINCT "aicallinfostate" AS value FROM ' + VIEW +
