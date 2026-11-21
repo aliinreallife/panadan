@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { StytchB2B, useStytchMemberSession } from '@stytch/nextjs/b2b';
 import { AuthFlowType, B2BProducts, StytchEventType } from '@stytch/vanilla-js/b2b';
-import { consumeAuthorizationReturnTo } from '@/lib/oauthRequest';
+import { readAuthorizationReturnTo } from '@/lib/oauthRequest';
 
 const config = {
   authFlowType: AuthFlowType.Discovery,
@@ -19,7 +19,7 @@ export default function LoginPage() {
   const finishLogin = useCallback(() => {
     if (redirectStarted.current) return;
     redirectStarted.current = true;
-    const destination = consumeAuthorizationReturnTo(
+    const destination = readAuthorizationReturnTo(
       window.sessionStorage, window.localStorage,
     );
     window.location.replace(destination);
