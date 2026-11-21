@@ -114,6 +114,24 @@ export function rememberAuthorizationReturnTo(
   return saved;
 }
 
+/**
+ * Capture only validated OAuth requests, including ones that arrive at the
+ * landing or login route through a provider redirect. Do this before waiting
+ * for the Stytch session to initialize. Never store codes or tokens.
+ */
+export function captureAuthorizationSearch(
+  query: string,
+  sessionStore: BrowserStore,
+  localStore: BrowserStore,
+  now = Date.now(),
+): string | null {
+  if (!query.startsWith('?') || query.length > 8192 ||
+      validateAuthorizationParams(query) !== null) return null;
+  const destination = AUTHORIZATION_PATH + query;
+  return rememberAuthorizationReturnTo(destination, sessionStore, localStore, now)
+    ? destination : null;
+}
+
 export function readAuthorizationReturnTo(
   sessionStore: BrowserStore,
   localStore: BrowserStore,
