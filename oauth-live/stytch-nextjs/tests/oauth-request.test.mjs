@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateAuthorizationParams, safeReturnTo, CANONICAL_RESOURCE, LIVE_SYNTHETIC_RESOURCE } from '../src/lib/oauthRequest.ts';
+import { validateAuthorizationParams, safeReturnTo, CANONICAL_RESOURCE, LIVE_SYNTHETIC_RESOURCE, captureAuthorizationSearch, readAuthorizationReturnTo, RETURN_TO_MAX_AGE_MS } from '../src/lib/oauthRequest.ts';
 const good = () => new URLSearchParams({
   response_type: 'code',
   client_id: 'https://chatgpt.com/oauth/client.json',
@@ -68,4 +68,38 @@ test('reject missing or duplicated resource indicator', () => {
   const duplicated = good(); duplicated.append('resource', CANONICAL_RESOURCE);
   assert.notEqual(validateAuthorizationParams('?' + duplicated), null);
   assert.equal(safeReturnTo('/oauth/authorize?' + noResource), '/');
+});
+
+function fakeStore() {
+  const entries = new Map();
+  return {
+    getItem: (key) => entries.get(key) ?? null,
+    setItem: (key, value) => { entries.set(key, value); },
+    removeItem: (key) => { entries.delete(key); },
+  };
+}
+
+test('capture OAuth request before login and recover after OTP/new tab', () => {
+  const session = fakeStore();
+  const backup = fakeStore();
+  const query = '?' + good();
+  const destination = '/oauth/authorize' + query;
+  assert.equal(captureAuthorizationSearch(query, session, backup, 1000), destination);
+  assert.equal(readAuthorizationReturnTo(fakeStore(), backup, 1001), destination);
+  assert.equal(readAuthorizationReturnTo(session, fakeStore(), 1001), destination);
+  assert.equal(readAuthorizationReturnTo(fakeStore(), backup, 1000 + RETURN_TO_MAX_AGE_MS + 1), '/');
+});
+
+test('reject unrelated login/root queries and invalid OAuth requests', () => {
+  const session = fakeStore();
+  const backup = fakeStore();
+  for (const query of [
+    '?next=https://example.com',
+    '?token=secret',
+    '?response_type=code',
+    '?' + good().toString().replace('panadan%3Amcp%3Aread', 'untrusted'),
+  ]) {
+    assert.equal(captureAuthorizationSearch(query, session, backup, 1000), null);
+    assert.equal(readAuthorizationReturnTo(session, backup, 1001), '/');
+  }
 });
