@@ -66,8 +66,10 @@ test('expired or manipulated return targets fail closed', () => {
   local.removeItem(RETURN_TO_BACKUP_KEY);
   assert.equal(readAuthorizationReturnTo(session, local, 2100), '/');
 
+  const modifiedQuery = new URLSearchParams(path.split('?')[1]);
+  modifiedQuery.set('resource', 'https://evil.example/mcp/');
   session.setItem(RETURN_TO_KEY, JSON.stringify({
-    path: path.replace(LIVE_SYNTHETIC_RESOURCE, 'https://evil.example/mcp/'), savedAt: 2000,
+    path: '/oauth/authorize?' + modifiedQuery, savedAt: 2000,
   }));
   assert.equal(readAuthorizationReturnTo(session, local, 2100), '/');
   assert.equal(rememberAuthorizationReturnTo('/login', session, local, 2100), false);
