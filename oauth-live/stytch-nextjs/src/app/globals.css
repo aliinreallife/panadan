@@ -1,0 +1,52 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f8faf8;
+  color: #193b33;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 50% -24%, #e3f1ec 0%, transparent 57%), #f8faf8; }
+.shell { width: min(100%, 640px); margin: 0 auto; padding: 52px 22px 22px; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 24px; }
+.brand-lockup { display: flex; gap: 12px; align-items: center; }
+.brand-text strong { display: block; font-size: 16px; font-weight: 750; letter-spacing: -.02em; }
+.brand-text small { display: block; color: #7c948b; font-size: 12px; margin-top: 2px; }
+.mark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; background: #087560; color: white; font-weight: 800; font-size: 21px; box-shadow: 0 6px 16px #0a785f24; }
+.security-label { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700; color: #397562; background: #e8f4ee; border: 1px solid #d6ebdf; border-radius: 99px; padding: 7px 11px; white-space: nowrap; }
+.security-dot { width: 6px; height: 6px; border-radius: 50%; background: #16936b; }
+.panel { border: 1px solid #e5ebe7; background: #fff; border-radius: 22px; box-shadow: 0 22px 80px rgba(15,61,48,.075); overflow: hidden; padding: 36px 39px 38px; }
+.hero-symbol { width: 49px; height: 49px; display: grid; place-items: center; border-radius: 15px; background: #e7f5ef; color: #0a8265; font-size: 25px; font-weight: 700; margin-bottom: 23px; }
+.eyebrow { font-size: 10px; font-weight: 800; letter-spacing: .13em; color: #0d8064; margin: 0 0 11px; }
+h1 { font-size: clamp(27px, 5vw, 33px); letter-spacing: -.042em; line-height: 1.14; margin: 0 0 16px; font-weight: 750; max-width: 490px; }
+p { font-size: 14px; line-height: 1.75; color: #657d73; }
+.lede { margin: 0 0 27px; font-size: 15px; }
+.steps-heading { border-top: 1px solid #e9eee9; padding-top: 23px; font-size: 13px; font-weight: 750; margin-bottom: 14px; }
+.steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 16px; }
+.steps li { display: flex; gap: 15px; align-items: flex-start; }
+.step-number { width: 29px; height: 29px; flex: none; display: grid; place-items: center; border-radius: 10px; background: #eff4f0; color: #367260; font-size: 12px; font-weight: 800; }
+.steps strong { font-size: 13px; display: block; margin: 0 0 3px; font-weight: 750; color: #25483d; }
+.steps span:not(.step-number) { font-size: 13px; color: #75897f; line-height: 1.6; display: block; }
+.info-note { display: flex; gap: 12px; background: #f3f8f5; border: 1px solid #e1eee6; padding: 14px; border-radius: 12px; margin-top: 26px; }
+.note-icon { width: 20px; height: 20px; flex: none; border-radius: 50%; border: 1px solid #a8c9b6; color: #2d7b61; font-size: 12px; font-weight: 750; display: grid; place-items: center; }
+.info-note p { margin: 0; font-size: 12px; line-height: 1.65; }
+.small-print { font-size: 11px; margin: 17px 0 0; color: #91a198; }
+.flow-progress { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; font-size: 12px; color: #96a79d; }
+.flow-progress .current { color: #0b7b60; font-weight: 750; }
+.flow-progress .flow-dot { width: 4px; height: 4px; border-radius: 50%; background: #cbd9d0; }
+.content .subhead { font-size: 15px; margin: 0; }
+.stytch-widget { margin: 22px 0 4px; min-height: 210px; }
+.muted { color: #8ba095; }
+.session-note { font-size: 12px; color: #80998c; margin-top: 20px; padding-top: 15px; border-top: 1px solid #edf1ed; }
+[role="alert"].error-message { background: #fff7f5; border: 1px solid #f3d9d4; border-radius: 12px; padding: 18px; }
+[role="alert"].error-message p { color: #7c5149; }
+.loader { margin: 12px 0; display: flex; gap: 9px; align-items: center; color: #607d70; font-size: 13px; }
+.loader:before { content: ""; width: 16px; height: 16px; border: 2px solid #dceee4; border-top-color: #168467; border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+footer { text-align: center; font-size: 11px; color: #93a59b; padding: 24px 6px; line-height: 1.6; }
+footer span { color: #23856e; margin-right: 5px; }
+@media (max-width: 640px) {
+  .shell { padding: 24px 14px; }
+  .panel { border-radius: 17px; padding: 27px 23px 29px; }
+  .topbar { margin-bottom: 17px; }
+  .security-label { padding: 6px 9px; }
+}
