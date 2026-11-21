@@ -62,3 +62,66 @@ export function safeReturnTo(value: string | null): string {
     return '/';
   }
 }
+
+/**
+ * Retain the pending OAuth request through B2B email OTP sign-in.
+ *
+ * sessionStorage is scoped to a browser tab. Some OTP/login flows complete
+ * in another tab, where it is empty; a time-limited same-origin localStorage
+ * backup preserves the exact validated OAuth request across that transition.
+ * No authorization code or access token is ever stored here.
+ */
+export const RETURN_TO_BACKUP_KEY = 'panadan_live_oauth_return_to_backup';
+export const RETURN_TO_MAX_AGE_MS = 10 * 60 * 1000;
+type BrowserStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+type PendingReturn = { path: string; savedAt: number };
+
+function tryRead(store: BrowserStore, key: string): string | null {
+  try { return store.getItem(key); } catch { return null; }
+}
+function tryRemove(store: BrowserStore, key: string) {
+  try { store.removeItem(key); } catch { /* Storage may be disabled. */ }
+}
+function validPending(raw: string | null, now: number): string | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const { path, savedAt } = parsed as Partial<PendingReturn>;
+    if (typeof path !== 'string' || typeof savedAt !== 'number' ||
+        !Number.isFinite(savedAt) || savedAt > now ||
+        now - savedAt > RETURN_TO_MAX_AGE_MS) return null;
+    return safeReturnTo(path) === path ? path : null;
+  } catch { return null; }
+}
+
+export function rememberAuthorizationReturnTo(
+  path: string,
+  sessionStore: BrowserStore,
+  localStore: BrowserStore,
+  now = Date.now(),
+): boolean {
+  if (path.length > 8192 || safeReturnTo(path) !== path) return false;
+  const data = JSON.stringify({ path, savedAt: now } satisfies PendingReturn);
+  let saved = false;
+  for (const [store, key] of [
+    [sessionStore, RETURN_TO_KEY],
+    [localStore, RETURN_TO_BACKUP_KEY],
+  ] as const) {
+    try { store.setItem(key, data); saved = true; } catch { /* fallback store */ }
+  }
+  return saved;
+}
+
+export function consumeAuthorizationReturnTo(
+  sessionStore: BrowserStore,
+  localStore: BrowserStore,
+  now = Date.now(),
+): string {
+  const primary = validPending(tryRead(sessionStore, RETURN_TO_KEY), now);
+  const backup = validPending(tryRead(localStore, RETURN_TO_BACKUP_KEY), now);
+  tryRemove(sessionStore, RETURN_TO_KEY);
+  tryRemove(localStore, RETURN_TO_BACKUP_KEY);
+  return primary ?? backup ?? '/';
+}
