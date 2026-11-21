@@ -1,39 +1,40 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { B2BIdentityProvider, useStytchMemberSession } from '@stytch/nextjs/b2b';
-import { clearAuthorizationReturnTo, rememberAuthorizationReturnTo, validateAuthorizationParams } from '@/lib/oauthRequest';
+import { captureAuthorizationSearch, clearAuthorizationReturnTo, validateAuthorizationParams } from '@/lib/oauthRequest';
 
 export default function AuthorizePage() {
   const { session, isInitialized } = useStytchMemberSession();
   const [error, setError] = useState<string | null>(null);
   const [validated, setValidated] = useState(false);
+  const [requestReady, setRequestReady] = useState(false);
+
+  // Capture the original OAuth request immediately. Waiting for Stytch's
+  // async session initialization can lose the request during login redirects.
+  useEffect(() => {
+    const query = window.location.search;
+    const issue = validateAuthorizationParams(query);
+    if (issue) { setError(issue); return; }
+    const saved = captureAuthorizationSearch(
+      query, window.sessionStorage, window.localStorage,
+    );
+    if (!saved) {
+      setError('Unable to preserve OAuth authorization request');
+      return;
+    }
+    setRequestReady(true);
+  }, []);
 
   useEffect(() => {
-    if (!isInitialized) return;
-    const issue = validateAuthorizationParams(window.location.search);
-    if (issue) { setError(issue); return; }
-
-    // Keep the exact OAuth request through sign-in. Never store or print
-    // authorization codes or access tokens. The native Stytch component
-    // remains the only code issuer and consent authority.
+    if (!requestReady || !isInitialized) return;
     if (!session) {
-      const saved = rememberAuthorizationReturnTo(
-        '/oauth/authorize' + window.location.search,
-        window.sessionStorage,
-        window.localStorage,
-      );
-      if (!saved) {
-        setError('Unable to preserve OAuth authorization request');
-        return;
-      }
       window.location.replace('/login');
       return;
     }
-    // Only clear the pending cross-tab return once we have reached the
-    // correct authorization page with an authenticated Stytch session.
+    // The authenticated member can now review the original request.
     clearAuthorizationReturnTo(window.sessionStorage, window.localStorage);
     setValidated(true);
-  }, [isInitialized, session]);
+  }, [requestReady, isInitialized, session]);
 
   if (error) return (
     <section className="content">
