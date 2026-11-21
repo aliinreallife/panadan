@@ -114,14 +114,20 @@ export function rememberAuthorizationReturnTo(
   return saved;
 }
 
-export function consumeAuthorizationReturnTo(
+export function readAuthorizationReturnTo(
   sessionStore: BrowserStore,
   localStore: BrowserStore,
   now = Date.now(),
 ): string {
   const primary = validPending(tryRead(sessionStore, RETURN_TO_KEY), now);
   const backup = validPending(tryRead(localStore, RETURN_TO_BACKUP_KEY), now);
+  return primary ?? backup ?? '/';
+}
+
+export function clearAuthorizationReturnTo(
+  sessionStore: BrowserStore,
+  localStore: BrowserStore,
+): void {
   tryRemove(sessionStore, RETURN_TO_KEY);
   tryRemove(localStore, RETURN_TO_BACKUP_KEY);
-  return primary ?? backup ?? '/';
 }
