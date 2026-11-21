@@ -1,8 +1,8 @@
 'use client';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { StytchB2B, useStytchMemberSession } from '@stytch/nextjs/b2b';
 import { AuthFlowType, B2BProducts, StytchEventType } from '@stytch/vanilla-js/b2b';
-import { RETURN_TO_KEY, safeReturnTo } from '@/lib/oauthRequest';
+import { consumeAuthorizationReturnTo } from '@/lib/oauthRequest';
 
 const config = {
   authFlowType: AuthFlowType.Discovery,
@@ -10,17 +10,24 @@ const config = {
   sessionOptions: { sessionDurationMinutes: 60 },
 };
 
-function finishLogin() {
-  const destination = safeReturnTo(sessionStorage.getItem(RETURN_TO_KEY));
-  sessionStorage.removeItem(RETURN_TO_KEY);
-  window.location.replace(destination);
-}
-
 export default function LoginPage() {
   const { session, isInitialized } = useStytchMemberSession();
+  // Stytch may emit AuthenticateFlowComplete and update session in the
+  // same render. Only ONE of those events may consume the OAuth return URL;
+  // the previous double redirect sent authenticated users to "/" instead.
+  const redirectStarted = useRef(false);
+  const finishLogin = useCallback(() => {
+    if (redirectStarted.current) return;
+    redirectStarted.current = true;
+    const destination = consumeAuthorizationReturnTo(
+      window.sessionStorage, window.localStorage,
+    );
+    window.location.replace(destination);
+  }, []);
+
   useEffect(() => {
     if (isInitialized && session) finishLogin();
-  }, [isInitialized, session]);
+  }, [isInitialized, session, finishLogin]);
 
   return (
     <section className="content">
