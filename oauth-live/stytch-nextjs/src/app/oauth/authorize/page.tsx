@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { B2BIdentityProvider, useStytchMemberSession } from '@stytch/nextjs/b2b';
-import { RETURN_TO_KEY, validateAuthorizationParams } from '@/lib/oauthRequest';
+import { rememberAuthorizationReturnTo, validateAuthorizationParams } from '@/lib/oauthRequest';
 
 export default function AuthorizePage() {
   const { session, isInitialized } = useStytchMemberSession();
@@ -17,7 +17,15 @@ export default function AuthorizePage() {
     // authorization codes or access tokens. The native Stytch component
     // remains the only code issuer and consent authority.
     if (!session) {
-      sessionStorage.setItem(RETURN_TO_KEY, '/oauth/authorize' + window.location.search);
+      const saved = rememberAuthorizationReturnTo(
+        '/oauth/authorize' + window.location.search,
+        window.sessionStorage,
+        window.localStorage,
+      );
+      if (!saved) {
+        setError('Unable to preserve OAuth authorization request');
+        return;
+      }
       window.location.replace('/login');
       return;
     }
