@@ -1,6 +1,10 @@
+import { ResumePendingAuthorization } from '@/components/ResumePendingAuthorization';
+
 export default function StartPage() {
   return (
-    <section className="content">
+    <>
+      <ResumePendingAuthorization />
+      <section className="content">
       <div className="hero-symbol" aria-hidden="true">✓</div>
       <p className="eyebrow">PANADAN CONNECTED APPS</p>
       <h1>Connect Panadan to your AI assistant.</h1>
@@ -28,6 +32,7 @@ export default function StartPage() {
         <p>Already here? Start the connection in ChatGPT first. Opening this page alone does not connect your account.</p>
       </div>
       <p className="small-print">Signing in never grants access to reports by itself. Your existing Panadan permissions still apply.</p>
-    </section>
+      </section>
+    </>
   );
 }
