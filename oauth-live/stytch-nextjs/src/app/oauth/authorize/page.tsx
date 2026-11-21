@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { B2BIdentityProvider, useStytchMemberSession } from '@stytch/nextjs/b2b';
-import { rememberAuthorizationReturnTo, validateAuthorizationParams } from '@/lib/oauthRequest';
+import { clearAuthorizationReturnTo, rememberAuthorizationReturnTo, validateAuthorizationParams } from '@/lib/oauthRequest';
 
 export default function AuthorizePage() {
   const { session, isInitialized } = useStytchMemberSession();
@@ -29,6 +29,9 @@ export default function AuthorizePage() {
       window.location.replace('/login');
       return;
     }
+    // Only clear the pending cross-tab return once we have reached the
+    // correct authorization page with an authenticated Stytch session.
+    clearAuthorizationReturnTo(window.sessionStorage, window.localStorage);
     setValidated(true);
   }, [isInitialized, session]);
 
