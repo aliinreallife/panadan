@@ -82,3 +82,23 @@ Verified docs:
 **Documented interoperability support:** WorkOS Connect's authorization metadata advertises RFC 9207 `authorization_response_iss_parameter_supported: true`; its auth callback documents an `iss` field (https://workos.com/docs/reference/workos-connect/authorize). ChatGPT requires an exact callback `iss` match and correct JWT `aud`, PKCE and OAuth scope (https://developers.openai.com/plugins/build/auth). These are **documented contracts**, not a passing end-to-end test.
 
 **Next blocking steps:** determine whether WorkOS Standalone Connect can safely reuse Panadan's real verified user email **without adding a new identity/login system**; find a separate synthetic MCP resource URL and configure it as an allowed OAuth resource; verify exact issuer JWKS/token claims and end-to-end ChatGPT authorization; then only staging-code integration. If no viable identity/email binding exists, **stop WorkOS rather than add an unwanted identity migration**. Stytch archive branches remain untouched. Do not use `dan.panafor.com/mcp/` as the experimental audience.
+
+## 2026-11-22: verified WorkOS public protocol and blocker
+
+**Actual Staging issuer:** `https://artistic-environment-06-staging.authkit.app`. Public GET of both RFC 8414 and OIDC discovery returned 200 and a matching `issuer`, PKCE `S256`, `authorization_response_iss_parameter_supported: true`, authorization-code flow and token endpoint client method `none`. JWKS returned HTTP 200 with an RS256 RSA public signing key. **This does not verify any issued access JWT.**
+
+**Scope caveat:** both metadata documents advertised `openid`, `profile`, `email` and `offline_access`, **not** `panadan:mcp:read`. But the *pre-registered* Public client in staging has the exact custom scope assigned, confirmed via WorkOS management. A no-credentials authorization request with PKCE and `panadan:mcp:read` progressed to the WorkOS hosted sign-in page, not an immediate scope rejection. **Token exchange and the actual signed `scope`, `aud`, `client_id` remain unverified.**
+
+For this **pre-registered client only**, a **diagnostics-only opt-in** was added on this feature branch:
+```bash
+uv run --locked python -m tools.check_mcp_oauth --issuer https://artistic-environment-06-staging.authkit.app --allow-unadvertised-scope
+```
+It explicitly warns about missing public scope advertisement. It does not waive the strict scope/audience/signature checks in `server/oauth_mcp.py`, does not enable production OAuth, and is not allowed for CIMD/DCR or the full MCP resource check. The default preflight remains strict. New negative tests cover this distinction.
+
+**Actual login blocker:** Staging WorkOS `externalLoginUri` is unset and authorization currently redirects to WorkOS's own hosted login. Standalone Connect requires `external_auth_id` and a stable external user ID **plus an email**. Panadan's current `users` table has username but no verified email. No WorkOS users have been created, and no Panadan user records have been migrated. The sandbox pilot is currently **first-party**; do not treat it as proven third-party consent.
+
+**Staging deployment context:** Git-linked Vercel project `panadan-mcp-oauth-staging` exists, but docs-only branch pushes caused failed preview builds. This is a build configuration issue, not evidence of failed WorkOS OAuth. Do not alter production or resurrect Stytch components to fix it.
+
+**Next required proof:** a distinct synthetic-only MCP resource, a real signed sandbox access JWT with exact audience/custom scope/client ID and a staging-only existing-login handoff using one explicitly verified test email. Until then, do not change live login/permissions/MCP.
+
+References: https://workos.com/docs/authkit/connect/standalone ; https://workos.com/docs/reference/workos-connect/standalone ; https://workos.com/docs/authkit/connect/token-claims ; https://developers.openai.com/plugins/build/auth .
