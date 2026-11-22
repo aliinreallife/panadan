@@ -54,3 +54,15 @@ Sources: https://workos.com/docs/authkit/connect/standalone ; https://workos.com
 **Prove the OAuth provider contract without coding or deploying a second user system.** WorkOS Standalone Connect appears aligned with Panadan's existing sessions but has a documented custom-scope/CIMD caveat; resolve that feasibility check before writing a WorkOS adapter. If the constraint is incompatible, evaluate Cloudflare Workers OAuth Provider specifically for a secure *external Python resource server*, not a Cloudflare-hosted demo. Then implement only the missing protocol glue on this feature branch.
 
 The Stytch archives must remain untouched. Production must remain unchanged until explicit separately reviewed cutover.
+
+## 2026-11-21 evidence update: use a pre-registered public client as first test
+
+Verified docs:
+- WorkOS supports **Public OAuth Applications** with mandatory PKCE: https://workos.com/docs/authkit/connect/oauth
+- ChatGPT plugin config supports **pre-registered/provided** OAuth clients, including `tokenEndpointAuthMethod: none`: https://developers.openai.com/plugins/build/plugins
+- WorkOS documents that **CIMD/DCR clients** only get the standard OIDC scopes by default; custom `panadan:mcp:read` needs support-assisted environment-wide defaults: https://workos.com/docs/authkit/connect/token-claims
+- WorkOS Standalone Connect explicitly reuses external application sessions via an HTTPS Login URI receiving `external_auth_id` and a server-side completion call; it handles OAuth consent and token issuance: https://workos.com/docs/authkit/connect/standalone
+
+**Lowest-friction next experiment:** use a **WorkOS staging environment**, make one **pre-registered Public OAuth Application** for ChatGPT, assign `panadan:mcp:read` if the WorkOS dashboard permits it, and use ChatGPT's **provided-client / none + PKCE** option. This may avoid the dynamic-client default-scope limitation without contacting support. Whether WorkOS permits assigning the precise custom scope to that public client and whether ChatGPT accepts its callback/issuer/token claims **have not yet been demonstrated**. If the assignment is unavailable or the trial fails, stop rather than weakening Panadan's verifier.
+
+**User action only after this contract check:** create a **staging** WorkOS project/environment; share only public AuthKit issuer/domain and non-secret project identifiers. Never post the WorkOS secret API key or OAuth codes in a chat, PR, or log. No need to migrate Panadan's accounts or deploy anything to the VPS. WorkOS staging connections are documented as free (https://workos.com/docs/authkit/environments); verify service limits/charges in the account.
