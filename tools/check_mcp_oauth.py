@@ -59,7 +59,8 @@ def authorization_server_urls(issuer: str) -> tuple[str, str]:
     )
 
 
-def validate_authorization_server(document: dict, issuer: str) -> str:
+def validate_authorization_server(document: dict, issuer: str, *,
+                                  allow_unadvertised_scope: bool = False) -> str:
     if not isinstance(document, dict) or document.get("issuer") != issuer:
         raise ValueError("Authorization-server metadata issuer does not match protected resource")
     for key in ("authorization_endpoint", "token_endpoint"):
@@ -86,8 +87,20 @@ def validate_authorization_server(document: dict, issuer: str) -> str:
         raise ValueError("Authorization server does not support code response type")
     scopes = document.get("scopes_supported")
     if scopes is not None and (
-        not isinstance(scopes, list) or "panadan:mcp:read" not in scopes
+        not isinstance(scopes, list)
+        or any(not isinstance(scope, str) for scope in scopes)
     ):
+        raise ValueError("Authorization server advertises invalid scopes_supported")
+    scope_unadvertised = scopes is not None and "panadan:mcp:read" not in scopes
+    # A pre-registered client's approved custom scopes need not be listed in
+    # general discovery. Never treat an undocumented scope as working until a
+    # REAL signed access token passes all resource-server checks.
+    # No bypass for CIMD/DCR; default remains fail-closed.
+    preregistered = (
+        document.get("client_id_metadata_document_supported") is not True
+        and not isinstance(document.get("registration_endpoint"), str)
+    )
+    if scope_unadvertised and not (allow_unadvertised_scope and preregistered):
         raise ValueError("Authorization server does not advertise the Panadan MCP scope")
     jwks = document.get("jwks_uri")
     if jwks is not None:
@@ -161,11 +174,18 @@ def discover_authorization_server(issuer: str) -> dict:
     raise ValueError("Issuer exposes neither RFC 8414 nor OIDC discovery")
 
 
-def check_provider(issuer: str) -> None:
+def check_provider(issuer: str, *, allow_unadvertised_scope: bool = False) -> None:
     """Preflight a candidate IdP BEFORE enabling Panadan OAuth or touching prod."""
     issuer = require_https(issuer)
     metadata = discover_authorization_server(issuer)
-    registration = validate_authorization_server(metadata, issuer)
+    registration = validate_authorization_server(
+        metadata, issuer, allow_unadvertised_scope=allow_unadvertised_scope
+    )
+    if (allow_unadvertised_scope
+            and metadata.get("scopes_supported") is not None
+            and "panadan:mcp:read" not in metadata["scopes_supported"]):
+        print("WARNING: Custom scope is absent from public discovery; the")
+        print("         pre-registered client's grant and actual JWT scope are UNVERIFIED.")
     jwks_url = metadata.get("jwks_uri")
     if not isinstance(jwks_url, str):
         raise ValueError("Provider does not advertise JWKS URI required for Panadan RS256 verification")
@@ -242,11 +262,18 @@ def main() -> int:
     parser.add_argument("--issuer",
                         help="Preflight an IdP's PUBLIC HTTPS discovery/JWKS only, "
                              "without enabling OAuth or contacting production Panadan")
+    parser.add_argument("--allow-unadvertised-scope", action="store_true",
+                        help="Provider-only preflight: accept absent custom scope in "
+                             "discovery ONLY for a pre-registered OAuth client. "
+                             "Requires independent proof of a correctly scoped JWT.")
     args = parser.parse_args()
     try:
         if args.issuer:
-            check_provider(args.issuer)
+            check_provider(args.issuer,
+                           allow_unadvertised_scope=args.allow_unadvertised_scope)
         else:
+            if args.allow_unadvertised_scope:
+                raise ValueError("--allow-unadvertised-scope requires --issuer")
             run(args.url)
         return 0
     except (ValueError, HTTPError, URLError, TimeoutError) as exc:
