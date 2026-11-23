@@ -21,7 +21,7 @@ from oauth_mcp import OAuthConfig, OAuthVerifier
 from oauth_discovery import VerifiedOAuthDiscovery
 
 ISSUER = "https://artistic-environment-06-staging.authkit.app"
-RESOURCE = "https://panadan-mcp-oauth-staging.vercel.app/mcp/"
+RESOURCE = "https://panadan-mcp-oauth-staging-git-feat-pan-f67052-ali121sniper-3106.vercel.app/mcp/"
 CLIENT_ID = "client_01M8165V9W1G296975A3X3CACM"
 SCOPE = "panadan:mcp:read"
 
@@ -153,7 +153,7 @@ if os.environ.get("VERCEL_URL", "").endswith(".vercel.app"):
     allowed_hosts.append(os.environ["VERCEL_URL"])
 allowed_origins = [
     "https://chatgpt.com",
-    "https://panadan-mcp-oauth-staging.vercel.app",
+    "https://panadan-mcp-oauth-staging-git-feat-pan-f67052-ali121sniper-3106.vercel.app",
     "http://localhost:*",
     "http://127.0.0.1:*",
 ]
