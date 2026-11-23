@@ -7,7 +7,7 @@ MCP tools, password/session infrastructure, or live credentials.
 - Vercel project: `panadan-mcp-oauth-staging`
 - GitHub branch: `feat/panadan-oauth-existing-login-20261121`
 - Vercel root directory: `oauth-staging/mcp-resource`
-- Canonical future OAuth audience: `https://panadan-mcp-oauth-staging.vercel.app/mcp/`
+- Canonical staging-only OAuth audience: `https://panadan-mcp-oauth-staging-git-feat-pan-f67052-ali121sniper-3106.vercel.app/mcp/`
 - WorkOS **Staging only** issuer: `https://artistic-environment-06-staging.authkit.app`
 - WorkOS pre-registered **public** OAuth client: `client_01M8165V9W1G296975A3X3CACM`
 - Required scope: `panadan:mcp:read`
