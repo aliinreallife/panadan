@@ -54,7 +54,8 @@ def test_signed_pending_cookie_expires_and_cannot_be_tampered():
     assert cfg.read_pending(token, now=980) is None
     assert cfg.read_pending("not valid.token") is None
     assert cfg.read_pending(token + "changed", now=1010) is None
-    assert cfg.read_pending(token.replace("auth", "evil"), now=1010) is None
+    tampered = token[:5] + ("A" if token[5] != "A" else "B") + token[6:]
+    assert cfg.read_pending(tampered, now=1010) is None
     for invalid in ("", "/", "a" * 161, "a b", "a/b"):
         with pytest.raises(workos.WorkOSBridgeError):
             cfg.issue_pending(invalid)
@@ -152,7 +153,9 @@ def test_signed_client_is_discovered_but_never_automatically_approved(tmp_path):
     pending = db.list_pending_mcp_clients(user)
     assert len(pending) == 1 and pending[0]["client_id"] == client
     assert db.client_grants(user, client) is None
-    assert db.mcp_access(user, oauth_client=client) is None
+    access = db.mcp_access(user, oauth_client=client)
+    assert not access["capabilities"] and not access["fields"]
+    assert not access["approved_capabilities"]
     db.note_signed_mcp_client(user, "")
     assert len(db.list_pending_mcp_clients(user)) == 1
 
