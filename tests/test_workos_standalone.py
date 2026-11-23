@@ -67,6 +67,8 @@ def test_signed_pending_cookie_expires_and_cannot_be_tampered():
     "https://workos-staging.example.com.evil.com/oauth2/finish",
     "https://user:pass@workos-staging.example.com/oauth2/finish",
     "https://workos-staging.example.com/evil/redirect",
+    "https://workos-staging.example.com/oauth2/finish",
+    "https://workos-staging.example.com/oauth/authorize/other",
     "https://workos-staging.example.com/oauth2/finish#fragment",
     "javascript:alert(1)",
 ])
@@ -86,7 +88,7 @@ def test_complete_uses_signed_in_user_id_and_attested_email_only(monkeypatch):
         def read(self, n):
             assert n == 8193
             return json.dumps({
-                "redirect_uri": ISSUER + "/oauth2/finish?ok=true"
+                "redirect_uri": ISSUER + "/oauth/authorize/complete?state=example"
             }).encode()
 
     def fake_urlopen(req, timeout):
@@ -100,7 +102,7 @@ def test_complete_uses_signed_in_user_id_and_attested_email_only(monkeypatch):
     monkeypatch.setattr(workos, "urlopen", fake_urlopen)
     redirect = cfg.complete("ext_auth_01JX739KQ289Y3GRQP5CHTD5XB",
                             user_id=15, email="verified@example.com")
-    assert redirect == ISSUER + "/oauth2/finish?ok=true"
+    assert redirect == ISSUER + "/oauth/authorize/complete?state=example"
     assert called == {
         "external_auth_id": "ext_auth_01JX739KQ289Y3GRQP5CHTD5XB",
         "user": {"id": "panadan-user-15", "email": "verified@example.com"},
