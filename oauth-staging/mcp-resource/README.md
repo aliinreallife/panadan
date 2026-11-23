@@ -59,3 +59,20 @@ See `docs/OAUTH_EXISTING_LOGIN_NEXT.md` for the broader rollout gates.
 - The project's **canonical** `panadan-mcp-oauth-staging.vercel.app` alias still serves an older **Stytch test**. It was **not overwritten**; WorkOS uses the separate branch-preview alias.
 
 **Pending interactive step:** Install/Connect the PRIVATE plugin in ChatGPT, sign in using the existing verified WorkOS *Staging* identity, and check whether WorkOS emits `iss`, signed `client_id`, exact `aud`, `scope`, `sub`, and `exp` that pass the untouched `OAuthVerifier`. Then attempt the only `get_synthetic_access` tool. No real Panadan data, accounts, database, DNS, API tokens, or production auth mode may be touched. Do not share OAuth callback codes or access/refresh tokens in chat.
+
+## ChatGPT end-to-end OAuth success — 2026-11-22
+
+The **user-installed** custom ChatGPT plugin `panadan-oauth-sandbox` (connected app ID `asdk_app_6b03c46c3c3081918da3c4be6425c494`) is callable through the ChatGPT plugin connector. Direct invocation of `mcp__Panadan_OAuth_Sandbox__get_synthetic_access({})` returned:
+
+```json
+{
+  "environment": "workos-staging",
+  "data": "synthetic-only",
+  "authorized": true,
+  "capabilities": ["synthetic:read"]
+}
+```
+
+**PROVEN:** ChatGPT successfully authenticated and executed a real, read-only synthetic tool through the WorkOS Staging OAuth integration. The synthetic service's fail-closed gate calls the unchanged Panadan `OAuthVerifier.verify_details()`, requiring RSA-signed JWT, exact issuer/resource/audience/scope, valid expiry, signed client identity, and matching approved staging user subject. No credentials, tokens, user email, production records, or private data are included in the result.
+
+**NOT PROVEN / NOT BUILT:** reuse of Panadan's existing username/password browser login through WorkOS Standalone Connect; production user-to-WorkOS binding or consent; production MCP rollout, real tool access, revocation checks and hardening. Keep the WorkOS-hosted staging sign-in distinct from Panadan login. Do not enable OAuth in `dan.panafor.com` or merge this staging-only code into production without separate review and test gates. Stytch archive branches remain available as fallback.
