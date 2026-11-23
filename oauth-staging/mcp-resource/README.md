@@ -46,3 +46,16 @@ See `docs/OAUTH_EXISTING_LOGIN_NEXT.md` for the broader rollout gates.
 - A Vercel preview deployment must be rebuilt *after* adding the branch-scoped user allowlist environment variable; older READY previews deliberately report `pilot_authorization: not-configured`.
 
 **Not yet proven:** a successful user-interactive authorization-code + PKCE token exchange, actual WorkOS JWT audience/claims, or a ChatGPT synthetic tool call. Do not claim OAuth integration is complete until all pass.
+
+## Live test checkpoint — 2026-11-22
+
+- WorkOS **Staging** OAuth resource was registered as the canonical **branch preview alias** above (resource ID `authkit_oauth_resource_01M839GVSH01Z71PM200EK7FSN`). Existing WorkOS Production was not modified.
+- WorkOS Staging user with the already verified account email existed in the end-user store before this test; no duplicate user was created.
+- Private ChatGPT plugin **Panadan OAuth Sandbox**, ID `plugins_6b03bcfe4dd481918524028df5c5f5d2`, release 0.1.0, created as PRIVATE personal plugin; manifest source saved in `oauth-staging/chatgpt-plugin/`. Install link: https://chatgpt.com/plugins/plugins_6b03bcfe4dd481918524028df5c5f5d2
+- Branch-specific encrypted Vercel preview configuration `PANADAN_SANDBOX_WORKOS_SUB` is now set to the verified WorkOS Staging user's stable ID, not their email.
+- Rebuilt preview reports HTTP **200** on `/healthz` with `data=synthetic-only` and `pilot_authorization=configured`.
+- Both RFC 9728 resource-metadata routes return HTTP **200**, exact branch-preview resource URI, matching WorkOS staging issuer and required scope.
+- Authless JSON-RPC `POST /mcp/` initialization returns HTTP **401**, with matching `WWW-Authenticate` realm, `resource_metadata`, and `scope`.
+- The project's **canonical** `panadan-mcp-oauth-staging.vercel.app` alias still serves an older **Stytch test**. It was **not overwritten**; WorkOS uses the separate branch-preview alias.
+
+**Pending interactive step:** Install/Connect the PRIVATE plugin in ChatGPT, sign in using the existing verified WorkOS *Staging* identity, and check whether WorkOS emits `iss`, signed `client_id`, exact `aud`, `scope`, `sub`, and `exp` that pass the untouched `OAuthVerifier`. Then attempt the only `get_synthetic_access` tool. No real Panadan data, accounts, database, DNS, API tokens, or production auth mode may be touched. Do not share OAuth callback codes or access/refresh tokens in chat.
