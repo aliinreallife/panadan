@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -97,7 +98,7 @@ class WorkOSBridgeConfig:
                     or not _EXTERNAL_ID_RE.fullmatch(external_id)):
                 return None
             return external_id
-        except (UnicodeError, ValueError, KeyError, TypeError, OverflowError):
+        except (UnicodeError, ValueError, KeyError, TypeError, OverflowError, binascii.Error):
             return None
 
     @staticmethod
