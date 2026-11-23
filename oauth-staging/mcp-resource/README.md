@@ -36,3 +36,13 @@ integration explicitly sets a stable `external_id`. Never auto-bind based
 on email or dashboard display name. WorkOS production must remain unchanged.
 
 See `docs/OAUTH_EXISTING_LOGIN_NEXT.md` for the broader rollout gates.
+
+## Verified WorkOS staging setup (2026-11-22)
+
+- The WorkOS Staging environment has exactly one registered OAuth protected-resource URL: `https://panadan-mcp-oauth-staging-git-feat-pan-f67052-ali121sniper-3106.vercel.app/mcp/` (not the old Stytch-backed Vercel production alias).
+- The staging account's existing, email-verified AuthKit end-user is the only approved pilot identity. The exact subject ID is stored in a **branch-scoped encrypted preview environment variable**, not in Git. It does not identify or authorize a production Panadan account.
+- WorkOS public OAuth client has its matching custom scope `panadan:mcp:read` and ChatGPT stable redirect assigned.
+- The GitHub-connected Vercel project uses this directory as its root. The synthetic-only ASGI app may be deployed on a preview URL, never as a live Panadan service.
+- A Vercel preview deployment must be rebuilt *after* adding the branch-scoped user allowlist environment variable; older READY previews deliberately report `pilot_authorization: not-configured`.
+
+**Not yet proven:** a successful user-interactive authorization-code + PKCE token exchange, actual WorkOS JWT audience/claims, or a ChatGPT synthetic tool call. Do not claim OAuth integration is complete until all pass.
