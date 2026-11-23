@@ -98,3 +98,15 @@ In Production, the `PANADAN_PUBLIC_ORIGIN` and `PANADAN_OAUTH_RESOURCE` would us
 - https://workos.com/docs/authkit/environments
 - https://py.sdk.modelcontextprotocol.io/servers/media/
 - https://developers.openai.com/plugins/build/auth
+
+## Verified implementation checkpoint (2026-11-22)
+
+The opt-in server-side handoff, existing login/session integration, admin attestation, pending client approvals, and MCP server brand metadata are committed to the feature branch. The WorkOS **Staging** logo/icon/favicon were read back and verified to match the existing Panadan SVG. **No user passwords, roles, production data, or production WorkOS settings were changed.**
+
+**CI:** GitHub Actions workflow run `45115483815` completed **SUCCESS** on commit `eeef0170`: quality suite, platform integration and both web/VPN Docker builds green. Tests include mocked WorkOS Standalone completion, existing FastAPI login route handoff, signed cookie tampering and expiry, verified email requirement, origin/path allowlisting, and zero automatic client grants. This is *not* a successful standalone WorkOS **network** transaction for a real Panadan user.
+
+**WorkOS actual API detail:** Completion endpoint is `POST https://api.workos.com/authkit/oauth2/complete`, but the **returned browser redirect** is on the issuer's `/oauth/authorize/complete?state=...` path, not `/oauth2/`. The implementation now pins the accepted continuation path to `/oauth/authorize/complete` and rejects unrelated paths. See https://workos.com/docs/reference/workos-connect/standalone .
+
+**Standalone `sub` claim behavior:** WorkOS states that, with a configured Standalone Connect Login URI, it uses the **external ID** passed in completion (`panadan-user-{id}`) as the signed `sub` in the OAuth access token. The existing `oauth_identities` store binds that subject to the same signed-in Panadan user. This behavior must still be observed in a real staging token, not merely trusted from documentation. Source: https://workos.com/docs/authkit/connect/token-claims .
+
+**Remaining user/admin actions:** Turn on CIMD (DCR optional) in **WorkOS Staging**, arrange `panadan:mcp:read` as an automatically registered client scope (support-assisted if unavailable), create a separately isolated **real Panadan staging deployment** with authenticated test account and verified email, and configure its WorkOS Staging external login URI. WorkOS Production activation/billing plus rollback/backup and independent security review are required before a production release. **Nothing is ready for promotion to `dan.panafor.com` yet.**
