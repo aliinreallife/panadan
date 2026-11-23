@@ -108,12 +108,12 @@ class WorkOSBridgeConfig:
         return SUBJECT_PREFIX + str(user_id)
 
     def validate_redirect(self, url: str) -> str:
-        """No open redirects: WorkOS must send us back to the pinned issuer."""
+        """Accept only documented WorkOS completion path on the pinned issuer."""
         if not isinstance(url, str) or len(url) > 2048:
             raise WorkOSBridgeError("WorkOS returned an invalid continuation")
         p, expected = urlsplit(url), urlsplit(self.issuer)
         if (p.scheme != "https" or p.netloc != expected.netloc
-                or p.username or p.password or not p.path.startswith("/oauth2/")
+                or p.username or p.password or p.path != "/oauth/authorize/complete"
                 or p.fragment or any(ch.isspace() for ch in url)):
             raise WorkOSBridgeError("WorkOS continuation origin is not trusted")
         return url
