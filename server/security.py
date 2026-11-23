@@ -5,6 +5,7 @@ SQLite is for Panadan identities only. Never use it to store customer reporting 
 import hashlib
 import hmac
 import json
+import re
 import secrets
 import sqlite3
 import time
@@ -139,6 +140,25 @@ class Store:
                 approved_at INTEGER NOT NULL,
                 PRIMARY KEY(user_id,client_id)
             )''')
+            # Optional WorkOS login handoff requires an explicitly attested
+            # email for each Panadan user. This is contact metadata only;
+            # Panadan retains all passwords, sessions, roles and permissions.
+            c.execute("""CREATE TABLE IF NOT EXISTS oauth_verified_emails (
+                user_id INTEGER PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                attested_by INTEGER NOT NULL,
+                attested_at INTEGER NOT NULL,
+                evidence_ref TEXT NOT NULL
+            )""")
+            # A signed OAuth token may announce a new client without giving
+            # it access. User approval remains necessary on the dashboard.
+            c.execute("""CREATE TABLE IF NOT EXISTS mcp_client_requests (
+                user_id INTEGER NOT NULL,
+                client_id TEXT NOT NULL,
+                first_seen INTEGER NOT NULL,
+                last_seen INTEGER NOT NULL,
+                PRIMARY KEY(user_id,client_id)
+            )""")
             # OAuth subject bindings are separate from browser sessions and
             # legacy API tokens. No personal information from the provider
             # is automatically used to grant reporting permissions.
@@ -282,6 +302,82 @@ class Store:
             with self.db() as c:
                 c.execute('DELETE FROM sessions WHERE token_hash=?', (digest(raw),))
 
+    def attest_workos_email(self, user_id: int, email: str,
+                            *, attested_by: int, evidence_ref: str) -> None:
+        """Explicit admin attestation; never infer account ownership from email."""
+        if not isinstance(email, str):
+            raise ValueError('Invalid email address')
+        email = email.strip().lower()
+        if (len(email) > 254 or not re.fullmatch(
+                r'[a-z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+', email)):
+            raise ValueError('Invalid email address')
+        if (not isinstance(evidence_ref, str) or
+                not 8 <= len(evidence_ref.strip()) <= 160 or
+                any(ord(ch) < 32 for ch in evidence_ref)):
+            raise ValueError('Verification evidence reference is required')
+        with self.db() as c:
+            admin = c.execute(
+                "SELECT role,is_active FROM users WHERE id=?", (attested_by,)
+            ).fetchone()
+            user = c.execute(
+                "SELECT is_active FROM users WHERE id=?", (user_id,)
+            ).fetchone()
+            if not admin or not admin['is_active'] or admin['role'] != 'admin':
+                raise ValueError('Only an active administrator can attest identity')
+            if not user or not user['is_active']:
+                raise ValueError('User must be active')
+            c.execute("""INSERT INTO oauth_verified_emails(
+                user_id,email,attested_by,attested_at,evidence_ref
+            ) VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+                email=excluded.email, attested_by=excluded.attested_by,
+                attested_at=excluded.attested_at,
+                evidence_ref=excluded.evidence_ref""",
+                (user_id, email, attested_by, int(time.time()), evidence_ref.strip()))
+
+    def workos_verified_email(self, user_id: int) -> str | None:
+        with self.db() as c:
+            row = c.execute("""SELECT e.email FROM oauth_verified_emails e
+                JOIN users u ON u.id=e.user_id
+                WHERE e.user_id=? AND u.is_active=1""", (user_id,)).fetchone()
+        return row['email'] if row else None
+
+    def list_workos_verified_emails(self) -> list[dict]:
+        with self.db() as c:
+            return [dict(row) for row in c.execute(
+                'SELECT user_id,email,attested_by,attested_at,evidence_ref '
+                'FROM oauth_verified_emails ORDER BY user_id')]
+
+    def revoke_workos_email(self, user_id: int) -> None:
+        with self.db() as c:
+            c.execute('DELETE FROM oauth_verified_emails WHERE user_id=?', (user_id,))
+            c.execute('DELETE FROM oauth_identities WHERE user_id=?', (user_id,))
+            c.execute('DELETE FROM mcp_client_grants WHERE user_id=?', (user_id,))
+
+    def note_signed_mcp_client(self, user_id: int, client_id: str) -> None:
+        """Discovery is NOT consent; only record client IDs from verified JWTs."""
+        if (type(client_id) is not str or not 1 <= len(client_id) <= 160 or
+                any(ord(ch) < 33 or ord(ch) > 126 for ch in client_id)):
+            return
+        now = int(time.time())
+        with self.db() as c:
+            c.execute("""INSERT OR IGNORE INTO mcp_client_requests(
+                user_id,client_id,first_seen,last_seen
+            ) VALUES(?,?,?,?)""", (user_id,client_id,now,now))
+            c.execute("""UPDATE mcp_client_requests SET last_seen=?
+                WHERE user_id=? AND client_id=? AND last_seen<?""",
+                (now,user_id,client_id,now-3600))
+
+    def list_pending_mcp_clients(self, user_id: int) -> list[dict]:
+        with self.db() as c:
+            return [dict(row) for row in c.execute(
+                """SELECT r.client_id,r.first_seen,r.last_seen
+                   FROM mcp_client_requests r
+                   LEFT JOIN mcp_client_grants g
+                   ON g.user_id=r.user_id AND g.client_id=r.client_id
+                   WHERE r.user_id=? AND g.client_id IS NULL
+                     AND r.last_seen>? ORDER BY r.last_seen DESC LIMIT 20""",
+                (user_id,int(time.time())-30*86400))]
+
     def list_users(self):
         with self.db() as c:
             return [dict(r) for r in c.execute('SELECT id,username,role,grants,field_grants,is_active FROM users ORDER BY id')]
@@ -359,6 +455,8 @@ class Store:
             # Reauthorization is required after a role or status update.
             c.execute('DELETE FROM oauth_identities WHERE user_id=?', (user_id,))
             c.execute('DELETE FROM mcp_client_grants WHERE user_id=?', (user_id,))
+            c.execute('DELETE FROM oauth_verified_emails WHERE user_id=?', (user_id,))
+            c.execute('DELETE FROM mcp_client_requests WHERE user_id=?', (user_id,))
 
     def bind_oauth_identity(self, issuer: str, subject: str, user_id: int) -> int:
         """Administrator-approved binding of an IdP subject to a local account.
