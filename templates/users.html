@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+{% macro permission_help(description) %}<span class="permission-help" tabindex="0" aria-label="{{description}}"><span aria-hidden="true">؟</span><span class="permission-tooltip" role="tooltip">{{description}}</span></span>{% endmacro %}
 {% macro grant_picker(caps) %}
   <div class="access-category-grid">
     {% for category in permission_categories %}
@@ -16,16 +17,13 @@
       <p class="access-category-help">{{category.description}}</p>
       <div class="access-category-options">
         {% for item in category['items'] %}
-        <label class="access-permission-row">
+        <div class="permission-option-wrap"><label class="access-permission-row">
           <input type="checkbox" name="grants" value="{{item.id}}"
                  data-confidential="{{'true' if category.id=='confidential' else 'false'}}"
                  {% if item.id in caps %}checked{% endif %}
                  {% if item.id in admin_only_caps %}disabled{% endif %}>
-          <span class="access-permission-copy">
-            <strong>{{item.label}}</strong>
-            <small>{{item.description}}</small>
-          </span>
-        </label>
+          <span class="access-permission-copy"><strong>{{item.label}}</strong></span>
+        </label>{{permission_help(item.description)}}</div>
         {% endfor %}
       </div>
     </fieldset>
@@ -37,17 +35,39 @@
   <fieldset class="access-editor-grants access-field-grants">
     <legend>ستون‌های قابل مشاهده برای این کاربر</legend>
     <p class="access-category-help">هر ستون به‌طور مستقل کنترل می‌شود. دسترسی MCP فقط می‌تواند زیرمجموعه‌ای از این ستون‌ها را دریافت کند.</p>
+    {% set descriptions = {
+'id':'شناسه داخلی و یکتای رکورد تماس؛ برای باز کردن جزئیات و متن مکالمه ضروری است.',
+'CALLDATE':'تاریخ تماس در سامانه مبدأ؛ برای فیلتر تاریخ گزارش استفاده می‌شود.',
+'tellstate':'دسته تماس مانند تماس نخست، پیگیری یا تماس همکار.',
+'tellside':'جهت ثبت‌شده تماس؛ ورودی یا خروجی.',
+'aicallinfostate':'وضعیت پردازش یا نتیجه دسته‌بندی ثبت‌شده در مبدأ.',
+'voice_length':'مدت صوت ثبت‌شده به ثانیه؛ مبنای محاسبه میانگین مدت تماس.',
+'possibility_of_sale_ai':'امتیاز تخمینی فروش توسط هوش مصنوعی؛ به معنی فروش قطعی نیست.',
+'deal_value':'مقدار معامله در مبدأ؛ واحد پول و تأیید مالی جداگانه بررسی می‌شود.',
+'vw_danix_base_info_users_name':'نام کارشناس مرتبط با تماس و مبنای فیلتر کارشناس.',
+'call_time':'ساعت ثبت‌شده تماس در مبدأ؛ شروع یا پایان آن هنوز تأیید نشده است.',
+'call_id':'شناسه خارجی تماس در سیستم مبدأ.',
+'customername':'نام مشتری؛ اطلاعات محرمانه و فقط با مجوز جزئیات حساس.',
+'customertell':'شماره تلفن مشتری؛ اطلاعات محرمانه و فقط با مجوز جزئیات حساس.',
+'outcome':'نتیجه ثبت‌شده تماس در گزارش.',
+'ai_recommendation':'پیشنهاد ثبت‌شده هوش مصنوعی برای پیگیری یا بهبود تماس.',
+'summary':'خلاصه ثبت‌شده مکالمه، جدا از متن کامل.',
+'transcription':'متن ویرایش‌شده مکالمه از مسیر جداگانه حسابرسی؛ نیازمند مجوز فهرست تماس، متن مکالمه و شناسه تماس. حذف اطلاعات حساس کامل نیست.',
+'tell_state_desc':'شرح وضعیت یا علت دسته‌بندی تماس.',
+'create_date':'زمان ثبت رکورد در سامانه مبدأ، نه لزوماً زمان تماس.'
+} %}
+    {% for category_id, category_label in [('internal','اطلاعات داخلی'),('confidential','اطلاعات محرمانه')] %}
+    <h4 class="permission-field-heading">{{category_label}}</h4>
     <div class="access-field-grid">
-      {% for column in field_catalog %}
-      <label class="access-field-option">
+      {% for column in field_catalog if column.category==category_id %}
+      <div class="permission-option-wrap"><label class="access-field-option">
         <input type="checkbox" name="fields" value="{{column.id}}"
                {% if column.id in selected %}checked{% endif %}>
-        <span><strong>{{column.label}}</strong>
-          <small dir="ltr">{{column.id}}</small></span>
-        <span class="access-field-risk">{{'محرمانه' if column.category=='confidential' else 'داخلی'}}</span>
-      </label>
+        <span><strong>{{column.label}}</strong><small dir="ltr">{{column.id}}</small></span>
+      </label>{{permission_help(descriptions.get(column.id,column.label))}}</div>
       {% endfor %}
     </div>
+    {% endfor %}
   </fieldset>
 {% endmacro %}
 <div class="shell">
@@ -76,8 +96,9 @@
         <h1>کاربران و دسترسی‌ها</h1>
         <p class="muted">حساب‌های سازمان، وضعیت فعال‌بودن و دسترسی‌ها را یک‌جا مدیریت کنید.</p>
       </div>
-      <a class="primary access-add-shortcut" href="#create-user">+ افزودن کاربر</a>
+      {% if not native_admin_only %}<a class="primary access-add-shortcut" href="#create-user">+ افزودن کاربر</a>{% endif %}
     </header>
+    {% if native_admin_only %}<section class="panel native-account-notice"><strong>ورود با WorkOS · فقط مدیر تأییدشده</strong><p>ساخت و ویرایش حساب‌های محلی در این حالت غیرفعال است. برای تغییر دسترسی ChatGPT و سایر برنامه‌ها از <a href="/dashboard/mcp-apps">برنامه‌های متصل من</a> استفاده کنید.</p></section>{% endif %}
     <section class="access-overview" aria-label="آمار کاربران">
       <div class="access-overview-stat"><span>همهٔ حساب‌ها</span><strong>{{users|length}}</strong><small>حساب ثبت‌شده</small></div>
       <div class="access-overview-stat"><span>حساب‌های فعال</span><strong>{{users|selectattr('is_active')|list|length}}</strong><small>اجازه ورود به پانادان</small></div>
@@ -131,8 +152,11 @@
               {% else %}<span class="muted">بدون دسترسی</span>{% endfor %}
               {% if user_caps[user.id]|length > 3 %}<span class="user-capability user-capability-more">+{{user_caps[user.id]|length - 3}} مجوز</span>{% endif %}
             </span>
-            <span class="user-card-edit">ویرایش <span aria-hidden="true">⌄</span></span>
+            <span class="user-card-edit">{{'مشاهده' if native_admin_only else 'ویرایش'}} <span aria-hidden="true">⌄</span></span>
           </summary>
+          {% if native_admin_only %}
+          <div class="native-readonly-permissions"><p class="muted">مجوزهای ثبت‌شده این حساب (فقط نمایش)</p><div class="native-permission-chips">{% for cap in user_caps[user.id]|sort %}<span title="{{cap}}">{{cap_labels.get(cap,cap)}}</span>{% endfor %}</div><p class="muted">ستون‌های ثبت‌شده</p><div class="native-permission-chips">{% for col in field_catalog if col.id in user_fields[user.id] %}<span title="{{col.id}}">{{col.label}}</span>{% endfor %}</div></div>
+          {% else %}
           <form method="post" action="/dashboard/users/{{user.id}}/update" class="user-edit-form" data-access-editor="edit">
             <input name="csrf" type="hidden" value="{{csrf}}">
             <div class="access-role-group">
@@ -167,12 +191,14 @@
               <button type="submit" class="primary">ذخیره تغییرات</button>
             </div>
           </form>
+          {% endif %}
         </details>
         {% else %}<p class="muted">کاربری وجود ندارد.</p>{% endfor %}
       </div>
       <p class="access-directory-empty" id="access-users-empty" hidden>کاربری با این فیلترها پیدا نشد. نام یا وضعیت را تغییر دهید.</p>
-      <p class="description">برای ویرایش مجوزها روی کارت کاربر کلیک کنید. ذخیرهٔ تغییرات، نشست‌ها و توکن‌های فعلی این حساب را باطل می‌کند.</p>
+      {% if not native_admin_only %}<p class="description">برای ویرایش مجوزها روی کارت کاربر کلیک کنید. ذخیرهٔ تغییرات، نشست‌ها و توکن‌های فعلی این حساب را باطل می‌کند.</p>{% endif %}
     </section>
+    {% if not native_admin_only %}
     <details class="access-create-disclosure" id="create-user">
       <summary class="access-create-trigger">
         <span class="access-create-trigger-copy"><strong>افزودن کاربر جدید</strong>
@@ -183,6 +209,7 @@
       <div class="panel-head"><div><h2>افزودن کاربر</h2><p class="muted small-text">گروه فقط تنظیمات اولیه را وارد می‌کند؛ مجوزهای نهایی هر حساب مستقل ذخیره می‌شوند.</p></div></div>
       <form method="post" action="/dashboard/users" class="management-form access-editor" data-access-editor="create">
         <input type="hidden" name="csrf" value="{{csrf}}">
+        <h3 class="permission-create-heading">۱. مشخصات حساب و الگوی دسترسی</h3>
         <label>نام کاربری
           <input name="username" dir="ltr" lang="en" maxlength="80" required autocomplete="off" placeholder="user_name">
         </label>
@@ -207,7 +234,7 @@
           <small class="access-group-hint" data-group-hint>انتخاب گروه، مجوزهای زیر را به‌صورت قابل ویرایش تنظیم می‌کند.</small>
         </label>
         <div class="access-editor-grants">
-          <div class="access-editor-heading"><h3>مجوزهای دقیق این کاربر</h3>
+          <div class="access-editor-heading"><h3>۲. انتخاب دسترسی‌ها</h3>
             <span class="access-grant-count" data-grant-count>—</span>
           </div>
           {{grant_picker(['calls:read','metrics:read','mcp:use'])}}
@@ -218,6 +245,7 @@
       </form>
     </section>
     </details>
+    {% endif %}
     <details class="access-guide-disclosure">
       <summary>راهنمای سطوح دسترسی <span class="muted">توضیح دسته‌بندی مجوزها</span></summary>
     <section class="panel access-guide" aria-label="راهنمای سطوح دسترسی">
