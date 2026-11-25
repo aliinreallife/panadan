@@ -16,6 +16,7 @@
   <svg class="mcp-client-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
 </summary>
 {% endmacro %}
+{% macro help(text) %}<span class="permission-help" tabindex="0" aria-label="{{text}}"><span aria-hidden="true">؟</span><span class="permission-tooltip" role="tooltip">{{text}}</span></span>{% endmacro %}
 {% macro approval_form(client, current_caps, current_fields, is_new=False) %}
 <form class="mcp-consent-form" method="post" action="/dashboard/mcp-apps/approve">
 <input name="csrf" type="hidden" value="{{csrf}}">
@@ -26,25 +27,28 @@
 {% else %}
 <input name="client_id" type="hidden" value="{{client}}">
 {% endif %}
+<div class="mcp-privacy-intro"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></svg><div><strong>دسترسی فقط خواندنی</strong><p>برنامه نمی‌تواند اطلاعات تماس‌ها را تغییر دهد. دسترسی به داده‌ها فقط در محدوده انتخاب شماست.</p></div></div>
 <fieldset class="mcp-permission-group">
-<legend>قابلیت‌ها</legend>
+<legend>۱. انتخاب قابلیت‌ها</legend>
 <p class="mcp-group-hint">برنامه با چه نوع اطلاعاتی می‌تواند کار کند؟</p>
 <div class="mcp-capability-list">
-{% for cap, label, description in [('calls:read','فهرست تماس‌ها','مشاهده اطلاعات تماس و فیلتر کردن گزارش‌ها'),('metrics:read','آمار و تحلیل','مشاهده شاخص‌ها و آمار تجمیعی'),('calls:transcript:read','متن ویرایش‌شده مکالمات','مشاهده متن مکالمه پس از حذف اطلاعات حساس')] %}
+{% for cap, label, description in [('calls:read','فهرست تماس‌ها','مشاهده اطلاعات تماس و فیلتر کردن گزارش‌ها'),('metrics:read','آمار و تحلیل','مشاهده شاخص‌ها و آمار تجمیعی'),('calls:transcript:read','متن ویرایش‌شده مکالمات','مشاهده متن با حذف خودکار برخی اطلاعات حساس؛ ممکن است اطلاعات خصوصی همچنان باقی بمانند.')] %}
 {% if cap in capabilities %}
-<label class="mcp-permission-option"><input type="checkbox" name="capabilities" value="{{cap}}"
+<div class="mcp-permission-wrap"><label class="mcp-permission-option"><input type="checkbox" name="capabilities" value="{{cap}}"
               {% if cap in current_caps %}checked{% endif %}>
-  <span class="mcp-permission-copy"><strong>{{label}}</strong><small>{{description}}</small></span></label>
+  <span class="mcp-permission-copy"><strong>{{label}}</strong><small>{{description}}</small></span></label>{{help(description)}}</div>
 {% endif %}{% endfor %}
 </div></fieldset>
 <fieldset class="mcp-permission-group">
-<legend>ستون‌های قابل مشاهده در MCP</legend>
-<p class="mcp-group-hint">فقط اطلاعات موردنیاز این برنامه را انتخاب کنید.</p>
+<legend>۲. انتخاب اطلاعات</legend>
+<p class="mcp-group-hint">فقط اطلاعات موردنیاز این برنامه را انتخاب کنید. ابتدا قابلیت مربوط را فعال کنید.</p>
+<div class="mcp-selection-tools" hidden data-selection-tools><span data-selection-count aria-live="polite"></span><div><button type="button" class="link-button" data-select-eligible>انتخاب موارد مجاز</button><button type="button" class="link-button" data-clear-fields>پاک کردن انتخاب</button></div></div>
+{% set tips={'id':'شناسه یکتای رکورد تماس؛ برای مشاهده جزئیات و متن مکالمه لازم است.','CALLDATE':'تاریخ تماس در سامانه مبدأ.','tellstate':'دسته تماس مانند تماس نخست یا پیگیری.','tellside':'جهت تماس ثبت‌شده در مبدأ.','aicallinfostate':'وضعیت تحلیل و دسته‌بندی تماس.','voice_length':'مدت صوت به ثانیه.','possibility_of_sale_ai':'امتیاز تخمینی فروش، نه فروش قطعی.','deal_value':'ارزش معامله طبق مبدأ؛ واحد و تأیید مالی نیازمند بررسی است.','vw_danix_base_info_users_name':'نام کارشناس مرتبط با تماس.','call_time':'ساعت ثبت‌شده تماس در مبدأ.','transcription':'متن ویرایش‌شده؛ حذف اطلاعات حساس کامل نیست. برای بازیابی متن، شناسه تماس نیز لازم است.'} %}
 <div class="mcp-field-list">
 {% for col in field_catalog if col.id in fields %}
-<label class="mcp-permission-option"><input type="checkbox" name="fields" value="{{col.id}}"
+<div class="mcp-permission-wrap"><label class="mcp-permission-option"><input type="checkbox" name="fields" value="{{col.id}}"
               {% if col.id in current_fields %}checked{% endif %}>
-  <span class="mcp-permission-copy"><strong>{{col.label}}</strong><small dir="ltr">{{col.id}}</small></span></label>
+  <span class="mcp-permission-copy"><strong>{{col.label}}</strong><small dir="ltr">{{col.id}}</small></span></label>{{help(tips.get(col.id,col.label))}}</div>
 {% endfor %}
 </div></fieldset>
 <div class="mcp-consent-actions">
@@ -122,5 +126,6 @@
 <p class="source-note">تغییر مجوزهای برنامه‌ها، دسترسی حساب شما را تغییر نمی‌دهد.</p>
 </main></div>
 <script src="/static/mcp-apps.js" defer></script>
+<script src="/static/mcp-consent-controls.js" defer></script>
 <script src="/static/mobile-nav.js" defer></script>
 </body></html>
