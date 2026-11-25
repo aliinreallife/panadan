@@ -127,6 +127,7 @@ class Store:
                 ('access_tokens', 'field_grants', 'TEXT'),
                 ('access_tokens', 'cap_grants', 'TEXT'),
                 ('users', 'is_active', 'INTEGER NOT NULL DEFAULT 1'),
+                ('sessions', 'auth_source', "TEXT NOT NULL DEFAULT 'local'"),
                 ('access_tokens', 'owner_id', 'INTEGER'),
             ]:
                 existing = {r['name'] for r in c.execute(f'PRAGMA table_info({table})')}
@@ -281,26 +282,54 @@ class Store:
         ok = password_check(password, row['password_hash'] if row else _DUMMY_HASH)
         return int(row['id']) if row and row['is_active'] and ok else None
 
-    def create_session(self, uid: int) -> tuple[str, str]:
+    def create_session(self, uid: int, *, auth_source: str = 'local') -> tuple[str, str]:
         raw, csrf = secrets.token_urlsafe(40), secrets.token_urlsafe(32)
         with self.db() as c:
-            c.execute('INSERT INTO sessions VALUES(?,?,?,?)',
-                      (digest(raw), uid, csrf, int(time.time()) + SESSION_SECONDS))
+            if auth_source not in ('local', 'authkit'):
+                raise ValueError('Unknown session authentication source')
+            c.execute('INSERT INTO sessions(token_hash,user_id,csrf,expires_at,auth_source) VALUES(?,?,?,?,?)',
+                      (digest(raw), uid, csrf, int(time.time()) + SESSION_SECONDS, auth_source))
         return raw, csrf
 
-    def session(self, raw: str | None):
+    def session(self, raw: str | None, *, auth_source: str = 'local'):
         if not raw: return None
         with self.db() as c:
             row = c.execute('''SELECT s.user_id,s.csrf,u.username,u.role,u.grants,u.field_grants
                                FROM sessions s JOIN users u ON u.id=s.user_id
-                               WHERE s.token_hash=? AND s.expires_at>? AND u.is_active=1''',
-                            (digest(raw), int(time.time()))).fetchone()
+                               WHERE s.token_hash=? AND s.expires_at>? AND u.is_active=1 AND s.auth_source=?''',
+                            (digest(raw), int(time.time()), auth_source)).fetchone()
         return dict(row) if row else None
 
     def logout(self, raw: str | None):
         if raw:
             with self.db() as c:
                 c.execute('DELETE FROM sessions WHERE token_hash=?', (digest(raw),))
+
+    def prepare_authkit_admin(self, uid: int, issuer: str, subject: str) -> None:
+        """Cut over only the pinned local admin, preserving all historical rows.
+
+        No password is accepted in native mode. Old users are disabled, not
+        deleted. Replace only the known Standalone subject or the native one.
+        """
+        with self.db() as c:
+            c.execute("BEGIN IMMEDIATE")
+            admin = c.execute("SELECT role,is_active FROM users WHERE id=?", (uid,)).fetchone()
+            if not admin or admin["role"] != "admin" or not admin["is_active"]:
+                raise ValueError("Pinned local administrator must be active")
+            old = c.execute("SELECT subject FROM oauth_identities WHERE issuer=? AND user_id=?",
+                            (issuer, uid)).fetchone()
+            owner = c.execute("SELECT user_id FROM oauth_identities WHERE issuer=? AND subject=?",
+                              (issuer, subject)).fetchone()
+            if (old and old["subject"] not in (subject, f"panadan-user-{uid}")) or (
+                    owner and owner["user_id"] != uid):
+                raise ValueError("Native OAuth identity requires administrator review")
+            c.execute("UPDATE users SET is_active=0 WHERE id<>?", (uid,))
+            if not old or old["subject"] != subject:
+                c.execute("DELETE FROM oauth_identities WHERE issuer=? AND user_id=?", (issuer, uid))
+                c.execute("INSERT INTO oauth_identities(issuer,subject,user_id,created_at) VALUES(?,?,?,?)",
+                          (issuer, subject, uid, int(time.time())))
+                c.execute("DELETE FROM mcp_client_grants WHERE user_id=?", (uid,))
+                c.execute("DELETE FROM mcp_client_requests WHERE user_id=?", (uid,))
 
     def attest_workos_email(self, user_id: int, email: str,
                             *, attested_by: int, evidence_ref: str) -> None:
