@@ -8,6 +8,27 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+{% set descriptions = {
+'id':'شناسه داخلی و یکتای رکورد تماس؛ برای باز کردن جزئیات و متن مکالمه ضروری است.',
+'CALLDATE':'تاریخ تماس در سامانه مبدأ؛ برای فیلتر تاریخ گزارش استفاده می‌شود.',
+'tellstate':'دسته تماس مانند تماس نخست، پیگیری یا تماس همکار.',
+'tellside':'جهت ثبت‌شده تماس؛ ورودی یا خروجی.',
+'aicallinfostate':'وضعیت پردازش یا نتیجه دسته‌بندی ثبت‌شده در مبدأ.',
+'voice_length':'مدت صوت ثبت‌شده به ثانیه؛ مبنای محاسبه میانگین مدت تماس.',
+'possibility_of_sale_ai':'امتیاز تخمینی فروش توسط هوش مصنوعی؛ به معنی فروش قطعی نیست.',
+'deal_value':'مقدار معامله در مبدأ؛ واحد پول و تأیید مالی جداگانه بررسی می‌شود.',
+'vw_danix_base_info_users_name':'نام کارشناس مرتبط با تماس و مبنای فیلتر کارشناس.',
+'call_time':'ساعت ثبت‌شده تماس در مبدأ؛ شروع یا پایان آن هنوز تأیید نشده است.',
+'call_id':'شناسه خارجی تماس در سیستم مبدأ.',
+'customername':'نام مشتری؛ اطلاعات محرمانه و فقط با مجوز جزئیات حساس.',
+'customertell':'شماره تلفن مشتری؛ اطلاعات محرمانه و فقط با مجوز جزئیات حساس.',
+'outcome':'نتیجه ثبت‌شده تماس در گزارش.',
+'ai_recommendation':'پیشنهاد ثبت‌شده هوش مصنوعی برای پیگیری یا بهبود تماس.',
+'summary':'خلاصه ثبت‌شده مکالمه، جدا از متن کامل.',
+'transcription':'متن ویرایش‌شده مکالمه از مسیر جداگانه حسابرسی؛ نیازمند مجوز فهرست تماس، متن مکالمه و شناسه تماس. حذف اطلاعات حساس کامل نیست.',
+'tell_state_desc':'شرح وضعیت یا علت دسته‌بندی تماس.',
+'create_date':'زمان ثبت رکورد در سامانه مبدأ، نه لزوماً زمان تماس.'
+} %}
 {% macro permission_help(description) %}<span class="permission-help" tabindex="0" aria-label="{{description}}"><span aria-hidden="true">؟</span><span class="permission-tooltip" role="tooltip">{{description}}</span></span>{% endmacro %}
 {% macro grant_picker(caps) %}
   <div class="access-category-grid">
@@ -35,27 +56,7 @@
   <fieldset class="access-editor-grants access-field-grants">
     <legend>ستون‌های قابل مشاهده برای این کاربر</legend>
     <p class="access-category-help">هر ستون به‌طور مستقل کنترل می‌شود. دسترسی MCP فقط می‌تواند زیرمجموعه‌ای از این ستون‌ها را دریافت کند.</p>
-    {% set descriptions = {
-'id':'شناسه داخلی و یکتای رکورد تماس؛ برای باز کردن جزئیات و متن مکالمه ضروری است.',
-'CALLDATE':'تاریخ تماس در سامانه مبدأ؛ برای فیلتر تاریخ گزارش استفاده می‌شود.',
-'tellstate':'دسته تماس مانند تماس نخست، پیگیری یا تماس همکار.',
-'tellside':'جهت ثبت‌شده تماس؛ ورودی یا خروجی.',
-'aicallinfostate':'وضعیت پردازش یا نتیجه دسته‌بندی ثبت‌شده در مبدأ.',
-'voice_length':'مدت صوت ثبت‌شده به ثانیه؛ مبنای محاسبه میانگین مدت تماس.',
-'possibility_of_sale_ai':'امتیاز تخمینی فروش توسط هوش مصنوعی؛ به معنی فروش قطعی نیست.',
-'deal_value':'مقدار معامله در مبدأ؛ واحد پول و تأیید مالی جداگانه بررسی می‌شود.',
-'vw_danix_base_info_users_name':'نام کارشناس مرتبط با تماس و مبنای فیلتر کارشناس.',
-'call_time':'ساعت ثبت‌شده تماس در مبدأ؛ شروع یا پایان آن هنوز تأیید نشده است.',
-'call_id':'شناسه خارجی تماس در سیستم مبدأ.',
-'customername':'نام مشتری؛ اطلاعات محرمانه و فقط با مجوز جزئیات حساس.',
-'customertell':'شماره تلفن مشتری؛ اطلاعات محرمانه و فقط با مجوز جزئیات حساس.',
-'outcome':'نتیجه ثبت‌شده تماس در گزارش.',
-'ai_recommendation':'پیشنهاد ثبت‌شده هوش مصنوعی برای پیگیری یا بهبود تماس.',
-'summary':'خلاصه ثبت‌شده مکالمه، جدا از متن کامل.',
-'transcription':'متن ویرایش‌شده مکالمه از مسیر جداگانه حسابرسی؛ نیازمند مجوز فهرست تماس، متن مکالمه و شناسه تماس. حذف اطلاعات حساس کامل نیست.',
-'tell_state_desc':'شرح وضعیت یا علت دسته‌بندی تماس.',
-'create_date':'زمان ثبت رکورد در سامانه مبدأ، نه لزوماً زمان تماس.'
-} %}
+    
     {% for category_id, category_label in [('internal','اطلاعات داخلی'),('confidential','اطلاعات محرمانه')] %}
     <h4 class="permission-field-heading">{{category_label}}</h4>
     <div class="access-field-grid">
@@ -155,7 +156,7 @@
             <span class="user-card-edit">{{'مشاهده' if native_admin_only else 'ویرایش'}} <span aria-hidden="true">⌄</span></span>
           </summary>
           {% if native_admin_only %}
-          <div class="native-readonly-permissions"><p class="muted">مجوزهای ثبت‌شده این حساب (فقط نمایش)</p><div class="native-permission-chips">{% for cap in user_caps[user.id]|sort %}<span title="{{cap}}">{{cap_labels.get(cap,cap)}}</span>{% endfor %}</div><p class="muted">ستون‌های ثبت‌شده</p><div class="native-permission-chips">{% for col in field_catalog if col.id in user_fields[user.id] %}<span title="{{col.id}}">{{col.label}}</span>{% endfor %}</div></div>
+          <div class="native-readonly-permissions"><p class="muted">مجوزهای ثبت‌شده این حساب (فقط نمایش)</p><div class="native-permission-chips">{% for category in permission_categories %}{% for item in category['items'] if item.id in user_caps[user.id] %}<span class="native-permission-item">{{item.label}}{{permission_help(item.description)}}</span>{% endfor %}{% endfor %}</div><p class="muted">ستون‌های ثبت‌شده</p><div class="native-permission-chips">{% for col in field_catalog if col.id in user_fields[user.id] %}<span class="native-permission-item">{{col.label}}{{permission_help(descriptions.get(col.id,col.label))}}</span>{% endfor %}</div></div>
           {% else %}
           <form method="post" action="/dashboard/users/{{user.id}}/update" class="user-edit-form" data-access-editor="edit">
             <input name="csrf" type="hidden" value="{{csrf}}">
