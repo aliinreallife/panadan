@@ -307,6 +307,17 @@ elif args[:1]==["compose"]:
                                       "PANADAN_MCP_AUTH_MODE":"legacy"},
                        "volumes":[{"type":"volume","source":"panadan_auth_data",
                                    "target":"/data"}]}}}
+        if os.environ.get("MOCK_WORKOS_OAUTH")=="YES" and "web" in result["services"]:
+            result["services"]["web"]["environment"].update(
+                PANADAN_MCP_AUTH_MODE="oauth",
+                PANADAN_WORKOS_STANDALONE_ENABLED="true",
+                PANADAN_OAUTH_ISSUER="https://synthetic-test.authkit.app",
+                PANADAN_OAUTH_JWKS_URL="https://synthetic-test.authkit.app/oauth2/jwks",
+                PANADAN_OAUTH_RESOURCE="https://dan.panafor.com/mcp/",
+                PANADAN_OAUTH_SCOPE="openid",
+                WORKOS_API_KEY="sk_test_synthetic_not_real_1234",
+                PANADAN_WORKOS_PENDING_SECRET="ab"*32,
+            )
         print(json.dumps(result))
     elif "ps" in args:print("synthetic containers running")
     elif "up" in args:
@@ -652,3 +663,105 @@ def test_rollback_web_refuses_missing_backup_ack_and_wrong_network(tmp_path):
                       "panadan-web:cac4b36","--ack-restored-backup")
     assert bad_network.returncode==64
     assert " up -d " not in (tmp_path/"calls.txt").read_text()
+
+
+def workos_config():
+    data = panadan()
+    data["services"]["web"]["environment"].update(
+        PANADAN_MCP_AUTH_MODE="oauth",
+        PANADAN_WORKOS_STANDALONE_ENABLED="true",
+        PANADAN_OAUTH_ISSUER="https://synthetic-test.authkit.app",
+        PANADAN_OAUTH_JWKS_URL="https://synthetic-test.authkit.app/oauth2/jwks",
+        PANADAN_OAUTH_RESOURCE="https://dan.panafor.com/mcp/",
+        PANADAN_OAUTH_SCOPE="openid",
+        WORKOS_API_KEY="sk_test_synthetic_not_real_1234",
+        PANADAN_WORKOS_PENDING_SECRET="ab"*32,
+    )
+    return data
+
+
+def test_workos_requires_explicit_opt_in_and_preserves_legacy_default():
+    with pytest.raises(guard.InvalidDeployment, match="unapproved MCP OAuth"):
+        guard.validate_panadan(workos_config(), auth_enabled=False)
+    guard.validate_panadan(workos_config(), auth_enabled=False, allow_workos_oauth=True)
+    with pytest.raises(guard.InvalidDeployment, match="requires OAuth mode"):
+        guard.validate_panadan(panadan(), auth_enabled=False, allow_workos_oauth=True)
+    data = panadan()
+    data["services"]["web"]["environment"]["PANADAN_WORKOS_STANDALONE_ENABLED"] = "true"
+    with pytest.raises(guard.InvalidDeployment):
+        guard.validate_panadan(data, auth_enabled=False)
+
+
+@pytest.mark.parametrize("key,value", [
+    ("PANADAN_MCP_AUTH_MODE", "legacy"),
+    ("PANADAN_WORKOS_STANDALONE_ENABLED", "false"),
+    ("PANADAN_OAUTH_ISSUER", "http://synthetic-test.authkit.app"),
+    ("PANADAN_OAUTH_ISSUER", "https://synthetic-test.authkit.app.evil.invalid"),
+    ("PANADAN_OAUTH_JWKS_URL", "https://evil.invalid/oauth2/jwks"),
+    ("PANADAN_OAUTH_RESOURCE", "https://dan.panafor.com/mcp"),
+    ("PANADAN_OAUTH_SCOPE", "panadan:mcp:read"),
+    ("WORKOS_API_KEY", ""),
+    ("WORKOS_API_KEY", "sk_test_placeholder_not_real"),
+    ("PANADAN_WORKOS_PENDING_SECRET", "short"),
+    ("PANADAN_WORKOS_PENDING_SECRET", "a"*64),
+    ("PANADAN_COOKIE_SECURE", "false"),
+    ("PANADAN_AUTH_BACKEND", "postgres-staging"),
+    ("PANADAN_AUTH_DB", "/tmp/auth.sqlite"),
+])
+def test_invalid_workos_configuration_fails_closed(key, value):
+    data = workos_config()
+    data["services"]["web"]["environment"][key] = value
+    with pytest.raises(guard.InvalidDeployment):
+        guard.validate_panadan(data, auth_enabled=False, allow_workos_oauth=True)
+
+
+def test_workos_safe_diagnostics_do_not_leak_secret():
+    data = workos_config()
+    env = data["services"]["web"]["environment"]
+    env["WORKOS_API_KEY"] = "sensitive_value_that_must_not_leak"
+    result = subprocess.run(
+        ["python3", str(SCRIPT), "panadan", "--allow-workos-oauth", "--explain-safe"],
+        input=json.dumps(data), text=True, capture_output=True, timeout=8,
+    )
+    assert result.returncode == 1
+    assert "SAFE CHECK: WorkOS API key configuration" in result.stderr
+    assert env["WORKOS_API_KEY"] not in result.stdout + result.stderr
+    assert env["PANADAN_WORKOS_PENDING_SECRET"] not in result.stdout + result.stderr
+
+
+def test_controller_workos_requires_explicit_flag_and_keeps_read_only_plan(tmp_path):
+    env = _sandbox(tmp_path)
+    env["MOCK_WORKOS_OAUTH"] = "YES"
+    assert _ctrl(tmp_path, env, "plan").returncode == 64
+    result = _ctrl(tmp_path, env, "check", "--allow-workos-oauth")
+    assert result.returncode == 0, result.stderr
+    assert " up " not in (tmp_path / "calls.txt").read_text()
+
+
+def test_controller_explicit_workos_deployment_with_skipped_backup(tmp_path):
+    env = _release_sandbox(tmp_path)
+    env["MOCK_WORKOS_OAUTH"] = "YES"
+    args = ("deploy-web", "--apply", "--expect-image", "panadan-web:cac4b36")
+    assert _ctrl(tmp_path, env, *args, "--ack-no-fresh-backup").returncode == 64
+    assert _ctrl(tmp_path, env, *args, "--allow-workos-oauth").returncode == 64
+    assert not (tmp_path / "web-recreated.marker").exists()
+    result = _ctrl(tmp_path, env, *args, "--ack-no-fresh-backup", "--allow-workos-oauth")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "without a fresh verified backup" in result.stderr
+    assert (tmp_path / "web-recreated.marker").exists()
+    assert " up -d --no-deps --no-build --pull never web" in (tmp_path / "calls.txt").read_text()
+
+
+def test_controller_rollback_requires_legacy_config_and_accepts_truthful_ack(tmp_path):
+    env = _release_sandbox(tmp_path, baseline="502")
+    env["MOCK_WORKOS_OAUTH"] = "YES"
+    args = ("rollback-web", "--apply", "--expect-image", "panadan-web:cac4b36",
+            "--ack-no-fresh-backup")
+    assert _ctrl(tmp_path, env, *args).returncode == 64
+    assert _ctrl(tmp_path, env, *args, "--allow-workos-oauth").returncode == 64
+    assert not (tmp_path / "web-recreated.marker").exists()
+    del env["MOCK_WORKOS_OAUTH"]
+    result = _ctrl(tmp_path, env, *args)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "without a fresh verified backup" in result.stderr
+    assert (tmp_path / "web-recreated.marker").exists()
