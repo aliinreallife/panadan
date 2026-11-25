@@ -60,6 +60,21 @@
 <h1>برنامه‌های هوش مصنوعی من</h1>
 <p class="muted">مشخص کنید هر برنامه کدام بخش از اطلاعاتی را که مجاز به دیدنشان هستید دریافت کند.</p>
 </div><span class="tag">فقط حساب شما</span></header>
+{% if pending_clients %}
+<section class="panel">
+<div class="panel-head"><h2>برنامه‌های شناسایی‌شده با OAuth</h2>
+<span class="tag">{{pending_clients|length}} درخواست</span></div>
+<p class="muted">این برنامه‌ها با توکن امضاشدهٔ OAuth شناسایی شده‌اند، اما هیچ دسترسی به گزارش‌ها ندارند تا شما مجوزهایشان را تأیید کنید. نیازی به کپی کردن شناسهٔ Client ID نیست.</p>
+{% for pending in pending_clients %}
+<details class="user-card">
+<summary class="user-card-summary"><strong dir="ltr">{{pending.client_id}}</strong>
+<span>بررسی و اعطای مجوز</span></summary>
+<p class="description">فقط قابلیت‌ها و ستون‌های ضروری را انتخاب کنید. شناسهٔ برنامه از توکن تأییدشده گرفته شده است.</p>
+{{approval_form(pending.client_id, [], [])}}
+</details>
+{% endfor %}
+</section>
+{% endif %}
 <section class="panel">
 <div class="panel-head"><h2>تأیید برنامهٔ جدید</h2></div>
 <p>مجوزهای مجاز فعلی شما به‌صورت پیش‌فرض انتخاب شده‌اند. می‌توانید پیش از تأیید، هر کدام را بردارید.</p>

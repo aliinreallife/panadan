@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "panadan-workos-oauth-sandbox",
+  "version": "0.1.0",
+  "description": "Private synthetic-only Panadan MCP OAuth compatibility pilot with WorkOS Staging. No customer data or production access.",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Panadan OAuth Sandbox",
+        "shortDescription": "Test ChatGPT OAuth with synthetic data only",
+        "developerName": "Panadan",
+        "category": "Productivity",
+        "capabilities": [
+          "Read"
+        ]
+      }
+    }
+  }
+}

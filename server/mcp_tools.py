@@ -7,7 +7,7 @@ cannot supply another user's ID or claim additional permissions.
 from datetime import date
 
 from mcp.server.mcpserver import MCPServer, Context
-from mcp.types import ToolAnnotations
+from mcp.types import ToolAnnotations, Icon
 
 from . import database
 from .field_permissions import (
@@ -16,7 +16,14 @@ from .field_permissions import (
 )
 
 mcp = MCPServer(
-    "Panadan", version="0.8.0",
+    "Panadan", title="پانادان | Panadan",
+    website_url="https://dan.panafor.com",
+    icons=[Icon(
+        src="https://dan.panafor.com/static/favicon.svg",
+        mime_type="image/svg+xml",
+        sizes=["any"],
+    )],
+    version="0.8.0",
     instructions="Use get_my_access to discover the caller's permitted fields, "
                  "and explain_access to learn why a field is unavailable. "
                  "Never invent access, request secrets or attempt SQL writes. "

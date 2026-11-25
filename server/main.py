@@ -1,6 +1,7 @@
 """FastAPI dashboard, scoped REST API and authenticated MCP Streamable HTTP."""
 from __future__ import annotations
 from contextlib import asynccontextmanager
+import asyncio
 from datetime import date, datetime, timezone
 from typing import Literal
 import hmac
@@ -35,6 +36,7 @@ from .mcp_tools import mcp
 from mcp.server.transport_security import TransportSecuritySettings
 from .oauth_mcp import OAuthConfig, OAuthVerifier
 from .oauth_discovery import VerifiedOAuthDiscovery
+from .workos_standalone import WorkOSBridgeConfig, WorkOSBridgeError, PENDING_COOKIE
 from .security import SESSION_SECONDS, CAPABILITIES, ROLE_GRANTS, permissions, has_capability, is_rate_limited, record_failure
 from .auth_store import create_auth_store
 
@@ -52,6 +54,10 @@ oauth_verifier = OAuthVerifier(oauth_config) if oauth_config.mode == 'oauth' els
 COOKIE_SECURE = os.getenv('PANADAN_COOKIE_SECURE', 'true').lower() == 'true'
 COOKIE_NAME = 'panadan_session'
 PUBLIC_ORIGIN = read_public_origin(cookie_secure=COOKIE_SECURE)
+workos_bridge = WorkOSBridgeConfig.from_env(
+    os.environ, oauth_mode=oauth_config.mode, oauth_issuer=oauth_config.issuer,
+    public_origin=PUBLIC_ORIGIN,
+)
 templates = Jinja2Templates(directory='templates')
 templates.env.filters['date_time'] = lambda value: datetime.fromtimestamp(value, timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if value else '—'
 # Date/time are separate isolated runs in RTL templates (clock on the right).
@@ -299,10 +305,68 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     store.clear_login_failures(username)
     raw, _ = store.create_session(uid)
     audit_auth_event(uid,'POST /login:success',200)
-    response = RedirectResponse('/dashboard', status_code=303)
+    pending_workos = workos_bridge.read_pending(request.cookies.get(PENDING_COOKIE))
+    response = RedirectResponse('/oauth/workos/continue' if pending_workos
+                                else '/dashboard', status_code=303)
     response.set_cookie(COOKIE_NAME, raw, max_age=SESSION_SECONDS, httponly=True,
                         secure=COOKIE_SECURE, samesite='lax')
     response.delete_cookie('panadan_login_nonce')
+    return response
+
+
+@app.get('/oauth/workos/login', include_in_schema=False)
+def workos_existing_login(request: Request, external_auth_id: str = Query(...)):
+    """WorkOS delegates only login to Panadan's existing session system."""
+    if not workos_bridge.enabled:
+        raise HTTPException(404)
+    try:
+        pending = workos_bridge.issue_pending(external_auth_id)
+    except WorkOSBridgeError as exc:
+        raise HTTPException(400, str(exc)) from None
+    target = '/oauth/workos/continue' if logged_in(request) else '/login'
+    response = RedirectResponse(target, status_code=303)
+    response.set_cookie(PENDING_COOKIE, pending, httponly=True,
+                        secure=COOKIE_SECURE, samesite='lax', max_age=600)
+    return response
+
+
+@app.get('/oauth/workos/continue', include_in_schema=False)
+async def workos_existing_login_complete(request: Request):
+    """Complete ONLY after Panadan session auth and verified email attestation."""
+    if not workos_bridge.enabled:
+        raise HTTPException(404)
+    session = logged_in(request)
+    if not session:
+        return RedirectResponse('/login', status_code=303)
+    pending = workos_bridge.read_pending(request.cookies.get(PENDING_COOKIE))
+    if not pending:
+        raise HTTPException(400, 'WorkOS authorization expired; restart connection')
+    uid = session['user_id']
+    if not hasattr(store, 'workos_verified_email'):
+        raise HTTPException(503, 'External-auth contact store unavailable')
+    email = store.workos_verified_email(uid)
+    if not email:
+        raise HTTPException(403, 'No administrator-verified email for this Panadan account')
+    subject = workos_bridge.external_subject(uid)
+    actor = store.actor_for_oauth(workos_bridge.issuer, subject)
+    if actor is None:
+        try:
+            store.bind_oauth_identity(workos_bridge.issuer, subject, uid)
+        except (ValueError, __import__('sqlite3').IntegrityError):
+            raise HTTPException(409, 'OAuth subject binding needs administrator review') from None
+    elif actor != uid:
+        raise HTTPException(403, 'OAuth subject linked to another Panadan account')
+    if not store.oauth_identity_has_mcp_access(workos_bridge.issuer, subject):
+        raise HTTPException(403, 'Current Panadan role does not permit MCP access')
+    try:
+        target = await asyncio.to_thread(
+            workos_bridge.complete, pending, user_id=uid, email=email)
+    except WorkOSBridgeError:
+        audit_auth_event(uid, 'WorkOS authorization completion failed', 502)
+        raise HTTPException(502, 'WorkOS could not complete authorization') from None
+    audit_auth_event(uid, 'WorkOS authorization complete', 200)
+    response = RedirectResponse(target, status_code=303)
+    response.delete_cookie(PENDING_COOKIE)
     return response
 
 
@@ -774,6 +838,8 @@ def my_connected_ai_apps(request: Request, session: dict = Depends(current_sessi
             'mcp:use','calls:read','metrics:read','calls:transcript:read'}),
         'field_catalog': field_catalog(),
         'client_grants': client_rows,
+        'pending_clients': (store.list_pending_mcp_clients(session['user_id'])
+                            if hasattr(store, 'list_pending_mcp_clients') else []),
         'can_manage': 'users:manage' in access['capabilities'],
         'oauth_mode': oauth_config.mode,
     }, headers={'Cache-Control':'no-store'})
@@ -918,7 +984,45 @@ def oauth_admin_page(request: Request, session: dict = Depends(current_session))
         'oauth': oauth_config,
         'users': store.list_users(),
         'bindings': store.list_oauth_identities(oauth_config.issuer) if oauth_config.mode == 'oauth' else [],
+        'workos_enabled': workos_bridge.enabled,
+        'verified_emails': (store.list_workos_verified_emails()
+                            if workos_bridge.enabled and hasattr(store, 'list_workos_verified_emails')
+                            else []),
     }, headers={'Cache-Control': 'no-store'})
+
+
+@app.post('/dashboard/oauth/verified-email', include_in_schema=False)
+def workos_admin_attest_email(request: Request, user_id: int = Form(...),
+                              email: str = Form(...), evidence_ref: str = Form(...),
+                              confirmed: bool = Form(False), csrf: str = Form(...),
+                              session: dict = Depends(current_session)):
+    csrf_check(request, csrf, session)
+    admin_only(session)
+    if not workos_bridge.enabled:
+        raise HTTPException(404)
+    if not confirmed:
+        raise HTTPException(400, 'Independent email ownership verification required')
+    try:
+        store.attest_workos_email(user_id, email,
+                                  attested_by=session['user_id'],
+                                  evidence_ref=evidence_ref)
+    except (ValueError, __import__('sqlite3').IntegrityError):
+        raise HTTPException(400, 'Invalid, unverified, or duplicate email') from None
+    audit_auth_event(session['user_id'], 'WorkOS verified contact attested', 200)
+    return RedirectResponse('/dashboard/oauth', status_code=303)
+
+
+@app.post('/dashboard/oauth/verified-email/revoke', include_in_schema=False)
+def workos_admin_revoke_email(request: Request, user_id: int = Form(...),
+                              csrf: str = Form(...),
+                              session: dict = Depends(current_session)):
+    csrf_check(request, csrf, session)
+    admin_only(session)
+    if not workos_bridge.enabled:
+        raise HTTPException(404)
+    store.revoke_workos_email(user_id)
+    audit_auth_event(session['user_id'], 'WorkOS verified contact revoked', 200)
+    return RedirectResponse('/dashboard/oauth', status_code=303)
 
 
 @app.post('/dashboard/oauth/link', include_in_schema=False)
@@ -988,6 +1092,13 @@ class MCPBearerGate:
                              oauth_config.issuer, details['subject']))
             if valid:
                 actor = store.actor_for_oauth(oauth_config.issuer, details['subject'])
+                # A client ID in a verified JWT can be shown as pending;
+                # never automatically grant report capabilities or fields.
+                if actor is not None and hasattr(store, 'note_signed_mcp_client'):
+                    try:
+                        store.note_signed_mcp_client(actor, details['client_id'])
+                    except Exception:
+                        pass
         else:
             valid = store.verify_token(raw, 'mcp:read')
             if valid: actor=store.actor_for_token(raw, 'mcp:read')

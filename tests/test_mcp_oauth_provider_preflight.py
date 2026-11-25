@@ -116,3 +116,49 @@ def test_issuer_cli_does_not_check_production_resource(monkeypatch, capsys):
     monkeypatch.setattr("sys.argv", ["check_mcp_oauth.py", "--issuer", ISSUER])
     assert check.main() == 0
     assert "PASS" in capsys.readouterr().out
+
+
+def test_preregistered_custom_scope_can_be_preflighted_only_with_explicit_optin(monkeypatch, capsys):
+    # WorkOS-style: this *specific* public app has the permission assigned,
+    # but the general issuer metadata advertises only standard OIDC scopes.
+    doc = {
+        **DOC,
+        "client_id_metadata_document_supported": False,
+        "scopes_supported": ["openid", "profile", "email", "offline_access"],
+    }
+    stub_fetch(monkeypatch, doc=doc)
+    with pytest.raises(ValueError, match="does not advertise"):
+        check.check_provider(ISSUER)
+    check.check_provider(ISSUER, allow_unadvertised_scope=True)
+    out = capsys.readouterr().out
+    assert "WARNING: Custom scope is absent" in out
+    assert "actual JWT scope are UNVERIFIED" in out
+    assert "pre-registered OAuth client" in out
+    assert "PASS: Public issuer metadata" in out
+
+
+@pytest.mark.parametrize("registration_changes", [
+    {"client_id_metadata_document_supported": True},
+    {"registration_endpoint": ISSUER + "/register"},
+])
+def test_override_never_weakens_cimd_or_dcr_scope_requirements(monkeypatch, registration_changes):
+    doc = {**DOC, "client_id_metadata_document_supported": False,
+           "scopes_supported": ["openid"], **registration_changes}
+    stub_fetch(monkeypatch, doc=doc)
+    with pytest.raises(ValueError, match="does not advertise"):
+        check.check_provider(ISSUER, allow_unadvertised_scope=True)
+
+
+def test_optin_rejects_malformed_scope_metadata(monkeypatch):
+    doc = {**DOC, "client_id_metadata_document_supported": False,
+           "scopes_supported": "openid"}
+    stub_fetch(monkeypatch, doc=doc)
+    with pytest.raises(ValueError, match="invalid scopes_supported"):
+        check.check_provider(ISSUER, allow_unadvertised_scope=True)
+
+
+def test_optin_requires_provider_only_mode(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["check_mcp_oauth.py", "--allow-unadvertised-scope"])
+    monkeypatch.setattr(check, "request", lambda _: pytest.fail("must not fetch any URL"))
+    assert check.main() == 1
+    assert "requires --issuer" in capsys.readouterr().out

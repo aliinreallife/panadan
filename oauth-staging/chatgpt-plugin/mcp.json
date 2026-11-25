@@ -1,0 +1,30 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "panadan-synthetic": {
+      "type": "streamable-http",
+      "url": "https://panadan-mcp-oauth-staging-git-feat-pan-f67052-ali121sniper-3106.vercel.app/mcp/",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "provided",
+              "clientId": "client_01M8165V9W1G296975A3X3CACM",
+              "tokenEndpointAuthMethod": "none"
+            },
+            "authorizationServerBase": "https://artistic-environment-06-staging.authkit.app",
+            "authorizationUrl": "https://artistic-environment-06-staging.authkit.app/oauth2/authorize",
+            "tokenUrl": "https://artistic-environment-06-staging.authkit.app/oauth2/token",
+            "resource": "https://panadan-mcp-oauth-staging-git-feat-pan-f67052-ali121sniper-3106.vercel.app/mcp/",
+            "baseScopes": [
+              "panadan:mcp:read"
+            ],
+            "defaultScopes": [],
+            "oidcEnabled": false
+          }
+        }
+      }
+    }
+  }
+}
