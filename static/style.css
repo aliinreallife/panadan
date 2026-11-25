@@ -1554,3 +1554,5 @@ doran-datepicker::part(dialog){
 .conversation-paged-content>p{font-size:13px;line-height:1.8;margin:0}
 .conversation-paged-content>.load-transcript{justify-self:start}
 @media(max-width:700px){.access-content .access-category-grid,.access-content .access-field-grid{grid-template-columns:1fr}.permission-tooltip{max-width:65vw}}
+
+.native-permission-chips>.native-permission-item{display:flex;align-items:center;gap:6px;position:relative}.native-permission-item .permission-help{margin:0;width:22px;height:22px;flex-basis:22px;font-size:11px}.native-permission-item:focus-within,.native-permission-item:hover{z-index:3}
