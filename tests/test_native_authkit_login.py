@@ -160,11 +160,35 @@ def test_cookie_signature_and_server_side_expiry(monkeypatch):
         c.verifier_for(cookie, state)
 
 
-def test_native_http_login_and_logout_without_real_provider(tmp_path, monkeypatch):
-    import importlib
+def test_native_http_login_and_logout_without_real_provider(tmp_path):
+    # Importing/reloading server.main changes its process-wide app, MCP
+    # transport and store. Run this HTTP regression in a fresh process so
+    # neither setup nor teardown can initialize /data or leak state into
+    # unrelated tests. The child inherits no Panadan/WorkOS configuration.
+    import os
+    from pathlib import Path
+    import subprocess
+    import sys
+
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(("PANADAN_", "WORKOS_"))}
+    script = (
+        "import runpy, sys, pytest; from pathlib import Path; "
+        "ns = runpy.run_path(sys.argv[1]); "
+        "mp = pytest.MonkeyPatch(); "
+        "ns['_exercise_native_http_login'](Path(sys.argv[2]), mp)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(Path(__file__).resolve()), str(tmp_path)],
+        cwd=Path(__file__).resolve().parents[1], env=env,
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _exercise_native_http_login(tmp_path, monkeypatch):
     from contextlib import asynccontextmanager
     from fastapi.testclient import TestClient
-    import server.main as main
 
     with monkeypatch.context() as mp:
         settings = {
@@ -187,7 +211,7 @@ def test_native_http_login_and_logout_without_real_provider(tmp_path, monkeypatc
         }
         for k, v in settings.items():
             mp.setenv(k, v)
-        main = importlib.reload(main)
+        import server.main as main
         main.store.bootstrap("admin", "synthetic-long-password")
         old, _ = main.store.create_session(1)
         main.store.prepare_authkit_admin(1, ISSUER, SUBJECT)
@@ -250,4 +274,3 @@ def test_native_http_login_and_logout_without_real_provider(tmp_path, monkeypatc
             assert out.status_code == 303
             assert main.store.session(raw, auth_source="authkit") is None
             assert client.get("/dashboard/oauth").status_code == 401
-    importlib.reload(main)
