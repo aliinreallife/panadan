@@ -1556,3 +1556,24 @@ doran-datepicker::part(dialog){
 @media(max-width:700px){.access-content .access-category-grid,.access-content .access-field-grid{grid-template-columns:1fr}.permission-tooltip{max-width:65vw}}
 
 .native-permission-chips>.native-permission-item{display:flex;align-items:center;gap:6px;position:relative}.native-permission-item .permission-help{margin:0;width:22px;height:22px;flex-basis:22px;font-size:11px}.native-permission-item:focus-within,.native-permission-item:hover{z-index:3}
+
+/* Consent details: useful explanations without a wall of text. */
+.mcp-privacy-intro{display:flex;align-items:flex-start;gap:12px;background:#f4f9f6;border:1px solid #dce8e2;border-radius:10px;padding:12px 14px;color:#294b3d}
+.mcp-privacy-intro svg{flex-shrink:0;margin-top:2px;color:#177760}
+.mcp-privacy-intro strong{font-size:14px;font-weight:700}
+.mcp-privacy-intro p{font-size:12px;line-height:1.8;margin:3px 0 0;color:#52695e}
+.mcp-selection-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 0 10px;font-size:12px;color:#52695e}
+.mcp-selection-tools[hidden]{display:none}
+.mcp-selection-tools>div{display:flex;gap:12px;flex-wrap:wrap}
+.mcp-selection-tools button{font-size:12px;color:#176d55;padding:4px 0}
+.mcp-selection-tools button:disabled{opacity:.45;cursor:not-allowed}
+.mcp-apps-content .mcp-capability-list,.mcp-apps-content .mcp-field-list{overflow:visible}
+.mcp-permission-wrap{display:flex;align-items:center;gap:4px;min-width:0;position:relative;border-bottom:1px solid #e4ece7}
+.mcp-field-list .mcp-permission-wrap:nth-child(odd){border-inline-end:1px solid #e4ece7}
+.mcp-permission-wrap:last-child,.mcp-field-list .mcp-permission-wrap:nth-last-child(2):nth-child(odd){border-bottom:0}
+.mcp-apps-content .mcp-permission-wrap>.mcp-permission-option{flex:1;border:0!important;background:transparent}
+.mcp-permission-wrap:focus-within,.mcp-permission-wrap:hover{z-index:3}
+.mcp-permission-wrap:has(.access-field-disabled){background:#f6f7f6}
+.mcp-apps-content .mcp-client-card{overflow:visible}
+.mcp-apps-content .mcp-client-summary{border-radius:12px}
+@media(max-width:700px){.mcp-field-list .mcp-permission-wrap:nth-child(odd){border-inline-end:0}.mcp-field-list .mcp-permission-wrap:nth-last-child(2):nth-child(odd){border-bottom:1px solid #e4ece7}.mcp-field-list .mcp-permission-wrap:last-child{border-bottom:0}}
