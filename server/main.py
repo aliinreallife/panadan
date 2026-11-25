@@ -37,6 +37,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from .oauth_mcp import OAuthConfig, OAuthVerifier
 from .oauth_discovery import VerifiedOAuthDiscovery
 from .workos_standalone import WorkOSBridgeConfig, WorkOSBridgeError, PENDING_COOKIE
+from .authkit_login import AuthKitConfig, AuthKitError, FLOW_COOKIE
 from .security import SESSION_SECONDS, CAPABILITIES, ROLE_GRANTS, permissions, has_capability, is_rate_limited, record_failure
 from .auth_store import create_auth_store
 
@@ -58,6 +59,12 @@ workos_bridge = WorkOSBridgeConfig.from_env(
     os.environ, oauth_mode=oauth_config.mode, oauth_issuer=oauth_config.issuer,
     public_origin=PUBLIC_ORIGIN,
 )
+authkit_login = AuthKitConfig.from_env(
+    os.environ, origin=PUBLIC_ORIGIN, secure=COOKIE_SECURE,
+    oauth_mode=oauth_config.mode, standalone=workos_bridge.enabled,
+)
+if authkit_login.enabled:
+    COOKIE_NAME = '__Host-panadan_authkit_session'
 templates = Jinja2Templates(directory='templates')
 templates.env.filters['date_time'] = lambda value: datetime.fromtimestamp(value, timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if value else '—'
 # Date/time are separate isolated runs in RTL templates (clock on the right).
@@ -70,6 +77,9 @@ templates.env.filters['date_time_iso'] = lambda value: datetime.fromtimestamp(va
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store.bootstrap(os.getenv('PANADAN_ADMIN_USER', 'admin'), os.getenv('PANADAN_ADMIN_PASSWORD'))
+    if authkit_login.enabled:
+        store.prepare_authkit_admin(authkit_login.admin_uid, oauth_config.issuer,
+                                    authkit_login.admin_subject)
     async with mcp.session_manager.run():
         yield
 
@@ -88,7 +98,7 @@ async def audit_http_activity(request: Request, call_next):
     start = time.monotonic()
     user_id = None
     if path.startswith('/dashboard'):
-        session = store.session(request.cookies.get(COOKIE_NAME))
+        session = browser_session(request)
         user_id = session['user_id'] if session else None
         surface = 'dashboard'
     else:
@@ -143,8 +153,18 @@ async def audit_http_activity(request: Request, call_next):
 
 
 
+def browser_session(request: Request):
+    raw = request.cookies.get(COOKIE_NAME)
+    if not authkit_login.enabled:
+        return store.session(raw)
+    session = store.session(raw, auth_source='authkit')
+    if session and session['user_id'] == authkit_login.admin_uid and session['role'] == 'admin':
+        return session
+    return None
+
+
 def current_session(request: Request) -> dict:
-    session = store.session(request.cookies.get(COOKIE_NAME))
+    session = browser_session(request)
     if not session: raise HTTPException(status_code=401, detail='Login required')
     return session
 
@@ -277,7 +297,7 @@ def root(request: Request):
 def login(request: Request):
     if logged_in(request): return RedirectResponse('/dashboard', status_code=303)
     nonce = secrets.token_urlsafe(24)
-    response = templates.TemplateResponse(request, 'login.html', {'nonce':nonce, 'error':False})
+    response = templates.TemplateResponse(request, 'login.html', {'nonce':nonce, 'error':False, 'authkit':authkit_login.enabled}, headers={'Cache-Control':'no-store'})
     response.set_cookie('panadan_login_nonce', nonce, httponly=True, secure=COOKIE_SECURE,
                         samesite='lax', max_age=600)
     return response
@@ -285,6 +305,8 @@ def login(request: Request):
 
 @app.post('/login', include_in_schema=False)
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...), nonce: str = Form(...)):
+    if authkit_login.enabled:
+        raise HTTPException(403, 'Local password login disabled')
     cookie_nonce = request.cookies.get('panadan_login_nonce', '')
     if not cookie_nonce or not hmac.compare_digest(nonce, cookie_nonce) or (
         not valid_form_origin(request, PUBLIC_ORIGIN)):
@@ -311,6 +333,45 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     response.set_cookie(COOKIE_NAME, raw, max_age=SESSION_SECONDS, httponly=True,
                         secure=COOKIE_SECURE, samesite='lax')
     response.delete_cookie('panadan_login_nonce')
+    return response
+
+
+@app.get('/auth/workos/start', include_in_schema=False)
+def authkit_start(request: Request):
+    if not authkit_login.enabled:
+        raise HTTPException(404)
+    target, flow = authkit_login.begin()
+    response = RedirectResponse(target, status_code=303,
+                                headers={'Cache-Control':'no-store', 'Referrer-Policy':'no-referrer'})
+    response.set_cookie(FLOW_COOKIE, flow, max_age=600, httponly=True,
+                        secure=True, samesite='lax', path='/')
+    return response
+
+
+@app.get('/auth/workos/callback', include_in_schema=False)
+async def authkit_callback(request: Request):
+    if not authkit_login.enabled:
+        raise HTTPException(404)
+    try:
+        verifier = authkit_login.verifier_for(request.cookies.get(FLOW_COOKIE),
+                                              request.query_params.get('state'))
+        await asyncio.to_thread(authkit_login.exchange,
+                                request.query_params.get('code', ''), verifier)
+        access = store.user_access(authkit_login.admin_uid)
+        if not access or not {'users:manage', 'mcp:use'} <= access['capabilities']:
+            raise AuthKitError('Administrator disabled')
+        raw, _ = store.create_session(authkit_login.admin_uid, auth_source='authkit')
+    except AuthKitError:
+        audit_auth_event(None, 'AuthKit sign-in rejected', 403)
+        response = RedirectResponse('/login?error=1', status_code=303)
+    else:
+        audit_auth_event(authkit_login.admin_uid, 'AuthKit sign-in successful', 200)
+        response = RedirectResponse('/dashboard', status_code=303)
+        response.set_cookie(COOKIE_NAME, raw, max_age=SESSION_SECONDS, httponly=True,
+                            secure=True, samesite='lax', path='/')
+    response.delete_cookie(FLOW_COOKIE, path='/', secure=True, httponly=True, samesite='lax')
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['Referrer-Policy'] = 'no-referrer'
     return response
 
 
@@ -376,7 +437,7 @@ def logout(request: Request, csrf: str = Form(...), session: dict = Depends(curr
     store.logout(request.cookies.get(COOKIE_NAME))
     audit_auth_event(session['user_id'],'POST /logout',200)
     r = RedirectResponse('/login', status_code=303)
-    r.delete_cookie(COOKIE_NAME)
+    r.delete_cookie(COOKIE_NAME, secure=COOKIE_SECURE, httponly=True, samesite='lax')
     return r
 
 
@@ -791,6 +852,8 @@ def add_user(request: Request, username: str = Form(...), password: str = Form(.
              fields_present: bool = Form(False), session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     admin_only(session)
+    if authkit_login.enabled:
+        raise HTTPException(403, 'Only the pinned AuthKit administrator is permitted')
     try: store.create_user(username.strip(),password,role,grants if role != 'admin' else None,
                            fields=fields if fields_present else None)
     except (ValueError, __import__('sqlite3').IntegrityError) as exc:
@@ -805,6 +868,8 @@ def update_user(request: Request, uid: int, role: str = Form(...), csrf: str = F
                 session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     admin_only(session)
+    if authkit_login.enabled:
+        raise HTTPException(403, 'Local user changes disabled in AuthKit mode')
     try: store.update_user(uid,role,grants if role != 'admin' else None,is_active,session['user_id'],
                            fields=fields if fields_present else None)
     except ValueError as exc: raise HTTPException(400,str(exc)) from exc
