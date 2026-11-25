@@ -141,3 +141,113 @@ def test_mcp_native_subject_requires_valid_signature_audience_scope_and_client()
                     {"aud": "https://other.invalid/mcp/"},
                     {"scope": "email"}, {"client_id": None}, {"sid": None}):
         assert verifier.verify_details(token({**base, **changes})) is None
+
+
+def test_cookie_signature_and_server_side_expiry(monkeypatch):
+    c = config()
+    monkeypatch.setattr("server.authkit_login.time.time", lambda: 1000)
+    url, cookie = c.begin()
+    state = parse_qs(urlsplit(url).query)["state"][0]
+    assert c.verifier_for(cookie, state)
+    parts = cookie.split(".")
+    parts[1] = ("a" if parts[1][0] != "a" else "b") + parts[1][1:]
+    with pytest.raises(AuthKitError):
+        c.verifier_for(".".join(parts), state)
+    with pytest.raises(AuthKitError):
+        config(WORKOS_API_KEY="sk_test_different_key").verifier_for(cookie, state)
+    monkeypatch.setattr("server.authkit_login.time.time", lambda: 1601)
+    with pytest.raises(AuthKitError):
+        c.verifier_for(cookie, state)
+
+
+def test_native_http_login_and_logout_without_real_provider(tmp_path, monkeypatch):
+    import importlib
+    from contextlib import asynccontextmanager
+    from fastapi.testclient import TestClient
+    import server.main as main
+
+    with monkeypatch.context() as mp:
+        settings = {
+            "PANADAN_AUTH_DB": str(tmp_path / "native.sqlite"),
+            "PANADAN_AUTH_BACKEND": "sqlite",
+            "PANADAN_PUBLIC_ORIGIN": "https://panadan.invalid",
+            "PANADAN_COOKIE_SECURE": "true",
+            "PANADAN_MCP_AUTH_MODE": "oauth",
+            "PANADAN_OAUTH_ISSUER": ISSUER,
+            "PANADAN_OAUTH_JWKS_URL": ISSUER + "/oauth2/jwks",
+            "PANADAN_OAUTH_RESOURCE": RESOURCE,
+            "PANADAN_OAUTH_SCOPE": "openid",
+            "PANADAN_WORKOS_STANDALONE_ENABLED": "false",
+            "PANADAN_WEB_AUTH_MODE": "authkit",
+            "WORKOS_CLIENT_ID": "client_synthetic123",
+            "WORKOS_API_KEY": "sk_test_synthetic_not_real",
+            "PANADAN_AUTHKIT_ADMIN_EMAIL": EMAIL,
+            "PANADAN_AUTHKIT_ADMIN_SUBJECT": SUBJECT,
+            "PANADAN_AUTHKIT_ADMIN_UID": "1",
+        }
+        for k, v in settings.items():
+            mp.setenv(k, v)
+        main = importlib.reload(main)
+        main.store.bootstrap("admin", "synthetic-long-password")
+        old, _ = main.store.create_session(1)
+        main.store.prepare_authkit_admin(1, ISSUER, SUBJECT)
+        exchanged = []
+
+        def exchange(self, code, verifier):
+            exchanged.append(code)
+            if code != "valid-test-code":
+                raise AuthKitError("Provider rejected")
+
+        mp.setattr(AuthKitConfig, "exchange", exchange)
+
+        @asynccontextmanager
+        async def isolated(_app):
+            yield
+
+        main.app.router.lifespan_context = isolated
+        with TestClient(main.app, base_url="https://panadan.invalid") as client:
+            client.cookies.set("panadan_session", old)
+            assert client.get("/dashboard/oauth").status_code == 401
+            login = client.get("/login")
+            assert login.status_code == 200
+            assert "/auth/workos/start" in login.text
+            assert 'name="password"' not in login.text
+            assert client.post("/login", data={"username": "admin",
+                "password": "synthetic-long-password", "nonce": "bad"}).status_code == 403
+            assert client.get("/oauth/workos/login?external_auth_id=synthetic_test_123456789").status_code == 404
+
+            def start():
+                response = client.get("/auth/workos/start", follow_redirects=False)
+                assert response.status_code == 303
+                assert "secure" in response.headers["set-cookie"].lower()
+                assert "httponly" in response.headers["set-cookie"].lower()
+                return parse_qs(urlsplit(response.headers["location"]).query)["state"][0]
+
+            state = start()
+            failed = client.get("/auth/workos/callback", params={"code": "valid-test-code",
+                               "state": "wrong"}, follow_redirects=False)
+            assert failed.headers["location"] == "/login?error=1"
+            assert not exchanged
+            state = start()
+            failed = client.get("/auth/workos/callback", params={"code": "denied",
+                               "state": state}, follow_redirects=False)
+            assert failed.headers["location"] == "/login?error=1"
+            assert client.get("/dashboard/oauth").status_code == 401
+            state = start()
+            ok = client.get("/auth/workos/callback", params={"code": "valid-test-code",
+                            "state": state}, follow_redirects=False)
+            assert ok.headers["location"] == "/dashboard"
+            raw = client.cookies.get(main.COOKIE_NAME)
+            assert raw and main.store.session(raw) is None
+            session = main.store.session(raw, auth_source="authkit")
+            assert session["user_id"] == 1
+            assert client.get("/dashboard/oauth").status_code == 200
+            assert client.get("/api/v1/calls").status_code == 401
+            assert client.get("/mcp/").status_code == 401
+            assert client.post("/logout", data={"csrf": "bad"}).status_code == 403
+            out = client.post("/logout", data={"csrf": session["csrf"]},
+                              follow_redirects=False)
+            assert out.status_code == 303
+            assert main.store.session(raw, auth_source="authkit") is None
+            assert client.get("/dashboard/oauth").status_code == 401
+    importlib.reload(main)
