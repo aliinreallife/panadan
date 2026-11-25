@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feat/panadan-oauth-existing-login-20261121
+      - feat/native-authkit-admin
     paths:
       - '.github/workflows/oauth-candidate-web.yml'
       - 'Dockerfile.web'
@@ -15,6 +16,9 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'web/**'
+      - 'tools/**'
+      - 'tests/**'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -27,7 +31,7 @@ concurrency:
 
 jobs:
   candidate-web:
-    if: github.ref == 'refs/heads/feat/panadan-oauth-existing-login-20261121'
+    if: github.ref == 'refs/heads/feat/panadan-oauth-existing-login-20261121' || github.ref == 'refs/heads/feat/native-authkit-admin'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
