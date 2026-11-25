@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+import re
 import time
 from urllib.parse import urlsplit
 
@@ -149,6 +150,21 @@ class OAuthVerifier:
                 return None
             if payload.get("token_use", "access") != "access":
                 return None
+            # Standard OIDC scope mode is intentionally limited to WorkOS
+            # Standalone Connect USER access tokens. An OIDC scope alone
+            # is not permission to read reports. The exact MCP audience,
+            # signed consent, external local subject and client identity
+            # are required in addition to the existing signature/time checks.
+            # Report permissions are still intersected locally per client.
+            if self.config.scope == "openid":
+                if (payload.get("aud") != self.config.resource
+                        or re.fullmatch(r"panadan-user-[1-9][0-9]*", sub) is None
+                        or payload.get("sub_profile") == "ai_agent"
+                        or not all(isinstance(payload.get(claim), str)
+                                   and 1 <= len(payload[claim]) <= 256
+                                   for claim in ("sid", "jti", "client_id"))
+                        or not isinstance(raw_scopes, str)):
+                    return None
             # Client identity must be part of the signed JWT. Never use a
             # model argument, display name, header or unverified claim.
             azp, client_id = payload.get("azp"), payload.get("client_id")
