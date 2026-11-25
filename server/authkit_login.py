@@ -11,6 +11,7 @@ import hmac
 import json
 import re
 import secrets
+import time
 from typing import Mapping
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -41,7 +42,7 @@ class AuthKitConfig:
     admin_uid: int = 0
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str], *, origin: str, secure: bool,
+    def from_env(cls, env: Mapping[str, str], *, origin: str | None, secure: bool,
                  oauth_mode: str, standalone: bool) -> "AuthKitConfig":
         mode = env.get("PANADAN_WEB_AUTH_MODE", "local")
         if mode == "local":
@@ -53,7 +54,7 @@ class AuthKitConfig:
         email = env.get("PANADAN_AUTHKIT_ADMIN_EMAIL", "").strip().lower()
         subject = env.get("PANADAN_AUTHKIT_ADMIN_SUBJECT", "")
         uid = env.get("PANADAN_AUTHKIT_ADMIN_UID", "")
-        if (not secure or not origin.startswith("https://") or standalone
+        if (not secure or not isinstance(origin, str) or not origin.startswith("https://") or standalone
                 or oauth_mode != "oauth"
                 or env.get("PANADAN_AUTH_BACKEND", "sqlite") != "sqlite"
                 or not re.fullmatch(r"client_[A-Za-z0-9]+", client)
@@ -78,19 +79,32 @@ class AuthKitConfig:
             "provider": "authkit", "response_type": "code",
             "client_id": self.client_id, "redirect_uri": self.callback,
             "screen_hint": "sign-in", "login_hint": self.admin_email,
+            "prompt": "login",
             "state": state, "code_challenge": challenge,
             "code_challenge_method": "S256",
         })
-        return AUTHORIZE + "?" + query, state + "." + verifier
+        payload = f"{state}.{verifier}.{int(time.time())}"
+        return AUTHORIZE + "?" + query, payload + "." + self._flow_signature(payload)
 
-    @staticmethod
-    def verifier_for(cookie: str | None, state: str | None) -> str:
-        if not cookie or not state or len(cookie) > 160:
+    def _flow_signature(self, payload: str) -> str:
+        return hmac.new(self.api_key.encode("utf-8"),
+                        ("panadan-authkit-flow-v1:" + payload).encode("ascii"),
+                        hashlib.sha256).hexdigest()
+
+    def verifier_for(self, cookie: str | None, state: str | None) -> str:
+        if not cookie or not state or len(cookie) > 220:
             raise AuthKitError("Login expired")
         parts = cookie.split(".")
-        if (len(parts) != 2 or not re.fullmatch(r"[A-Za-z0-9_-]{43}", parts[0])
+        if (len(parts) != 4 or not re.fullmatch(r"[A-Za-z0-9_-]{43}", parts[0])
                 or not re.fullmatch(r"[A-Za-z0-9_-]{64}", parts[1])
-                or not hmac.compare_digest(parts[0], state)):
+                or not re.fullmatch(r"[0-9]{1,12}", parts[2])
+                or not re.fullmatch(r"[a-f0-9]{64}", parts[3])
+                or not re.fullmatch(r"[A-Za-z0-9_-]{43}", state)):
+            raise AuthKitError("Login expired")
+        now = int(time.time())
+        if (int(parts[2]) > now + 5 or now - int(parts[2]) > 600
+                or not hmac.compare_digest(parts[0], state)
+                or not hmac.compare_digest(parts[3], self._flow_signature(".".join(parts[:3])))):
             raise AuthKitError("Login expired")
         return parts[1]
 
