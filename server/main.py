@@ -514,6 +514,7 @@ def dashboard(request: Request):
     return templates.TemplateResponse(request, 'dashboard.html', {
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
+        'transcript_available': {'id','transcription'} <= user_field_access(session),
         'selected_operator':None, 'operator_title':None, 'operator_meta':{},
     })
 
@@ -544,6 +545,7 @@ def operator_profile(request: Request, name: str = Query(...,min_length=1,max_le
     return templates.TemplateResponse(request,'dashboard.html',{
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
+        'transcript_available': {'id','transcription'} <= user_field_access(session),
         'selected_operator':name,'operator_title':operator_display(name),
         'operator_meta':store.operator_assignments().get(name,{'destination':'نامشخص','team':'نامشخص'}),
     },headers={'Cache-Control':'no-store'})
@@ -838,6 +840,7 @@ def users_page(request: Request, session: dict = Depends(current_session)):
             for user in users
         },
         'permission_categories': PERMISSION_CATEGORIES,
+        'native_admin_only': authkit_login.enabled,
         'permission_groups': group_options(),
         'field_catalog': field_catalog(),
         'default_fields': capability_fields(set(ROLE_GRANTS['analyst'])),
