@@ -1520,3 +1520,37 @@ doran-datepicker::part(dialog){
  .mcp-consent-actions button{width:100%}
 }
 @media(prefers-reduced-motion:reduce){.mcp-client-chevron{transition:none}}
+
+/* Account permission editor: readable selections and focused, on-demand help. */
+.permission-create-heading{grid-column:1/-1;color:#18332c;font-size:16px;margin:0 0 4px}
+.access-content .access-category-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.access-content .access-category{padding:12px;border:1px solid #dce8e2;border-radius:10px;min-width:0;overflow:visible}
+.access-content .access-category-name{font-size:14px;font-weight:700}
+.access-content .access-category-help{font-size:12px;color:#60746b;line-height:1.7;margin:4px 0 10px}
+.access-content .access-category-options{display:grid;gap:4px}
+.access-content .permission-option-wrap{display:flex;align-items:center;gap:4px;position:relative;min-width:0;background:#fff;border:1px solid #e1ebe5;border-radius:8px}
+.access-content .permission-option-wrap:focus-within{border-color:#177760;z-index:2}
+.access-content .permission-option-wrap:hover{z-index:3}
+.access-content .permission-option-wrap>label{flex:1;min-width:0;display:flex!important;flex-direction:row;align-items:center;gap:10px;min-height:48px;padding:9px 10px;border:0!important;margin:0;background:transparent;cursor:pointer}
+.access-content .permission-option-wrap input[type=checkbox]{width:18px!important;height:18px!important;min-height:18px!important;max-width:18px;flex:0 0 18px;margin:0;padding:0;accent-color:#167760}
+.access-content .permission-option-wrap strong{font-size:13px;font-weight:650;line-height:1.6}
+.access-content .permission-option-wrap small{font-size:11px;line-height:1.5;color:#60746b;overflow-wrap:anywhere;word-break:normal;text-align:right}
+.permission-help{position:relative;flex:0 0 26px;width:26px;height:26px;margin-inline-end:8px;border-radius:50%;display:grid;place-items:center;color:#60746b;cursor:help;font-size:13px;font-weight:700;border:1px solid #dce8e2}
+.permission-help:hover,.permission-help:focus{background:#eaf4ee;color:#176d55;outline:none}
+.permission-help:focus-visible{outline:2px solid #177760;outline-offset:2px}
+.permission-tooltip{display:none;position:absolute;z-index:20;inset-inline-end:0;top:calc(100% + 6px);width:min(245px,65vw);padding:11px 13px;color:#fff;background:#18332c;border-radius:8px;font-size:12px;font-weight:400;line-height:1.9;text-align:right;box-shadow:0 6px 18px #18332c25}
+.permission-help:hover .permission-tooltip,.permission-help:focus .permission-tooltip,.permission-help:focus-within .permission-tooltip{display:block}
+.access-content .access-field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.permission-field-heading{font-size:13px;font-weight:700;color:#455e53;margin:14px 0 8px}
+.access-content .access-field-option.access-field-disabled{opacity:.55;cursor:not-allowed}
+.native-account-notice{border:1px solid #cce1d4;background:#f5faf7;line-height:1.9}
+.native-account-notice strong{font-size:15px}
+.native-account-notice p{font-size:13px;margin:6px 0 0;color:#52695e}
+.native-account-notice a{color:#176d55;font-weight:700;text-decoration:underline}
+.native-readonly-permissions{padding:18px}
+.native-permission-chips{display:flex;flex-wrap:wrap;gap:7px}
+.native-permission-chips>span{padding:6px 10px;border:1px solid #dce8e2;border-radius:7px;font-size:12px;color:#29473c;background:#f7faf8}
+.conversation-paged-content{padding:12px 0;display:grid;gap:10px}
+.conversation-paged-content>p{font-size:13px;line-height:1.8;margin:0}
+.conversation-paged-content>.load-transcript{justify-self:start}
+@media(max-width:700px){.access-content .access-category-grid,.access-content .access-field-grid{grid-template-columns:1fr}.permission-tooltip{max-width:65vw}}
