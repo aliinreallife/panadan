@@ -65,6 +65,18 @@ authkit_login = AuthKitConfig.from_env(
 )
 if authkit_login.enabled:
     COOKIE_NAME = '__Host-panadan_authkit_session'
+class AuthCallbackAccessLogFilter(logging.Filter):
+    """Keep OAuth codes and state out of the Uvicorn access log."""
+    def filter(self, record):
+        args = record.args
+        if isinstance(args, tuple) and len(args) == 5 and isinstance(args[2], str):
+            path = args[2].split('?', 1)[0]
+            if path in ('/auth/workos/callback', '/oauth/workos/login'):
+                record.args = (*args[:2], path, *args[3:])
+        return True
+
+
+logging.getLogger('uvicorn.access').addFilter(AuthCallbackAccessLogFilter())
 templates = Jinja2Templates(directory='templates')
 templates.env.filters['date_time'] = lambda value: datetime.fromtimestamp(value, timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if value else '—'
 # Date/time are separate isolated runs in RTL templates (clock on the right).
