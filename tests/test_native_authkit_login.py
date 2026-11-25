@@ -266,6 +266,16 @@ def _exercise_native_http_login(tmp_path, monkeypatch):
             session = main.store.session(raw, auth_source="authkit")
             assert session["user_id"] == 1
             assert client.get("/dashboard/oauth").status_code == 200
+            users = client.get("/dashboard/users")
+            assert users.status_code == 200
+            assert "native-account-notice" in users.text
+            assert 'data-access-editor="create"' not in users.text
+            assert 'data-access-editor="edit"' not in users.text
+            assert "permission-tooltip" in users.text
+            assert "transcription" in users.text or "متن مکالمه" in users.text
+            dashboard = client.get("/dashboard")
+            assert dashboard.status_code == 200
+            assert 'id="webmcp-transcript-permission"' in dashboard.text
             assert client.get("/api/v1/calls").status_code == 401
             assert client.get("/mcp/").status_code == 401
             assert client.post("/logout", data={"csrf": "bad"}).status_code == 403
