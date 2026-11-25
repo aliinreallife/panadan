@@ -8,6 +8,7 @@ INGRESS="${PANADAN_INGRESS_DIR:-$ROOT/data/ingress}"
 PLANE="${PANADAN_PLANE_DIR:-$(dirname "$ROOT")/plane-selfhost/plane-app}"
 ORIGIN="https://dan.panafor.com"
 AUTH_NETWORK_READY=0
+ALLOW_WORKOS_OAUTH=0
 
 fail() {
   echo "REFUSED: production safety preflight failed ($1)" >&2
@@ -94,8 +95,12 @@ preflight() {
   if [[ "$AUTH_NETWORK_READY" == 1 ]]; then
     auth_flag=(--auth)
   fi
+  local -a oauth_flag=()
+  if [[ "$ALLOW_WORKOS_OAUTH" == 1 ]]; then
+    oauth_flag=(--allow-workos-oauth)
+  fi
   panadan_compose config --format json 2>/dev/null |
-    python3 "$ROOT/tools/validate_production_compose.py" panadan "${auth_flag[@]}" --explain-safe ||
+    python3 "$ROOT/tools/validate_production_compose.py" panadan "${auth_flag[@]}" "${oauth_flag[@]}" --explain-safe ||
       fail "Panadan production service invariants"
   plane_compose config --format json 2>/dev/null |
     python3 "$ROOT/tools/validate_production_compose.py" plane ||
@@ -195,16 +200,37 @@ verify_plane_recovery_material() {
     fail "Plane intake differs from original or is unavailable"
 }
 
+# A skipped backup is an explicit, truthful risk acknowledgment, never an
+# assertion that a restore was performed. Only web release/recovery accepts it.
+web_release_args() {
+  [[ $# -ge 5 && $# -le 6 && "${2:-}" == "--apply" && "${3:-}" == "--expect-image" ]] ||
+    fail "web release requires --apply --expect-image PINNED_IMAGE and backup acknowledgment"
+  case "$5" in
+    --ack-restored-backup) ;;
+    --ack-no-fresh-backup)
+      echo "WARNING: operator accepted release/recovery without a fresh verified backup" >&2
+      ;;
+    *) fail "choose --ack-restored-backup or --ack-no-fresh-backup" ;;
+  esac
+  if [[ $# -eq 6 ]]; then
+    [[ "$1" == "deploy-web" && "$6" == "--allow-workos-oauth" ]] ||
+      fail "OAuth opt-in is supported only for intentional web deployment; rollback targets legacy"
+    ALLOW_WORKOS_OAUTH=1
+  fi
+}
+
 cmd="${1:-help}"
 case "$cmd" in
-  plan)
-    [[ $# -eq 1 ]] || fail "plan accepts no extra arguments"
+  plan|check)
+    if [[ $# -eq 2 && "$2" == "--allow-workos-oauth" ]]; then
+      ALLOW_WORKOS_OAUTH=1
+    elif [[ $# -ne 1 ]]; then
+      fail "plan/check accepts only optional --allow-workos-oauth"
+    fi
     preflight
-    ;;
-  check)
-    [[ $# -eq 1 ]] || fail "check accepts no extra arguments"
-    preflight
-    check_endpoints
+    if [[ "$cmd" == check ]]; then
+      check_endpoints
+    fi
     ;;
   status)
     [[ $# -eq 1 ]] || fail "status accepts no extra arguments"
@@ -215,8 +241,7 @@ case "$cmd" in
     gateway_compose ps gateway
     ;;
   deploy-web)
-    [[ $# -eq 5 && "${2:-}" == "--apply" && "${3:-}" == "--expect-image" && "${5:-}" == "--ack-restored-backup" ]] ||
-      fail "deploy-web requires --apply --expect-image PINNED_IMAGE --ack-restored-backup"
+    web_release_args "$@"
     preflight
     require_release_image "$4"
     # Baseline must be healthy before modifying the single web service.
@@ -232,8 +257,7 @@ case "$cmd" in
       fail "post-release smoke failed; stop and use reviewed previous image rollback"
     ;;
   rollback-web)
-    [[ $# -eq 5 && "${2:-}" == "--apply" && "${3:-}" == "--expect-image" && "${5:-}" == "--ack-restored-backup" ]] ||
-      fail "rollback-web requires --apply --expect-image PINNED_PREVIOUS_IMAGE --ack-restored-backup"
+    web_release_args "$@"
     preflight
     require_release_image "$4"
     # No Panadan health baseline: this path is specifically for an outage.
@@ -260,7 +284,10 @@ case "$cmd" in
     verify_plane_recovery_material
     ;;
   *)
-    echo "Usage: bash tools/prodctl-production.sh {plan|check|status|deploy-web --apply --expect-image PINNED_IMAGE --ack-restored-backup|rollback-web --apply --expect-image PINNED_PREVIOUS_IMAGE --ack-restored-backup|deploy-proxy --apply --ack-plane-impact}"
+    echo "Usage: bash tools/prodctl-production.sh {plan|check} [--allow-workos-oauth]"
+    echo "       bash tools/prodctl-production.sh deploy-web --apply --expect-image PINNED_IMAGE {--ack-restored-backup|--ack-no-fresh-backup} [--allow-workos-oauth]"
+    echo "       bash tools/prodctl-production.sh rollback-web --apply --expect-image PINNED_PREVIOUS_IMAGE {--ack-restored-backup|--ack-no-fresh-backup}"
+    echo "       bash tools/prodctl-production.sh {status|deploy-proxy --apply --ack-plane-impact}"
     exit 2
     ;;
 esac
