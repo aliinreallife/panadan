@@ -88,10 +88,13 @@ templates.env.filters['date_time_iso'] = lambda value: datetime.fromtimestamp(va
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    store.bootstrap(os.getenv('PANADAN_ADMIN_USER', 'admin'), os.getenv('PANADAN_ADMIN_PASSWORD'))
     if authkit_login.enabled:
+        # Validate the existing admin without relying on legacy password config.
+        # Never bootstrap a new administrator from a provider callback.
         store.prepare_authkit_admin(authkit_login.admin_uid, oauth_config.issuer,
                                     authkit_login.admin_subject)
+    else:
+        store.bootstrap(os.getenv('PANADAN_ADMIN_USER', 'admin'), os.getenv('PANADAN_ADMIN_PASSWORD'))
     async with mcp.session_manager.run():
         yield
 
@@ -382,6 +385,7 @@ async def authkit_callback(request: Request):
         response.set_cookie(COOKIE_NAME, raw, max_age=SESSION_SECONDS, httponly=True,
                             secure=True, samesite='lax', path='/')
     response.delete_cookie(FLOW_COOKIE, path='/', secure=True, httponly=True, samesite='lax')
+    response.delete_cookie('panadan_session', path='/', secure=True, httponly=True, samesite='lax')
     response.headers['Cache-Control'] = 'no-store'
     response.headers['Referrer-Policy'] = 'no-referrer'
     return response
