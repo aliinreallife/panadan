@@ -112,6 +112,10 @@ class Store:
                     token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL,
                     csrf TEXT NOT NULL, expires_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS authkit_sessions (
+                    token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL,
+                    csrf TEXT NOT NULL, expires_at INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS access_tokens (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL,
@@ -127,7 +131,6 @@ class Store:
                 ('access_tokens', 'field_grants', 'TEXT'),
                 ('access_tokens', 'cap_grants', 'TEXT'),
                 ('users', 'is_active', 'INTEGER NOT NULL DEFAULT 1'),
-                ('sessions', 'auth_source', "TEXT NOT NULL DEFAULT 'local'"),
                 ('access_tokens', 'owner_id', 'INTEGER'),
             ]:
                 existing = {r['name'] for r in c.execute(f'PRAGMA table_info({table})')}
@@ -287,23 +290,28 @@ class Store:
         with self.db() as c:
             if auth_source not in ('local', 'authkit'):
                 raise ValueError('Unknown session authentication source')
-            c.execute('INSERT INTO sessions(token_hash,user_id,csrf,expires_at,auth_source) VALUES(?,?,?,?,?)',
-                      (digest(raw), uid, csrf, int(time.time()) + SESSION_SECONDS, auth_source))
+            table = 'authkit_sessions' if auth_source == 'authkit' else 'sessions'
+            c.execute(f'INSERT INTO {table}(token_hash,user_id,csrf,expires_at) VALUES(?,?,?,?)',
+                      (digest(raw), uid, csrf, int(time.time()) + SESSION_SECONDS))
         return raw, csrf
 
     def session(self, raw: str | None, *, auth_source: str = 'local'):
         if not raw: return None
+        if auth_source not in ('local', 'authkit'):
+            return None
+        table = 'authkit_sessions' if auth_source == 'authkit' else 'sessions'
         with self.db() as c:
-            row = c.execute('''SELECT s.user_id,s.csrf,u.username,u.role,u.grants,u.field_grants
-                               FROM sessions s JOIN users u ON u.id=s.user_id
-                               WHERE s.token_hash=? AND s.expires_at>? AND u.is_active=1 AND s.auth_source=?''',
-                            (digest(raw), int(time.time()), auth_source)).fetchone()
+            row = c.execute(f'''SELECT s.user_id,s.csrf,u.username,u.role,u.grants,u.field_grants
+                               FROM {table} s JOIN users u ON u.id=s.user_id
+                               WHERE s.token_hash=? AND s.expires_at>? AND u.is_active=1''',
+                            (digest(raw), int(time.time()))).fetchone()
         return dict(row) if row else None
 
     def logout(self, raw: str | None):
         if raw:
             with self.db() as c:
                 c.execute('DELETE FROM sessions WHERE token_hash=?', (digest(raw),))
+                c.execute('DELETE FROM authkit_sessions WHERE token_hash=?', (digest(raw),))
 
     def prepare_authkit_admin(self, uid: int, issuer: str, subject: str) -> None:
         """Cut over only the pinned local admin, preserving all historical rows.
@@ -480,6 +488,7 @@ class Store:
                       (role, grants, stored_fields, int(active), user_id))
             # A role change or disable must invalidate all outstanding sessions/tokens.
             c.execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
+            c.execute('DELETE FROM authkit_sessions WHERE user_id=?', (user_id,))
             c.execute('DELETE FROM access_tokens WHERE owner_id=?', (user_id,))
             # Reauthorization is required after a role or status update.
             c.execute('DELETE FROM oauth_identities WHERE user_id=?', (user_id,))
