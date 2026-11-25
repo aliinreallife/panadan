@@ -1,2 +1,35 @@
-<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ورود · Panadan</title><link rel="icon" type="image/svg+xml" href="/static/favicon.svg"><link rel="stylesheet" href="/static/vendor/panadan-bundle.css"><link rel="stylesheet" href="/static/style.css"></head>
-<body class="login-page"><main class="login-card"><div class="brand-mark">P</div><h1>ورود به پانادان</h1><p class="muted">گزارش‌های تماس، یک‌جا و امن.</p>{% if authkit %}{% if request.query_params.get('error') %}<p class="error">ورود ناموفق بود. فقط حساب مدیر تأییدشده اجازه ورود دارد.</p>{% endif %}<a href="/auth/workos/start" class="primary">ورود امن با WorkOS</a>{% else %}<form method="post" action="/login" class="stack"><input type="hidden" name="nonce" value="{{ nonce }}"><label>نام کاربری<input name="username" dir="ltr" lang="en" autocapitalize="none" spellcheck="false" required autocomplete="username" autofocus placeholder="admin"></label><label>رمز عبور<input name="password" dir="ltr" lang="en" type="password" required autocomplete="current-password" placeholder="••••••••••••"></label>{% if request.query_params.get('error') %}<p class="error">نام کاربری یا رمز عبور نادرست است.</p>{% endif %}<button type="submit" class="primary">ورود به داشبورد</button></form>{% endif %}<p class="tiny muted">دسترسی به اطلاعات این سامانه ثبت و محدود می‌شود.</p></main></body></html>
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ورود · پانادان</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/vendor/panadan-bundle.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-page">
+{% if authkit %}
+<main class="login-card authkit-login-card">
+  <img class="authkit-login-logo" src="/static/favicon.svg" width="56" height="56" alt="پانادان">
+  <h1>ورود به پانادان</h1>
+  <p class="muted">برای دسترسی به داشبورد، با ایمیل خود وارد شوید.</p>
+  {% if request.query_params.get('error') %}
+  <p class="error" role="alert">ورود انجام نشد. با ایمیل مدیر سامانه دوباره تلاش کنید.</p>
+  {% endif %}
+  <form method="get" action="/auth/workos/start" class="stack">
+    <button type="submit" class="primary authkit-login-button">
+      <span>ادامه با ایمیل</span>
+      <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
+    </button>
+  </form>
+  <p class="authkit-login-note">
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3"/></svg>
+    ورود امن با کد یک‌بارمصرف، بدون نیاز به رمز عبور
+  </p>
+</main>
+{% else %}
+<main class="login-card"><div class="brand-mark">P</div><h1>ورود به پانادان</h1><p class="muted">گزارش‌های تماس، یک‌جا و امن.</p><form method="post" action="/login" class="stack"><input type="hidden" name="nonce" value="{{ nonce }}"><label>نام کاربری<input name="username" dir="ltr" lang="en" autocapitalize="none" spellcheck="false" required autocomplete="username" autofocus placeholder="admin"></label><label>رمز عبور<input name="password" dir="ltr" lang="en" type="password" required autocomplete="current-password" placeholder="••••••••••••"></label>{% if request.query_params.get('error') %}<p class="error">نام کاربری یا رمز عبور نادرست است.</p>{% endif %}<button type="submit" class="primary">ورود به داشبورد</button></form><p class="tiny muted">دسترسی به اطلاعات این سامانه ثبت و محدود می‌شود.</p></main>
+{% endif %}
+</body>
+</html>
