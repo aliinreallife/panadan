@@ -34,6 +34,7 @@ class OAuthConfig:
     scope: str = "panadan:mcp:read"
     max_ttl_seconds: int = 3600
     authkit_admin_subject: str = ''
+    authkit_multi_user: bool = False
 
     @classmethod
     def from_env(cls) -> "OAuthConfig":
@@ -52,6 +53,8 @@ class OAuthConfig:
             max_ttl_seconds=ttl,
             authkit_admin_subject=(os.getenv("PANADAN_AUTHKIT_ADMIN_SUBJECT", "")
                 if os.getenv("PANADAN_WEB_AUTH_MODE") == "authkit" else ""),
+            authkit_multi_user=(os.getenv("PANADAN_WEB_AUTH_MODE") == "authkit"
+                and os.getenv("PANADAN_AUTHKIT_MULTI_USER") == "true"),
         )
         config.validate()
         return config
@@ -73,6 +76,8 @@ class OAuthConfig:
         if self.authkit_admin_subject and (
                 self.scope != "openid" or re.fullmatch(r"user_[A-Za-z0-9]+", self.authkit_admin_subject) is None):
             raise ValueError("Invalid native AuthKit MCP subject")
+        if self.authkit_multi_user and not self.authkit_admin_subject:
+            raise ValueError("Multi-user mode requires native AuthKit")
         if not 60 <= self.max_ttl_seconds <= 3600:
             raise ValueError("OAuth maximum access token TTL must be 60–3600 seconds")
 
@@ -164,7 +169,8 @@ class OAuthVerifier:
             # Report permissions are still intersected locally per client.
             if self.config.scope == "openid":
                 if (payload.get("aud") != self.config.resource
-                        or (sub != self.config.authkit_admin_subject if self.config.authkit_admin_subject
+                        or (re.fullmatch(r"user_[A-Za-z0-9]{1,120}", sub) is None if self.config.authkit_multi_user
+                            else sub != self.config.authkit_admin_subject if self.config.authkit_admin_subject
                             else re.fullmatch(r"panadan-user-[1-9][0-9]*", sub) is None)
                         or payload.get("sub_profile") == "ai_agent"
                         or not all(isinstance(payload.get(claim), str)
