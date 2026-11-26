@@ -1,4 +1,7 @@
 # Decisions
+
+> **Knowledge platform evolution:** This document records the original reporting product. For accepted new product direction and MVP constraints, read [Knowledge Platform Decisions](knowledge-platform/DECISIONS.md). Existing safety and operational constraints remain in force; the new direction is not evidence of implementation.
+
 1. Keep remote PostgreSQL as a read-only data source, not an auth database.
 2. Use local SQLite for admin password hash, revocable sessions, and hashed API/MCP tokens.
 3. Bind port to `127.0.0.1` only. External deployment requires TLS and an access-controlled reverse proxy.
