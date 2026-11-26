@@ -254,7 +254,8 @@ def test_audit_actor_consistency_and_metadata_shape(migrated):
 def test_owner_and_deny_by_default_acl(migrated):
     c = migrated
     w = _workspace(c,"synthetic-a")
-    _membership(c,w,_principal(c,"account-a"))
+    p = _principal(c,"account-a")
+    _membership(c,w,p)
     assert c.execute(
         "SELECT rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls "
         "FROM pg_roles WHERE rolname='panadan_knowledge_owner'"
@@ -281,5 +282,5 @@ def test_owner_and_deny_by_default_acl(migrated):
     assert c.execute("SELECT count(*) FROM panadan_knowledge.memberships").fetchone() == (0,)
     _reject(c, errors.InsufficientPrivilege,
             "INSERT INTO panadan_knowledge.memberships(workspace_id,principal_id,state) VALUES (%s,%s,'active')",
-            (w, uuid4()))
+            (w, p))
     c.execute("RESET ROLE")
