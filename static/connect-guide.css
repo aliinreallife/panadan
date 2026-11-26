@@ -1,1 +1,31 @@
 .connect-guide{max-width:1020px;min-width:0}.connect-guide .panel{padding:24px;margin-bottom:16px}.connect-guide h2{font-size:17px;color:#18332c;margin:0;line-height:1.6}.connect-guide p{font-size:13px;line-height:1.9;color:#536c60;margin:7px 0}.guide-copyline{display:flex;align-items:center;gap:14px;background:#f5f9f6;border:1px solid #dce8e2;border-radius:10px;padding:10px 12px;margin-top:14px}.guide-copyline bdi{flex:1;min-width:0;overflow-wrap:anywhere;font:13px ui-monospace,monospace;color:#18332c;text-align:left;user-select:all}.guide-copyline button{white-space:nowrap;min-height:42px}.guide-copy-status:empty{display:none}.guide-jump{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.guide-jump a{flex:1;min-width:95px;padding:11px;border:1px solid #dce8e2;border-radius:9px;background:#fff;text-align:center;font-weight:650}.guide-jump a:hover{background:#eaf4ee}.guide-provider{scroll-margin-top:16px}.guide-provider-head{display:flex;align-items:center;gap:12px;margin-bottom:20px}.guide-provider-head h2{direction:ltr;text-align:right}.guide-provider-head p{margin:2px 0;color:#60746b;font-size:12px}.guide-provider-mark{display:grid;place-items:center;flex:0 0 48px;width:48px;height:48px;background:#e9f3ed;border-radius:12px;color:#18332c;font-size:16px;font-weight:800}.guide-claude{background:#f7ede4;color:#9b4f2b}.guide-gemini{background:#edf1fc;color:#536bb7;font-size:29px}.guide-steps{padding:0;margin:0;list-style:none;counter-reset:guide}.guide-steps li{position:relative;padding:3px 42px 18px 0;counter-increment:guide;border-inline-start:1px solid #dce8e2;margin-inline-start:14px}.guide-steps li::before{content:counter(guide);position:absolute;inset-inline-start:-15px;top:0;width:29px;height:29px;display:grid;place-items:center;border-radius:50%;background:#eaf4ee;border:1px solid #dce8e2;font-size:13px;color:#176d55;font-weight:700}.guide-steps li:last-child{border-color:transparent;padding-bottom:4px}.guide-steps strong{font-size:14px;color:#18332c}.guide-steps p{margin:4px 0 0}.guide-links{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:20px;padding-top:16px;border-top:1px solid #e3ece6}.guide-links a{font-size:13px;color:#176d55}.guide-links .primary{color:#fff;padding:11px 16px;border-radius:9px}.connect-guide .guide-note{padding:10px 12px;background:#f7f5ee;border:1px solid #ebe4d4;border-radius:8px;color:#725b31;margin:10px 0 18px}.guide-faq details{border-top:1px solid #e3ece6;padding:13px 0}.guide-faq details:first-of-type{margin-top:14px}.guide-faq summary{cursor:pointer;font-size:14px;font-weight:600}.guide-steps p a,.guide-faq p a{color:#176d55;text-decoration:underline}.guide-manage{padding:10px 15px;border-radius:9px;white-space:nowrap}@media(max-width:600px){.connect-guide .panel{padding:16px}.guide-copyline{flex-direction:column;align-items:stretch}.guide-copyline bdi{text-align:center}.guide-steps li{padding-inline-start:26px}.guide-provider-head{gap:10px}.guide-links{gap:12px}}
+/* Three selectable assistants; the selected guide is the only open panel. */
+.guide-provider-select{margin:22px 0 14px}
+.connect-guide .guide-provider-select h2{font-size:14px;margin-bottom:10px}
+.guide-jump{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:0}
+.guide-jump a{display:flex;align-items:center;gap:11px;text-align:right;padding:13px;min-width:0;position:relative;transition:background .12s,border-color .12s}
+.guide-jump a>span:nth-child(2){display:grid;gap:4px;min-width:0;flex:1}
+.guide-jump strong{font-size:15px;text-align:right;color:#18332c}
+.guide-jump small{font-size:11px;font-weight:400;color:#60746b;line-height:1.5}
+.guide-jump .guide-provider-mark{width:40px;height:40px;flex:0 0 40px;border-radius:9px}
+.guide-jump .guide-tab-indicator{visibility:hidden;flex-shrink:0;color:#176d55;font-size:15px}
+.guide-jump a[aria-selected=true]{background:#f2f8f4;border-color:#177760;box-shadow:inset 0 0 0 1px #177760}
+.guide-jump a[aria-selected=true] .guide-tab-indicator{visibility:visible}
+.guide-jump a:focus-visible{outline:2px solid #177760;outline-offset:3px}
+.connect-guide .guide-provider[hidden]{display:none!important}
+.guide-form-example{margin:14px 0;max-width:520px}
+.guide-form-example figcaption{font-size:11px;color:#60746b;margin-bottom:7px}
+.guide-form-preview{background:#202020;border:1px solid #3b3b3b;border-radius:14px;padding:18px;color:#eee;text-align:left;font-family:Arial,sans-serif}
+.guide-form-preview h3{font-size:16px;color:#fff;margin:0 0 16px}
+.guide-example-field{display:grid;gap:5px;margin:0 0 13px;font-size:12px}
+.guide-example-field>span{display:flex;justify-content:space-between;align-items:center}
+.guide-example-field>span>small{padding:3px 7px;background:#151515;border-radius:6px;color:#eee}
+.guide-example-field>div{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid #565656;background:#303030;border-radius:6px;min-height:39px}
+.guide-example-field bdi{flex:1;min-width:0;overflow-wrap:anywhere;user-select:all;color:#eee;font-size:12px}
+.guide-example-field button{font-family:inherit;font-size:11px;background:#444;color:#fff;border:1px solid #686868;border-radius:5px;white-space:nowrap;padding:5px 9px;cursor:pointer}
+.guide-example-confirm{display:flex;align-items:center;gap:8px;background:#141414;border-radius:8px;padding:11px;font-size:11px;color:#ddd}
+.guide-example-footer{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:13px;font-size:12px}
+.guide-example-footer strong{padding:7px 12px;border-radius:16px;background:#dedede;color:#161616;font-size:11px}
+.guide-inline-copy{color:#176d55;text-decoration:underline;font-size:12px}
+@media(max-width:650px){.guide-jump{gap:6px}.guide-jump a{padding:11px 4px;flex-direction:column;justify-content:center;gap:6px;text-align:center}.guide-jump strong{text-align:center;font-size:12px}.guide-jump small{font-size:10px;text-align:center}.guide-jump .guide-tab-indicator{position:absolute;top:3px;left:5px;font-size:11px}.guide-form-preview{padding:11px}.guide-example-field>div{gap:5px;padding:8px}}
+@media(prefers-reduced-motion:reduce){.guide-jump a{transition:none}}
