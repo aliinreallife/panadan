@@ -1,0 +1,86 @@
+# Panadan Knowledge Platform — Product and architecture decisions
+
+Status: accepted product direction; implementation and production readiness are NOT implied.
+Baseline: `44561cad16e17b7e60287dc8e0d7a7210fc5d32a` (main); development branch `feature/knowledge-platform`; preserved backup `backup/pre-knowledge-platform-2026-11-25`.
+Decision source: product-owner negotiation, November 2026. This document is the source of truth for the new product direction, not a replacement for existing operational/security documentation.
+
+## Purpose
+
+Evolve the existing read-only reporting product into a reusable organizational knowledge platform. Collect internal/external resources, derive evidence-backed knowledge, and enable practical applications and authorized external access. Reuse existing code and infrastructure; deliver incrementally without breaking existing users. The pilot customer's identity and internal commercial strategy are not part of this public document.
+
+## Accepted decisions
+
+| ID | Decision | Accepted direction |
+| --- | --- | --- |
+| D-001 | Resources | Merge Raw Data and Resource into one product concept. Preserve raw originals, derivatives, provenance and processing history. |
+| D-002 | Product strategy | Infrastructure First, Application Enabled; build a reusable core and selected applications on top. |
+| D-003 | Knowledge validation | Risk-based hybrid validation: automated checks where justified; additional evidence and human review where risk requires it. |
+| D-004 | Knowledge structure | Hybrid Knowledge: independently versioned atomic knowledge units plus collections/documents assembled from them. |
+| D-005 | Storage | Hybrid Storage, minimal MVP: stored, referenced or synchronized resources according to security, need and agreement. |
+| D-006 | Pilot | Start with one designated customer; the latest owner-designated pilot supersedes earlier proposals. Confirm customer-specific needs through deployment discovery. |
+| D-007 | Knowledge authority | Panadan is the authoritative manager of its knowledge lifecycle. One-way sync of authorized, validated knowledge to the customer's database; changes made through Panadan, no bidirectional database editing. |
+| D-008 | Discovery | Hybrid Discovery, goal-driven first; bounded discovery of useful findings outside predefined objectives. |
+| D-009 | Processing | Hybrid Processing: event-driven, scheduled and on-demand; favor scheduled and manual processing initially, event-driven only where justified. |
+| D-010 | Deployment | Assisted Self-service, closer to managed service initially; deployment team handles setup and specialist configuration, customer gains autonomy over time. |
+| D-011 | Knowledge scope | Private and Shared Knowledge, minimal MVP. Private by default; shared knowledge only from permitted sources and under explicit access policies. |
+| D-013 | Knowledge Packages | Support reusable, version-aware knowledge packages in MVP; consumption through authorized interfaces. |
+| D-015 | Applications | Hybrid Applications: shared execution engine, ready-made configurable applications first. No full visual agent/workflow builder for MVP. |
+| D-016 | Authorization | Hybrid Access Control: role templates, customizable permissions, least privilege; server-side enforcement and audit. |
+| D-017 | MVP scope | End-to-End Vertical Slice for the designated pilot: resources to knowledge to real applications, with limited sources and applications. |
+| D-018 | Development approach | Use Case-driven Infrastructure; start from real pilot needs and implement reusable features rather than customer-specific core forks. |
+| D-019 | AI execution | Controlled Agentic Architecture: defined pipelines in core, limited agents in applications; deterministic code/SQL where AI is unnecessary. |
+| D-020 | AI Gateway | Centralized multi-model architecture; initially explicitly configure provider/model per task or pipeline. Defer intelligent routing. |
+| D-021 | Validation method | Evidence-based Knowledge Validation; explicit rules, inspectable evidence, source authority by subject, context, freshness and conflict handling first. |
+| D-022 | Data model | Core Schema + Extensible Attributes: typed, validated extensions and contextual/temporal scope. No advanced schema builder in MVP. |
+| D-023 | Organization architecture | Shared Core + Organization Workspace; configuration over custom code, isolated customer workspaces and reusable modules. |
+
+Decision identifiers preserve the original negotiation numbering; gaps intentionally do not expose internal strategy.
+
+## Target architecture (conceptual, not current implementation)
+
+Sources (call center, CRM, web, authorized messaging, feedback, manual uploads) -> Collection & Integrations -> Resources -> Knowledge Engine -> Knowledge Base.
+Knowledge Objectives and Knowledge Pipelines configure extraction; AI Gateway, authorization, storage and audit are cross-cutting. Resources and Knowledge independently feed Applications, API/MCP and authorized distribution. Panadan sends validated knowledge to customer systems using a separate, explicitly authorized destination integration.
+
+### Resources
+
+One logical resource can have multiple optional representations: e.g. call audio, metadata, transcript and extracted fields. Keep original data intact and track links, source IDs, timestamps, version and processing lineage. Reuse existing processed data when available; absent representations are not fabricated. Store or reference originals per customer policy. Ingestion, resource processing and knowledge production are independent operations. Protect source read-only guarantees; use only authorized source connections.
+
+### Knowledge
+
+Knowledge units retain subject/claim, context and conditions, temporal scope, evidence/source references, validation state, ownership/access policy, versions and history. Collections/packages reference units rather than duplicating uncontrolled claims. Knowledge changes are versioned; superseded versions remain available only according to retention and authorization policies. A proposed lifecycle includes Proposed, Under Review, Active, Disputed, Outdated, Rejected and Archived; exact state machine is pending design. Only appropriately validated and authorized knowledge may be distributed as authoritative. Risk depends on both the claim and its intended use. Do not treat model confidence as evidence reliability or operational risk.
+
+A source is authoritative only for appropriate subjects. Contradictions require matching entity, property, applicable conditions and time; missing context is not a conflict. For example, tour price depends on travel dates, destination, exact hotel/room, traveler count/ages, flight, meals, transfer, inclusions, currency, price basis, inventory and quote validity. Distinct offers may all be correct. Do not fill unknown conditions with guesses. Live quotes and bookings belong in Resources; pricing rules and supported patterns may be Knowledge. Retrieve current facts from authorized resources instead of presenting old claims as current prices.
+
+### Collection and processing
+
+Support API/CRM/database integrations, approved external sources and manual ingestion. Knowledge objectives describe what the organization needs to learn; pipeline configuration selects input scope, schedule, model, validation policy and output. Scheduled/manual execution first; bounded discovery and event processing where useful. Track run status, errors and lineage; avoid reprocessing unchanged inputs when practical. Exact job semantics are pending technical design.
+
+### Applications and AI
+
+Applications can read both Resources and Knowledge under current permissions. Provide ready-made applications and simple organization-specific configuration (objective, allowed data/tools, instructions, model, input/output, execution and destination). Use ordinary code/SQL for deterministic tasks. Agents require explicit tool/data scopes, cost/time/step limits and approval for consequential actions. Do not automatically publish generated content or bypass knowledge review.
+
+Centralize provider access and per-task model selection; track request/run/org/model/provider costs and budgets. Validate structured outputs where required; enforce provider/privacy policies and only permitted fallback. Assess existing AI API infrastructure before duplicating it.
+
+### Security, organization and synchronization
+
+Default deny; isolate organizations; enforce permissions server-side on all retrieval, processing, exports, API/MCP and background jobs. Role templates may be customized only within the grantor's authorized scope. External connections must not exceed current user permissions or their own selected grants; revocation must take effect for subsequent operations. Resource-level and field-level restrictions matter. Derived knowledge inherits source restrictions by default; widening access requires authorized review and appropriate sanitization. No private customer data or derived knowledge is shared across organizations without explicit authorization, even if anonymized. Shared sources also require usage rights.
+
+Keep current source database read-only; knowledge export is a distinct destination with separately authorized credentials and narrow write access. Panadan manages knowledge versions and lifecycle; customer receives an authorized projection. Define sync failure/retry, deletion/revocation and version semantics before implementation. Never introduce general SQL execution or broaden existing sensitive MCP capabilities without explicit security review and approval.
+
+## MVP boundaries and acceptance
+
+Aim for one complete pilot flow: ingest selected sources (call center, selected online and/or manual inputs), view resources, configure objectives/pipelines, extract and validate contextual knowledge, manage units/packages, use authorized API/MCP and one-way sync, and deliver selected practical applications. Candidate applications include customer intelligence and content intelligence; selection is NOT final until discovery. Other proposed applications are not commitments.
+
+Measure ingestion reliability, evidence-backed quality, reuse of knowledge across applications, freshness, access isolation, export correctness, measurable customer benefit and ability to onboard a second customer without rewriting the core. Quantitative targets need pilot validation.
+
+Defer broad connector catalogs, full visual builders, advanced knowledge graphs, full self-service, complex two-way sync, dynamic AI routing and automatic public content publishing.
+
+## Execution and verification
+
+1. Audit baseline code, schemas, migrations, permissions, integrations, UI, tests and deployment documentation. Classify each component Reuse / Extend / Refactor / Build / Remove (removal requires separate approval).
+2. In parallel, deployment discovery: source inventory, data rights/quality, existing workflows, target users, objectives, actual use cases and measurable baseline.
+3. Produce evidence-linked gap analysis, scoped PRD, technical architecture/data model, migration and security/test plans.
+4. Develop incrementally on the feature branch. Preserve existing interfaces, source read-only constraints, production behavior and rollback options.
+5. Verify a complete pilot flow with synthetic or explicitly approved data before deployment; do not deploy or change production without separate authorization.
+
+The initial audit is pending. Do not infer implemented or deployed capabilities from these decisions. See [historical decisions](../DECISIONS.md), [original reporting MVP PRD](../PRD.md), [status](../STATUS.md), [security](../SECURITY.md) and [production operations](../PRODUCTION_OPERATIONS.md). Existing safety/operational rules remain in force until a reviewed migration explicitly supersedes them. Update this document when the product owner approves a changed decision; distinguish accepted decisions from proposals and implementation evidence.
