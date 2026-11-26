@@ -4,12 +4,12 @@
 | --- | --- |
 | Version | 0.1 — Phase 4 review draft |
 | Date | 2026-11-26 |
-| Status | Proposed PRD, awaiting product-owner review |
+| Status | Approved for Phase 5 architecture by product owner, 2026-11-26 |
 | Product direction | Accepted public decisions D-001–D-046 (44 entries; intentional numbering gaps retained) |
 | Evidence snapshot | Branch commit `7dece12c510631575ec2251b96f6ea37177c05f0` |
 | Working branch | `feature/knowledge-platform` |
 | Previous phases | Phase 1 audit and Phase 2 gap analysis completed; Phase 3 pilot discovery approved by product owner |
-| Next phase | Phase 5 architecture, only after PRD approval |
+| Next phase | Phase 5 architecture (authorized; separate design review required) |
 
 ## 1. Purpose and governing documents
 
@@ -333,7 +333,7 @@ Gap mapping: P0 G-001–G-007 are release/activation gates in sections 5–6, 10
 
 ## 18. Handoff and phase exit
 
-Phase 4 output is this review draft. Review scope, requirements, user journeys, proposed screen inventory, objective outputs, non-goals, acceptance and unresolved items against the decision register. Record any owner-approved substantive change using the mandatory decision maintenance protocol. Upon explicit Phase 4 approval, prepare Phase 5 `ARCHITECTURE.md` (system boundaries, component responsibilities, data/control flows, authorization and privacy boundaries, integration contracts, failure/recovery and migration strategy, Mermaid diagrams); then Phase 6 `DATA_MODEL.md` and Phase 7 `ROADMAP.md`, each separately reviewed. Phase 8 implementation proceeds only by approved increments with tests and commits. Detailed schema, endpoint signatures, task/job state machines, technology choices and delivery dates are not settled by this PRD.
+Phase 4 output is this PRD, approved by the product owner on 2026-11-26 for progression to Phase 5. Proposed implementation details and numerical thresholds remain subject to subsequent review as stated above. Record any owner-approved substantive change using the mandatory decision maintenance protocol. Upon explicit Phase 4 approval, prepare Phase 5 `ARCHITECTURE.md` (system boundaries, component responsibilities, data/control flows, authorization and privacy boundaries, integration contracts, failure/recovery and migration strategy, Mermaid diagrams); then Phase 6 `DATA_MODEL.md` and Phase 7 `ROADMAP.md`, each separately reviewed. Phase 8 implementation proceeds only by approved increments with tests and commits. Detailed schema, endpoint signatures, task/job state machines, technology choices and delivery dates are not settled by this PRD.
 
 Work only on the authorized feature branch. Preserve main and backup; do not merge, deploy, change production DB, access live data or incur AI costs without separate authorization. The PRD is a product specification, not implementation evidence.
 
