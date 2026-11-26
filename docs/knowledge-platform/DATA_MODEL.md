@@ -1,7 +1,7 @@
 # Panadan — Data Model
 
-Version: 0.1 | Date: 2026-11-26 | Status: Phase 6 review draft
-Baseline: 6c976e7670ee52688597276b81d536bbd0552dd4; [PRD](PRD.md), [Architecture](ARCHITECTURE.md), [Decisions](DECISIONS.md) D-001–D-056 (54 public entries). Phase 5 AP-01–AP-10 accepted as D-047–D-056.
+Version: 0.1 | Date: 2026-11-26 | Status: Phase 6 approved by product owner; DM-01–DM-09 accepted as D-057–D-065
+Baseline: 6c976e7670ee52688597276b81d536bbd0552dd4; [PRD](PRD.md), [Architecture](ARCHITECTURE.md), [Decisions](DECISIONS.md) D-001–D-056 (54 public entries). Phase 5 AP-01–AP-10 accepted as D-047–D-056. Phase 6 approval and UI direction recorded at 5ef59baf35911a826d81cc7626aad9f3a2265283 (D-057–D-066; 64 public accepted entries).
 
 ## 1. Scope and conventions
 
@@ -374,7 +374,7 @@ No tests or SQL executed by this document. Exact DDL, trigger syntax, migration 
 
 ## 14. Review choices and unresolved activation gates
 
-Proposed data-model choices for approval (not yet new decisions):
+Accepted data-model choices DM-01–DM-09, mapped in order to D-057–D-065. Physical DDL and test evidence remain pending:
 | ID | Choice |
 | --- | --- |
 | DM-01 | Additive panadan_knowledge schema; preserve legacy schemas and identity bridge |
@@ -391,4 +391,4 @@ Open: O-01/02 source ID, time, operator assignment, actual field rights, update/
 
 Traceability: FR-01/19 → sections 2/10; FR-02–05 → 3/9; FR-06–09 → 4–6; FR-10–13 → 5–7; FR-14/15 → 8; FR-16–18 → 7; FR-20 → 9; NFR-01–10 → 9–13. AT-01–12 covered by DM-T01–12 and PRD evaluation. D-047–D-056 realized by independent module boundaries, owned DB, identity bridge, composite/RLS, pre-persistence filtering, durable orchestration, relational evidence, atomic admission, shared query service and outbox. G-001–G-007 remain safety gates; no gap closed by design.
 
-After explicit Phase 6 approval, record accepted material DM choices, then Phase 7 ROADMAP.md with implementation increments, dependencies and acceptance gates. No coding, live access, spending, deployment or source modification is authorized by this review draft.
+Phase 6 and all nine choices were approved on 2026-11-26 and recorded as D-057–D-065. The next authorized phase is Phase 7 ROADMAP.md with implementation increments, dependencies and acceptance gates. No coding, live access, spending, deployment or source modification is authorized by this approval alone.
