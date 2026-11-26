@@ -4,12 +4,12 @@
 | --- | --- |
 | Version | 0.1 — Phase 5 review draft |
 | Date | 2026-11-26 |
-| Status | Proposed architecture; awaiting owner approval |
+| Status | Phase 5 approved by product owner, 2026-11-26; AP-01–AP-10 accepted as D-047–D-056 |
 | Approved product scope | [PRD.md](PRD.md), original draft commit 0ed3baf46534f0ff656bf321eda555d2cf9d1054; phase approval recorded at d5af59d4d41d9257668a6e8126db466176415f28 |
-| Decision register | [DECISIONS.md](DECISIONS.md), D-001–D-046, 44 public accepted entries |
+| Decision register | [DECISIONS.md](DECISIONS.md), D-001–D-056, 54 public accepted entries; approval recorded at b39478abd2ef48a800436e85a919c95ddfe3171e |
 | Evidence | [CURRENT_STATE.md](CURRENT_STATE.md), [GAP_ANALYSIS.md](GAP_ANALYSIS.md), static inspection of code at approved PRD baseline |
 | Branch | feature/knowledge-platform |
-| Next phase | DATA_MODEL.md, after architecture approval |
+| Next phase | DATA_MODEL.md — Phase 6 authorized, separate review required |
 
 ## 1. Intent, assumptions and status
 
@@ -17,7 +17,7 @@ Panadan evolves an existing read-only reporting, REST and MCP service into share
 
 The MVP product and real-data pilot are distinct. The pilot is one designated organization, one authorized call-center operator and the most recent 30 days of eligible history (D-040/044). The platform supports progressive ingestion, manual resources and limited approved web collection, both selected applications, packages, scoped API/MCP and a minimal one-way destination contract. Test unapproved sources/destinations using synthetic fixtures. No automatic scope expansion.
 
-The architecture favors a modular monolith and separate worker processes from the same Python codebase. PostgreSQL is the proposed durable platform state and queue foundation. This is a reviewable technical choice, not an accepted new decision ID. Exact table definitions, SQL indexes, migration numbering, API names, field contracts and final state enums belong to Phase 6 and later design/test reviews. Exact provider, gateway reuse, role assignments, data policy and runtime topology remain conditional.
+The architecture favors a modular monolith and separate worker processes from the same Python codebase. PostgreSQL is the proposed durable platform state and queue foundation. This architectural choice is accepted under D-047/D-048; remaining detailed design choices still require review. Exact table definitions, SQL indexes, migration numbering, API names, field contracts and final state enums belong to Phase 6 and later design/test reviews. Exact provider, gateway reuse, role assignments, data policy and runtime topology remain conditional.
 
 ## 2. Evidence and reuse strategy
 
@@ -53,7 +53,7 @@ No baseline component is marked Remove. Existing data, auth, source access and p
 | AP-09 | Shared authorized query services for Web/API/MCP; separate read-only resource and knowledge contracts | Consistent metrics and permissions without unrestricted SQL or app-specific silos. |
 | AP-10 | Separate outbound sync worker and narrowly authorized destination adapter, with durable outbox | Preserve source read-only and customer-owned originals; protect against replay/out-of-order delivery. |
 
-AP identifiers identify proposed architecture choices, not new canonical decisions. Approval or material revision must be recorded through the decision maintenance protocol. No technical choice supersedes an accepted requirement without owner approval.
+AP-01 through AP-10 have been explicitly approved and map one-to-one to D-047 through D-056 in the canonical decision register. Table wording is preserved as the original design proposal; approval does not settle unresolved implementation contracts. Material revisions require a new decision entry. No technical choice supersedes an accepted requirement without owner approval.
 
 ## 4. System context and trust boundaries
 
@@ -589,6 +589,6 @@ These are blockers for relevant activation or detailed design, not a reason to i
 
 ## 19. Phase exit and next work
 
-Review AP-01–AP-10 and the trust boundaries, data/control flows, logical module responsibilities, identity/authorization bridge, state/failure semantics, gateway budget design and migration approach. Architecture approval is separate from implementation, source access, spending, external disclosure and deployment approval. On explicit approval, record accepted material architecture choices in the decision register and update related guidance, then proceed to Phase 6 DATA_MODEL.md: physical/logical entity relationships, keys, tenant isolation, typed schemas, representation/evidence lineage, state transitions, constraints, indexes, retention, migration and test contracts. Phase 7 ROADMAP.md sequences increments and dependencies. Phase 8 implementation requires separately approved increments, tests and commits.
+The product owner approved Phase 5 and AP-01–AP-10 on 2026-11-26. Review detailed contracts and unresolved activation gates in subsequent phases. Architecture approval is separate from implementation, source access, spending, external disclosure and deployment approval. Accepted architecture choices have been recorded as D-047–D-056. Proceed to Phase 6 DATA_MODEL.md: physical/logical entity relationships, keys, tenant isolation, typed schemas, representation/evidence lineage, state transitions, constraints, indexes, retention, migration and test contracts. Phase 7 ROADMAP.md sequences increments and dependencies. Phase 8 implementation requires separately approved increments, tests and commits.
 
 No application code, production data, credentials, provider requests or deployment are changed by Phase 5. The proposed architecture must not be treated as implemented until verified.
