@@ -5,6 +5,7 @@
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/vendor/panadan-bundle.css">
 <link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/consent-review.css">
 </head>
 <body>
 {% macro client_name(client) %}{{ 'ChatGPT' if client == 'https://chatgpt.com/oauth/client.json' else 'برنامه OAuth' }}{% endmacro %}
@@ -17,48 +18,54 @@
 </summary>
 {% endmacro %}
 {% macro help(text) %}<span class="permission-help" tabindex="0" aria-label="{{text}}"><span aria-hidden="true">؟</span><span class="permission-tooltip" role="tooltip">{{text}}</span></span>{% endmacro %}
-{% macro approval_form(client, current_caps, current_fields, is_new=False, pending=False) %}
-<form class="mcp-consent-form" method="post" action="/dashboard/mcp-apps/approve">
-<input name="csrf" type="hidden" value="{{csrf}}">
-{% if is_new %}
-<label class="mcp-manual-input">شناسه برنامه (Client ID)
-  <input name="client_id" dir="ltr" lang="en" maxlength="160" minlength="1"
-         autocomplete="off" required placeholder="OAuth client_id"></label>
-{% else %}
-<input name="client_id" type="hidden" value="{{client}}">
-{% endif %}
-<div class="mcp-privacy-intro"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></svg><div><strong>دسترسی فقط خواندنی</strong><p>برنامه نمی‌تواند اطلاعات تماس‌ها را تغییر دهد. دسترسی به داده‌ها فقط در محدوده انتخاب شماست.</p></div></div>
-<div class="mcp-consent-toolbar" hidden data-consent-toolbar><div><strong>انتخاب سطح دسترسی</strong><small>دسترسی پیشنهادی شامل تماس‌ها و آمار است، نه متن مکالمه.</small></div><button type="button" class="secondary" data-standard-access>انتخاب دسترسی پایه</button></div>
-<fieldset class="mcp-permission-group">
-<legend>۱. انتخاب قابلیت‌ها</legend>
-<p class="mcp-group-hint">برنامه با چه نوع اطلاعاتی می‌تواند کار کند؟</p>
-<div class="mcp-capability-list">
-{% for cap, label, description in [('calls:read','فهرست تماس‌ها','مشاهده اطلاعات تماس و فیلتر کردن گزارش‌ها'),('metrics:read','آمار و تحلیل','مشاهده شاخص‌ها و آمار تجمیعی'),('calls:transcript:read','متن ویرایش‌شده مکالمات','مشاهده متن با حذف خودکار برخی اطلاعات حساس؛ ممکن است اطلاعات خصوصی همچنان باقی بمانند.')] %}
-{% if cap in capabilities %}
-<div class="mcp-permission-wrap"><label class="mcp-permission-option"><input type="checkbox" name="capabilities" value="{{cap}}"
-              {% if cap in current_caps %}checked{% endif %}>
-  <span class="mcp-permission-copy"><strong>{{label}}{% if cap=='calls:transcript:read' %}<span class="mcp-sensitive-label">حساس</span>{% endif %}</strong><small>{{description}}</small></span></label>{{help(description)}}</div>
-{% endif %}{% endfor %}
-</div></fieldset>
-<details class="mcp-column-disclosure" {% if is_new %}open{% endif %}>
-<summary><span><strong>۲. جزئیات دسترسی</strong><small data-field-summary>انتخاب تک‌تک ستون‌های اطلاعاتی</small></span><svg class="mcp-client-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
-<fieldset class="mcp-permission-group"><legend class="sr-only">ستون‌های قابل مشاهده</legend>
-<p class="mcp-group-hint">فقط اطلاعات موردنیاز این برنامه را انتخاب کنید. ابتدا قابلیت مربوط را فعال کنید.</p>
-<div class="mcp-selection-tools" hidden data-selection-tools><span data-selection-count aria-live="polite"></span><div><button type="button" class="link-button" data-select-eligible>انتخاب موارد مجاز</button><button type="button" class="link-button" data-clear-fields>پاک کردن انتخاب</button></div></div>
-{% set tips={'id':'شناسه یکتای رکورد تماس؛ برای مشاهده جزئیات و متن مکالمه لازم است.','CALLDATE':'تاریخ تماس در سامانه مبدأ.','tellstate':'دسته تماس مانند تماس نخست یا پیگیری.','tellside':'جهت تماس ثبت‌شده در مبدأ.','aicallinfostate':'وضعیت تحلیل و دسته‌بندی تماس.','voice_length':'مدت صوت به ثانیه.','possibility_of_sale_ai':'امتیاز تخمینی فروش، نه فروش قطعی.','deal_value':'ارزش معامله طبق مبدأ؛ واحد و تأیید مالی نیازمند بررسی است.','vw_danix_base_info_users_name':'نام کارشناس مرتبط با تماس.','call_time':'ساعت ثبت‌شده تماس در مبدأ.','transcription':'متن ویرایش‌شده؛ حذف اطلاعات حساس کامل نیست. برای بازیابی متن، شناسه تماس نیز لازم است.'} %}
-<div class="mcp-field-list">
-{% for col in field_catalog if col.id in fields %}
-<div class="mcp-permission-wrap"><label class="mcp-permission-option"><input type="checkbox" name="fields" value="{{col.id}}"
-              {% if col.id in current_fields %}checked{% endif %}>
-  <span class="mcp-permission-copy"><strong>{{col.label}}</strong><small dir="ltr">{{col.id}}</small></span></label>{{help(tips.get(col.id,col.label))}}</div>
-{% endfor %}
-</div></fieldset></details>
-<div class="mcp-consent-actions">
-<p>مجوزها محدود به دسترسی حساب شما هستند و هر زمان می‌توانید آن‌ها را تغییر دهید.</p>
-<div class="mcp-consent-buttons">{% if pending %}<a class="secondary" href="/dashboard">انصراف</a>{% endif %}<button type="submit" class="primary">{{'تأیید دسترسی برنامه' if is_new or pending else 'ذخیره تغییرات'}}</button></div>
-</div>
-</form>
+{% set tips={'id':'شناسه یکتای تماس؛ برای بازیابی متن مکالمه لازم است.','CALLDATE':'تاریخ ثبت‌شده تماس.','tellstate':'نوع تماس در سامانه مبدأ.','tellside':'جهت ورودی یا خروجی تماس.','aicallinfostate':'وضعیت ثبت‌شده تحلیل تماس.','voice_length':'مدت صوت به ثانیه.','possibility_of_sale_ai':'امتیاز تخمینی احتمال فروش، نه فروش قطعی.','deal_value':'ارزش ثبت‌شده معامله؛ واحد و تأیید مالی نیازمند بررسی است.','vw_danix_base_info_users_name':'نام کارشناس مرتبط با تماس.','call_time':'ساعت تماس در سامانه مبدأ.','transcription':'متن ویرایش‌شده؛ حذف اطلاعات حساس کامل نیست.'} %}
+{% macro glyph(kind) %}<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{% if kind=='calls:read' %}<path d="M8 3H5a2 2 0 0 0-2 2c0 9 7 16 16 16a2 2 0 0 0 2-2v-3l-5-2-2 2a13 13 0 0 1-6-6l2-2z"/>{% elif kind=='metrics:read' %}<path d="M4 19V13m8 6V5m8 14V9"/>{% elif kind=='calls:transcript:read' %}<path d="M4 5h16M4 10h16M4 15h16M4 20h10"/>{% else %}<path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/>{% endif %}</svg>{% endmacro %}
+{% macro field_row(col,current_fields,mirror=False) %}
+<div class="consent-field-row" {% if mirror %}hidden data-shared-row{% endif %}><label>
+<input type="checkbox" {% if mirror %}data-shared-field="{{col.id}}" disabled{% else %}name="fields" value="{{col.id}}"{% endif %} {% if col.id in current_fields %}checked{% endif %}>
+<span><strong>{{col.label}}</strong><small>{{tips.get(col.id,col.label)}}</small></span></label>{{help(tips.get(col.id,col.label))}}</div>
 {% endmacro %}
+{% macro approval_form(client, current_caps, current_fields, is_new=False, pending=False) %}
+{% if 'mcp:use' in capabilities %}
+<form class="mcp-consent-form consent-accordion-form" method="post" action="/dashboard/mcp-apps/approve">
+<input name="csrf" type="hidden" value="{{csrf}}">
+{% if is_new %}<label class="mcp-manual-input">شناسه برنامه (Client ID)<input name="client_id" dir="ltr" maxlength="160" required autocomplete="off" placeholder="OAuth client_id"></label>
+{% else %}<input name="client_id" type="hidden" value="{{client}}">{% endif %}
+<p class="consent-limit">{{glyph('shield')}} فقط دسترسی‌های مجاز حساب شما قابل انتخاب هستند.</p>
+{% for cap, label, description in [('calls:read','گزارش تماس‌ها','دسترسی به اطلاعات پایه و جزئیات گزارش تماس‌ها.'),('metrics:read','آمار و تحلیل','دسترسی به شاخص‌ها و آمار تجمیعی تماس‌ها.'),('calls:transcript:read','متن مکالمات','دسترسی به متن ویرایش‌شده مکالمات؛ حذف اطلاعات حساس کامل نیست.')] %}
+<details class="consent-category" data-consent-group="{{cap}}" {% if loop.first %}open{% endif %}>
+<summary><span class="consent-group-icon">{{glyph(cap)}}</span><span class="consent-group-title"><strong>{{label}}</strong><small>{{description}}</small></span><span class="consent-group-count" data-group-count aria-live="polite"></span><svg class="consent-chevron" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+<div class="consent-group-body">
+{% if cap not in capabilities %}<p class="consent-unavailable">این قابلیت در دسترسی حساب شما فعال نیست.</p>
+{% else %}
+<div class="consent-field-row consent-cap-row"><label><input type="checkbox" name="capabilities" value="{{cap}}" {% if cap in current_caps %}checked{% endif %}><span><strong>اجازه استفاده از این قابلیت</strong><small>{{description}}</small></span></label>{{help(description)}}</div>
+{% if cap=='calls:read' %}
+{% for col in field_catalog if col.id in fields and col.id in call_fields %}{{field_row(col,current_fields)}}{% endfor %}
+{% elif cap=='metrics:read' %}
+<p class="consent-shared-note">شاخص‌های قابل محاسبه به ستون‌های انتخابی وابسته‌اند. ستون‌های مشترک با گزارش تماس‌ها، یک مجوز مشترک دارند.</p>
+{% for col in field_catalog if col.id in fields and col.id in metric_fields %}
+{{field_row(col,current_fields,'calls:read' in capabilities and col.id in call_fields)}}
+{% endfor %}
+{% if 'calls:read' in capabilities %}<noscript><p>ستون‌های مشترک را در بخش گزارش تماس‌ها انتخاب کنید.</p></noscript>{% endif %}
+{% else %}
+<p class="consent-shared-note">برای دریافت متن، قابلیت گزارش تماس‌ها و ستون شناسه تماس نیز لازم است. متن ممکن است همچنان شامل اطلاعات خصوصی باشد.</p>
+{% for col in field_catalog if col.id in fields and col.id=='transcription' %}{{field_row(col,current_fields)}}{% else %}<p class="consent-unavailable">ستون متن مکالمه در حساب شما مجاز نیست.</p>{% endfor %}
+{% endif %}
+{% endif %}
+</div></details>
+{% endfor %}
+<p class="consent-form-status" data-consent-status role="status" aria-live="polite"></p>
+<div class="consent-footer"><button type="submit" class="primary">{{'تأیید دسترسی' if pending or is_new else 'ذخیره تغییرات'}} <span aria-hidden="true">←</span></button>{% if pending %}<a class="secondary" href="/dashboard/mcp-apps">انصراف</a>{% endif %}</div>
+{% if pending %}<p class="consent-shared-note">پس از ذخیره، به گفت‌وگوی دستیار خود برگردید. دسترسی‌ها را هر زمان می‌توانید لغو کنید.</p>{% endif %}
+</form>
+{% else %}<p class="consent-unavailable">حساب شما مجوز استفاده از MCP را ندارد.</p>{% endif %}
+{% endmacro %}
+{% if review_client %}
+<main class="consent-review">
+<header class="consent-review-header"><div class="consent-connection"><div class="consent-brand"><img src="/static/favicon.svg" alt="" width="54" height="54"><strong>پانادان</strong></div><span aria-hidden="true">⇄</span><div class="consent-brand"><span class="consent-app-mark" aria-hidden="true">{{'GPT' if review_client.client_id=='https://chatgpt.com/oauth/client.json' else 'AI'}}</span><strong>{{client_name(review_client.client_id)}}</strong></div></div><h1>درخواست دسترسی به پانادان</h1><p>{{client_name(review_client.client_id)}} می‌خواهد با حساب شما به داده‌های زیر دسترسی داشته باشد.</p><bdi class="consent-client-id">{{review_client.client_id}}</bdi></header>
+<div class="consent-review-grid"><section class="consent-review-main">{{approval_form(review_client.client_id, [], [], pending=True)}}</section><aside class="consent-benefits"><div class="consent-illustration" aria-hidden="true"><svg viewBox="0 0 260 190" fill="none"><circle cx="130" cy="95" r="84" fill="#deeee5"/><g transform="rotate(-8 130 95)"><rect x="35" y="48" width="190" height="112" rx="14" fill="white" stroke="#d0e4d9"/><path d="M60 135h140M65 119h8V96h-8zm18 0h8V80h-8zm18 0h8V66h-8z" fill="#7bb8a1" stroke="#7bb8a1" stroke-width="3"/><path d="M128 81h70M128 98h55M128 115h62" stroke="#b9ded0" stroke-width="8" stroke-linecap="round"/></g><circle cx="204" cy="47" r="25" fill="#177760"/><path d="M195 39c0 12 8 20 19 20l4-5-7-4-3 3c-4-2-7-5-9-9l3-3-4-7z" fill="white"/></svg></div><div>{{glyph('calls:transcript:read')}}<span><strong>تحلیل تماس‌ها</strong><small>بررسی اطلاعات و متن مجاز مکالمات</small></span></div><div>{{glyph('metrics:read')}}<span><strong>گزارش‌های دقیق</strong><small>دسترسی به شاخص‌های انتخاب‌شده</small></span></div><div>{{glyph('shield')}}<span><strong>امن و قابل کنترل</strong><small>فقط خواندنی؛ قابل تغییر و لغو</small></span></div></aside></div>
+</main>
+{% else %}
 <div class="shell">
 <aside class="sidebar">
   <a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
@@ -87,7 +94,7 @@
 {% for pending in pending_clients %}
 <details class="mcp-client-card" {% if pending_clients|length == 1 %}open{% endif %}>
 {{client_header(pending.client_id, 'در انتظار تأیید', True)}}
-<div class="mcp-client-body mcp-pending-body"><div class="mcp-pending-identity"><img src="/static/favicon.svg" width="42" height="42" alt="پانادان"><span aria-hidden="true">↔</span><span class="mcp-provider-symbol">{{'GPT' if pending.client_id=='https://chatgpt.com/oauth/client.json' else 'AI'}}</span><div><strong>اتصال {{client_name(pending.client_id)}} به پانادان</strong><small>حساب شما وارد شده است؛ دسترسی‌ها را قبل از تأیید بررسی کنید.</small></div></div>{{approval_form(pending.client_id, [], [], pending=True)}}</div>
+<div class="mcp-client-body"><p class="mcp-section-hint">این برنامه هنوز اجازه مشاهده داده‌های شما را ندارد.</p><a class="primary consent-review-link" href="/dashboard/mcp-apps?review={{pending.client_id|urlencode}}">بررسی و انتخاب دسترسی‌ها</a></div>
 </details>
 {% endfor %}
 </section>
@@ -127,7 +134,8 @@
 </section>
 <p class="source-note">تغییر مجوزهای برنامه‌ها، دسترسی حساب شما را تغییر نمی‌دهد.</p>
 </main></div>
+{% endif %}
 <script src="/static/mcp-apps.js" defer></script>
-<script src="/static/mcp-consent-controls.js" defer></script>
+<script src="/static/consent-accordion.js" defer></script>
 <script src="/static/mobile-nav.js" defer></script>
 </body></html>
