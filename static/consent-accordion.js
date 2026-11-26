@@ -7,6 +7,7 @@ for(const form of document.querySelectorAll('.consent-accordion-form')){
  const groups=[...form.querySelectorAll('[data-consent-group]')];
  const mirrors=[...form.querySelectorAll('[data-shared-field]')];
  const status=form.querySelector('[data-consent-status]');
+ const raw=form.querySelector('input[name="raw_transcript"]');
  const fmt=new Intl.NumberFormat('fa-IR');
  const call=caps.get('calls:read'),transcript=caps.get('calls:transcript:read');
  const sync=()=>{
@@ -27,6 +28,7 @@ for(const form of document.querySelectorAll('.consent-accordion-form')){
      group.querySelector('[data-group-count]').textContent=cap?.checked?fmt.format(selected)+' مورد انتخاب شده':cap?'غیرفعال':'غیرمجاز';
      group.classList.toggle('is-selected',!!cap?.checked);
    }
+   if(raw){raw.disabled=!call?.checked||!fields.get('id')?.checked;if(raw.disabled)raw.checked=false;}
    if(status)status.textContent=fields.get('transcription')?.checked&&!fields.get('id')?.checked?
        'برای دریافت متن مکالمه، شناسه تماس را نیز در گزارش تماس‌ها انتخاب کنید.':'';
  };
