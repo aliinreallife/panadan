@@ -1,10 +1,10 @@
 # Panadan Knowledge Platform — Implementation Status
 
 Date: 2026-11-26
-Authorization: D-067, Phase 8 M00 only. [Roadmap](ROADMAP.md) approved.
+Authorization: D-067 roadmap; M00 completed and owner explicitly authorized M01.1 only on 2026-11-26. [Roadmap](ROADMAP.md) approved.
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G0 passed — baseline and harness reviewed; M00 complete on owner-provided local test evidence. M01.1 awaits separate authorization.**
+Current gate: **G0 passed; M01.1 implemented, awaiting disposable PostgreSQL and regression test evidence. G1 not passed.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -90,16 +90,40 @@ D-066/D-067 adopt both references as inputs. [UI_DESIGN_REVIEW.md](UI_DESIGN_REV
 
 Three-pane knowledge inspector on desktop and sequential detail on mobile are candidates; preserve filter/selection state without retaining unauthorized cached payload. No new design dependency/framework or dark-mode requirement added. No actual UI implementation or screen rendering performed in M00.
 
-## 4. Proposed next increment — M01 (not authorized yet)
+## 4. M01.1 — additive knowledge foundation (implemented, unverified)
 
-Prerequisite: G0 actual baseline tests reviewed and explicit M01 approval. First M01.1 only: inspect migration runner and existing ownership, propose new schema migration and minimal workspace/principal/membership/policy and audit tables, composite PK/FK and safe role bootstrap. Use disposable clean + existing-schema fixtures, default off. Then separately scoped M01.2 identity bridge, M01.3 scoped RLS/role and pool tests, M01.4 workspace shell/access UI. Define stable account authority binding after checking current identity lifecycle; if unsafe, stop and review alternative instead of inventing identity mapping. No all-table migration, auth cutover, new source access, provider, deployment or broad UI redesign. G1 requires two synthetic tenants, fail-closed scope and legacy regression evidence.
+Owner approved M00 completion and M01.1. This authorizes implementation of existing decisions D-047–D-050, D-057–D-058 and D-067, not a new architecture decision, further increments or any production execution.
+
+### Changes
+
+- database/migrations/004_knowledge_foundation.sql: new schema and five tables (workspaces, principals, memberships, policy_versions, audit_events); UUID keys, tenant composite PK/FKs and same-workspace policy approver/audit actor consistency, uniqueness, state and bounded JSON checks, indexes. Workspaces/principals disabled by default; policy versions draft by default. No seeded tenants, account copies, credentials or source payloads.
+- Guard requires PostgreSQL 18, exact database/user pair (panadan/panadan_owner or panadan_ci/panadan_ci), administrator and explicit transaction-local target confirmation. Dedicated NOLOGIN, NOINHERIT, NOSUPERUSER, NOBYPASSRLS owner; refuse incompatible role or schema ownership. PUBLIC privileges revoked. Three tenant tables have ENABLE/FORCE RLS and no policies, so they are inaccessible through ordinary RLS; no runtime grants. Global registry tables not granted to runtime either. Superuser maintenance can bypass RLS as expected. This is a guarded migration foundation, not proof of production privileges or service authorization.
+- tests/test_knowledge_foundation.py: 18 planned test cases (nine offline DSN validator cases and nine opt-in DB cases). Checks guard failure, role/schema collision, replay and default state, legacy data preservation, unique and tenant composite keys, invalid approval and audit actors, JSON bounds, owner and default-deny ACL/RLS. Strict synthetic loopback DSN and explicit reset opt-in; removes inherited PG environment variables; rolls back each fixture transaction, no persistent fixture data. Refuses preexisting knowledge schema instead of deleting it.
+- tools/test-platform-integration.sh and .github/workflows/tests.yml: include foundation suite in local disposable and CI integration coverage; local runner also includes previously separate auth migration suite. CI still runs on PR/main as before; no PR opened. Existing platform-db init continues to apply only migration 001. No auto migration, auth change, runtime feature flag, new route or grant.
+
+Structural approval fields do not establish actual authority; identity binding, grant resolution, typed policy validation and immutable published version/append-only audit command enforcement belong to M01.2 onward. Scope grants referencing sources, client/sharing tables and runtime policies/grants are deferred to their approved increments. Exact identity authority contract remains unresolved. M01.3 adds scoped transaction context/RLS policies; M01.4 adds the workspace UI. No change to prior migrations or existing source access.
+
+### Verification and next action
+
+Static inspection confirmed the expected tables, constraints, guard, RLS, tests and runner wiring. The assistant execution environment still cannot resolve github.com, lacks Docker, PostgreSQL and psycopg, and cannot run the locked repo suites. No new tests actually run; M01.1 is implemented but unverified. Prior M00 evidence is baseline only. Run from the existing local synthetic clone:
+
+```bash
+cd ~/panadan-m00
+git pull --ff-only
+git rev-parse HEAD
+git status --short
+./panadan.sh verify --docker --assets
+uv run --locked python -m compileall -q server tests tools
+```
+
+The disposable runner now includes both auth and knowledge integration suites; review all failures and skip reasons before marking M01.1 verified. Do not use the production checkout or manually apply the migration to any real database. Rollback at this stage means leaving the feature inaccessible and reverting feature-branch code if required; no destructive schema downgrade. G1 remains pending M01.2–M01.4 and associated tests. Obtain separate M01.2 authorization after M01.1 evidence is reviewed.
 
 ## 5. Milestone ledger
 
 | Milestone | Status | Gate |
 | --- | --- | --- |
 | M00 Baseline/harness | Complete — verified synthetic baseline (owner-reported) and reviewed harness | G0 passed |
-| M01 Workspace security | Not started | G0 + approval |
+| M01 Workspace security | M01.1 implemented unverified; M01.2–M01.4 not started | G1 pending |
 | M02 Resources/privacy | Not started | G1 |
 | M03 Objectives/runs | Not started | G2 |
 | M04 AI gateway/budgets | Not started | G3 |
@@ -113,4 +137,4 @@ Prerequisite: G0 actual baseline tests reviewed and explicit M01 approval. First
 | M12 Real-data E1–E3 | Not started / unauthorized | G11 + private approvals |
 | M13 Release/E4 | Not started / unauthorized | Reviewed pilot + release approval |
 
-Next action: obtain explicit authorization for M01.1 only. G0 is closed; no new implementation increment has started. No app code, database schema, source records, external connections, paid requests or production changes performed. Documentation commits only. Protected refs must be rechecked after commit.
+Next action: obtain local M01.1 verification evidence; fix any failures before approving M01.2. Migration and test code committed only on authorized branch; no migration executed by assistant, no runtime app changes, source records, external connections, paid requests or production changes. Protected refs must be rechecked after commit.
