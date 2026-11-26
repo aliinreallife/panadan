@@ -69,13 +69,13 @@
 <div class="shell">
 <aside class="sidebar">
   <a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
-  <nav>
+  {% if session.panel_grants is defined %}{% include 'native_member_nav.html' %}{% else %}<nav>
   <a href="/dashboard">▦ گزارش تماس‌ها</a>
   <a href="/dashboard/connect">◈ اتصال هوش مصنوعی</a>
   <a href="/dashboard/mcp-apps" class="active" aria-current="page">◉ برنامه‌های متصل من</a>
   {% if can_manage %}
   <a href="/dashboard/users">♙ مدیریت کاربران</a>{% endif %}
-  </nav>
+  </nav>{% endif %}
   <div class="side-footer"><form method="post" action="/logout">
   <input name="csrf" type="hidden" value="{{csrf}}">
   <button class="link-button">خروج</button></form></div>
