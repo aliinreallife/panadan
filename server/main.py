@@ -40,6 +40,7 @@ from .workos_standalone import WorkOSBridgeConfig, WorkOSBridgeError, PENDING_CO
 from .authkit_login import AuthKitConfig, AuthKitError, FLOW_COOKIE
 from .security import SESSION_SECONDS, CAPABILITIES, ROLE_GRANTS, permissions, has_capability, is_rate_limited, record_failure
 from .auth_store import create_auth_store
+from .security import NATIVE_PANEL_GRANTS
 
 # Default remains SQLite. A synthetic loopback PG18 test requires deliberate
 # staging-only flags; invalid settings refuse startup with no fallback.
@@ -92,7 +93,7 @@ async def lifespan(app: FastAPI):
         # Validate the existing admin without relying on legacy password config.
         # Never bootstrap a new administrator from a provider callback.
         store.prepare_authkit_admin(authkit_login.admin_uid, oauth_config.issuer,
-                                    authkit_login.admin_subject)
+                                    authkit_login.admin_subject, multi_user=authkit_login.multi_user)
     else:
         store.bootstrap(os.getenv('PANADAN_ADMIN_USER', 'admin'), os.getenv('PANADAN_ADMIN_PASSWORD'))
     async with mcp.session_manager.run():
@@ -175,6 +176,12 @@ def browser_session(request: Request):
     session = store.session(raw, auth_source='authkit')
     if session and session['user_id'] == authkit_login.admin_uid and session['role'] == 'admin':
         return session
+    if session and authkit_login.multi_user:
+        account = store.native_account(session['user_id'], oauth_config.issuer)
+        if account and account['is_active']:
+            session['username'] = account['email']
+            session['panel_grants'] = account['panel_grants']
+            return session
     return None
 
 
@@ -206,6 +213,20 @@ def required(session: dict, capability: str):
 def admin_only(session: dict):
     return required(session, 'users:manage')
 
+
+def panel_allowed(session: dict, panel: str) -> bool:
+    return has_capability(session, 'users:manage') or (
+        authkit_login.multi_user and panel in session.get('panel_grants', ()))
+
+def require_panel(session: dict, panel: str):
+    if not panel_allowed(session, panel):
+        raise HTTPException(403, 'Insufficient panel permissions')
+
+def panel_context(session: dict) -> dict:
+    return {key:panel_allowed(session,key) for key in NATIVE_PANEL_GRANTS}
+
+templates.env.globals['panel_allowed'] = panel_allowed
+templates.env.globals['has_capability'] = has_capability
 
 def user_field_access(session: dict) -> frozenset[str]:
     access = store.user_access(session['user_id']) if hasattr(store, 'user_access') else None
@@ -370,17 +391,25 @@ async def authkit_callback(request: Request):
     try:
         verifier = authkit_login.verifier_for(request.cookies.get(FLOW_COOKIE),
                                               request.query_params.get('state'))
-        await asyncio.to_thread(authkit_login.exchange,
+        identity = await asyncio.to_thread(authkit_login.exchange,
                                 request.query_params.get('code', ''), verifier)
-        access = store.user_access(authkit_login.admin_uid)
-        if not access or not {'users:manage', 'mcp:use'} <= access['capabilities']:
-            raise AuthKitError('Administrator disabled')
-        raw, _ = store.create_session(authkit_login.admin_uid, auth_source='authkit')
-    except AuthKitError:
+        uid = authkit_login.admin_uid
+        if authkit_login.multi_user:
+            if not identity:
+                raise AuthKitError('Missing verified identity')
+            subject, email = identity
+            if subject != authkit_login.admin_subject:
+                uid = store.provision_native_user(oauth_config.issuer, subject, email)
+        access = store.user_access(uid)
+        if not access or (uid == authkit_login.admin_uid and
+                          not {'users:manage', 'mcp:use'} <= access['capabilities']):
+            raise AuthKitError('Account disabled')
+        raw, _ = store.create_session(uid, auth_source='authkit')
+    except (AuthKitError, ValueError, __import__('sqlite3').IntegrityError):
         audit_auth_event(None, 'AuthKit sign-in rejected', 403)
         response = RedirectResponse('/login?error=1', status_code=303)
     else:
-        audit_auth_event(authkit_login.admin_uid, 'AuthKit sign-in successful', 200)
+        audit_auth_event(uid, 'AuthKit sign-in successful', 200)
         response = RedirectResponse('/dashboard', status_code=303)
         response.set_cookie(COOKIE_NAME, raw, max_age=SESSION_SECONDS, httponly=True,
                             secure=True, samesite='lax', path='/')
@@ -511,6 +540,11 @@ def operator_display(name: str) -> str:
 def dashboard(request: Request):
     session = logged_in(request)
     if not session: return RedirectResponse('/login', status_code=303)
+    if authkit_login.multi_user and not any(has_capability(session,cap) for cap in ('calls:read','metrics:read')):
+        return templates.TemplateResponse(request,'account_access.html',{
+            'session':session,'csrf':session['csrf'],
+            'panels':panel_context(session),
+        },headers={'Cache-Control':'no-store'})
     return templates.TemplateResponse(request, 'dashboard.html', {
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
@@ -522,7 +556,7 @@ def dashboard(request: Request):
 @app.get('/dashboard/system', response_class=HTMLResponse, include_in_schema=False)
 def system_health_page(request: Request, session: dict = Depends(current_session)):
     """Admin-only monitoring UI; no source database access on page render."""
-    admin_only(session)
+    require_panel(session, 'system:read')
     return templates.TemplateResponse(request, 'system.html', {
         'session': session, 'csrf': session['csrf'],
     }, headers={'Cache-Control': 'no-store'})
@@ -531,7 +565,7 @@ def system_health_page(request: Request, session: dict = Depends(current_session
 @app.get('/dashboard/mirror-health', include_in_schema=False)
 def dashboard_mirror_health(session: dict = Depends(current_session)):
     # Aggregate-only health; the reporting database is not touched here.
-    admin_only(session)
+    require_panel(session, 'system:read')
     return JSONResponse(mirror_health.load_admin_mirror_health(),
                         headers={'Cache-Control': 'no-store'})
 
@@ -566,7 +600,7 @@ def operators_page(request: Request, session: dict = Depends(current_session)):
     } for name in names]
     return templates.TemplateResponse(request,'operators.html',{
         'session':session,'csrf':session['csrf'],
-        'entries':entries,'can_manage':has_capability(session,'users:manage'),
+        'entries':entries,'can_manage':panel_allowed(session,'operators:manage'),
     },headers={'Cache-Control':'no-store'})
 
 
@@ -575,7 +609,11 @@ def assign_operator(request: Request, name: str = Form(...),
                     destination: str = Form(''), team: str = Form(''),
                     csrf: str = Form(...),
                     session: dict = Depends(current_session)):
-    admin_only(session)
+    require_panel(session,'operators:manage')
+    if not has_capability(session,'users:manage'):
+        required(session,'calls:read')
+        if 'vw_danix_base_info_users_name' not in user_field_access(session):
+            raise HTTPException(403,'Operator field unavailable')
     csrf_check(request,csrf,session)
     try:
         if name not in database.operators():
@@ -809,13 +847,13 @@ def api_states(request: Request):
 
 @app.get('/docs', include_in_schema=False)
 def private_docs(request: Request, session: dict = Depends(current_session)):
-    admin_only(session)
+    require_panel(session, 'api:docs')
     return get_swagger_ui_html(openapi_url='/openapi.json',title='Panadan API Docs')
 
 
 @app.get('/openapi.json', include_in_schema=False)
 def private_openapi(request: Request, session: dict = Depends(current_session)):
-    admin_only(session)
+    require_panel(session, 'api:docs')
     from fastapi.openapi.utils import get_openapi
     return get_openapi(title=app.title, version=app.version, routes=app.routes)
 
@@ -841,6 +879,9 @@ def users_page(request: Request, session: dict = Depends(current_session)):
         },
         'permission_categories': PERMISSION_CATEGORIES,
         'native_admin_only': authkit_login.enabled,
+        'native_multi_user': authkit_login.multi_user,
+        'native_accounts': store.native_accounts(oauth_config.issuer) if authkit_login.multi_user else {},
+        'native_panels': NATIVE_PANEL_GRANTS,
         'permission_groups': group_options(),
         'field_catalog': field_catalog(),
         'default_fields': capability_fields(set(ROLE_GRANTS['analyst'])),
@@ -892,6 +933,24 @@ def update_user(request: Request, uid: int, role: str = Form(...), csrf: str = F
     try: store.update_user(uid,role,grants if role != 'admin' else None,is_active,session['user_id'],
                            fields=fields if fields_present else None)
     except ValueError as exc: raise HTTPException(400,str(exc)) from exc
+    return RedirectResponse('/dashboard/users',status_code=303)
+
+
+@app.post('/dashboard/users/{uid}/native-access', include_in_schema=False)
+def update_native_access(request: Request, uid: int, csrf: str = Form(...),
+                         is_active: bool = Form(False), grants: list[str] = Form([]),
+                         fields: list[str] = Form([]), panels: list[str] = Form([]),
+                         session: dict = Depends(current_session)):
+    csrf_check(request,csrf,session)
+    admin_only(session)
+    if not authkit_login.multi_user or session['user_id'] != authkit_login.admin_uid:
+        raise HTTPException(403,'Native owner access required')
+    try:
+        store.update_native_user(uid,oauth_config.issuer,actor_id=session['user_id'],
+                                 active=is_active,caps=grants,fields=fields,panels=panels)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc)) from exc
+    audit_auth_event(session['user_id'],'Native user permissions updated',200)
     return RedirectResponse('/dashboard/users',status_code=303)
 
 
@@ -1047,7 +1106,7 @@ def read_my_access(request: Request):
 
 @app.get('/dashboard/activity', response_class=HTMLResponse, include_in_schema=False)
 def activity_page(request: Request, session: dict = Depends(current_session)):
-    admin_only(session)
+    require_panel(session, 'activity:read')
     return templates.TemplateResponse(request, 'activity.html', {
         'session':session, 'csrf':session['csrf'],
         'users':store.list_users(),
@@ -1059,7 +1118,7 @@ def activity_data(days: int = Query(14,ge=1,le=90),
                   user_id: int | None = Query(None,ge=1),
                   surface: str | None = None, errors_only: bool = False,
                   session: dict = Depends(current_session)):
-    admin_only(session)
+    require_panel(session, 'activity:read')
     try: result = store.activity_report(days=days,user_id=user_id,surface=surface,errors_only=errors_only)
     except ValueError as e: raise HTTPException(400,str(e)) from e
     return JSONResponse(result,headers={'Cache-Control':'no-store'})
@@ -1067,7 +1126,7 @@ def activity_data(days: int = Query(14,ge=1,le=90),
 
 @app.get('/dashboard/api', response_class=HTMLResponse, include_in_schema=False)
 def api_guide(request: Request, session: dict = Depends(current_session)):
-    admin_only(session)
+    require_panel(session, 'api:docs')
     return templates.TemplateResponse(request, 'api.html', {
         'session': session, 'csrf': session['csrf'],
         'base_url': external_base_url(request, PUBLIC_ORIGIN),
@@ -1129,6 +1188,8 @@ def oauth_admin_link(request: Request, user_id: int = Form(...), subject: str = 
                      csrf: str = Form(...), session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     admin_only(session)
+    if authkit_login.multi_user:
+        raise HTTPException(403,'Native identity bindings cannot be manually modified')
     if oauth_config.mode != 'oauth':
         raise HTTPException(400, 'Enable OAuth configuration first')
     try:
@@ -1143,6 +1204,8 @@ def oauth_admin_unlink(request: Request, identity_id: int, csrf: str = Form(...)
                        session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     admin_only(session)
+    if authkit_login.multi_user:
+        raise HTTPException(403,'Native identity bindings cannot be manually modified')
     if oauth_config.mode != 'oauth':
         raise HTTPException(400, 'OAuth is not enabled')
     store.revoke_oauth_identity(oauth_config.issuer, identity_id)
@@ -1151,7 +1214,8 @@ def oauth_admin_unlink(request: Request, identity_id: int, csrf: str = Form(...)
 
 @app.get('/dashboard/connect', response_class=HTMLResponse, include_in_schema=False)
 def connect_page(request: Request, session: dict = Depends(current_session)):
-    admin_only(session)
+    if not has_capability(session,'mcp:use'):
+        require_panel(session,'connect:read')
     return templates.TemplateResponse(request,'connect.html', {
         'session':session,'csrf':session['csrf'],
         'mcp_path':'/mcp/', 'base_url':external_base_url(request, PUBLIC_ORIGIN),
