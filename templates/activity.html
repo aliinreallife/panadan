@@ -6,7 +6,7 @@
 </head><body><div class="shell">
 <aside class="sidebar">
 <a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
-<div class="nav-caption">مدیریت پانادان</div><nav>
+<div class="nav-caption">مدیریت پانادان</div>{% if session.panel_grants is defined %}{% include 'native_member_nav.html' %}{% else %}<nav>
 <a href="/dashboard">▦ گزارش تماس‌ها</a><a href="/dashboard/operators">♙ کارشناسان و مقاصد</a>
 <a href="/dashboard/connect">◈ اتصال هوش مصنوعی</a>
 <a href="/dashboard/tokens">♢ توکن‌های دسترسی</a>
@@ -14,7 +14,7 @@
 <a href="/dashboard/oauth">◉ اتصال امن OAuth</a>
 <a href="/dashboard/users">♙ کاربران و دسترسی‌ها</a>
 <a class="active" aria-current="page" href="/dashboard/activity">▤ فعالیت کاربران</a><a href="/dashboard/system">◷ وضعیت سیستم</a>
-</nav><div class="side-footer"><div class="status"><span class="dot"></span> فقط مدیران</div><form action="/logout" method="post"><input type="hidden" name="csrf" value="{{csrf}}"><button class="link-button" type="submit">خروج</button></form></div>
+</nav>{% endif %}<div class="side-footer"><div class="status"><span class="dot"></span> فقط مدیران</div><form action="/logout" method="post"><input type="hidden" name="csrf" value="{{csrf}}"><button class="link-button" type="submit">خروج</button></form></div>
 </aside>
 <main class="content activity-content">
 <header class="page-head"><div><span class="eyebrow">نظارت و امنیت</span><h1>فعالیت کاربران</h1>
