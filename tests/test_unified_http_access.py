@@ -213,3 +213,41 @@ def test_sensitive_api_and_legacy_api_token_scope_boundaries(app_client):
     assert c.get('/api/v1/calls/81', headers=read_headers).status_code == 200
     assert c.get('/api/v1/calls/81?include_sensitive=true',
                  headers=read_headers).status_code == 401
+
+
+def test_standalone_consent_review_only_for_own_observed_client(app_client):
+    c, main, _ = app_client
+    uid = main.store.create_user('review_owner', 'example-password-very-long',
+        'analyst', ['calls:read','metrics:read','mcp:use'],
+        fields=['id','CALLDATE','aicallinfostate'])
+    other = main.store.create_user('review_other', 'example-password-very-long',
+        'analyst', ['calls:read','metrics:read','mcp:use'], fields=['id'])
+    main.store.note_signed_mcp_client(uid, 'https://chatgpt.com/oauth/client.json')
+    main.store.note_signed_mcp_client(other, 'other-client')
+    raw, csrf = main.store.create_session(uid)
+    c.cookies.set('panadan_session', raw)
+    client_id = 'https://chatgpt.com/oauth/client.json'
+    page = c.get('/dashboard/mcp-apps', params={'review':client_id})
+    assert page.status_code == 200
+    assert 'class="consent-review"' in page.text
+    assert page.text.count('data-consent-group=') == 3
+    assert 'data-shared-field="id"' in page.text
+    assert page.text.count('name="fields" value="id"') == 1
+    assert 'name="fields" value="transcription"' not in page.text
+    assert 'name="capabilities" value="calls:transcript:read"' not in page.text
+    assert 'name="fields" value="customername"' not in page.text
+    assert not main.store.client_grants(uid, client_id)
+    assert c.get('/dashboard/mcp-apps', params={'review':'other-client'}).status_code == 404
+    assert c.get('/dashboard/mcp-apps', params={'review':'https://untrusted.invalid/'}).status_code == 404
+    assert c.post('/dashboard/mcp-apps/approve', data={
+        'csrf':csrf,'client_id':client_id,'capabilities':['calls:read'],
+        'fields':['id','transcription']}).status_code == 400
+    response = c.post('/dashboard/mcp-apps/approve', data={
+        'csrf':csrf,'client_id':client_id,'capabilities':['calls:read','metrics:read'],
+        'fields':['id','CALLDATE']}, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers['location'] == '/dashboard/mcp-apps'
+    access = main.store.mcp_access(uid, oauth_client=client_id)
+    assert access['fields'] == {'id','CALLDATE'}
+    assert access['capabilities'] == {'mcp:use','calls:read','metrics:read'}
+    assert c.get('/dashboard/mcp-apps', params={'review':client_id}).status_code == 404
