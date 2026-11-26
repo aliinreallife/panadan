@@ -11,7 +11,7 @@
 {% macro client_name(client) %}{{ 'ChatGPT' if client == 'https://chatgpt.com/oauth/client.json' else 'برنامه OAuth' }}{% endmacro %}
 {% macro client_header(client, caption, pending=False) %}
 <summary class="mcp-client-summary">
-  <span class="mcp-client-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 12h8m-4-4v8"/></svg></span>
+  <span class="mcp-client-icon" aria-hidden="true">{% if client=='https://chatgpt.com/oauth/client.json' %}<img src="/static/chatgpt-mark.svg" alt="" width="24" height="24">{% else %}<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 12h8m-4-4v8"/></svg>{% endif %}</span>
   <span class="mcp-client-info"><strong>{{client_name(client)}}</strong><bdi dir="ltr">{{client}}</bdi></span>
   <span class="mcp-client-state{{' is-pending' if pending else ''}}">{{caption}}</span>
   <svg class="mcp-client-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
@@ -55,14 +55,14 @@
 </div></details>
 {% endfor %}
 <p class="consent-form-status" data-consent-status role="status" aria-live="polite"></p>
-<div class="consent-footer"><button type="submit" class="primary">{{'تأیید دسترسی' if pending or is_new else 'ذخیره تغییرات'}} <span aria-hidden="true">←</span></button>{% if pending %}<a class="secondary" href="/dashboard/mcp-apps">انصراف</a>{% endif %}</div>
+<div class="consent-footer"><button type="submit" class="primary">{{'تأیید دسترسی' if pending or is_new else 'ذخیره تغییرات'}} <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg></button>{% if pending %}<a class="secondary" href="/dashboard/mcp-apps">انصراف</a>{% endif %}</div>
 {% if pending %}<p class="consent-shared-note">پس از ذخیره، به گفت‌وگوی دستیار خود برگردید. دسترسی‌ها را هر زمان می‌توانید لغو کنید.</p>{% endif %}
 </form>
 {% else %}<p class="consent-unavailable">حساب شما مجوز استفاده از MCP را ندارد.</p>{% endif %}
 {% endmacro %}
 {% if review_client %}
 <main class="consent-review">
-<header class="consent-review-header"><div class="consent-connection"><div class="consent-brand"><img src="/static/favicon.svg" alt="" width="54" height="54"><strong>پانادان</strong></div><span aria-hidden="true">⇄</span><div class="consent-brand"><span class="consent-app-mark" aria-hidden="true">{{'GPT' if review_client.client_id=='https://chatgpt.com/oauth/client.json' else 'AI'}}</span><strong>{{client_name(review_client.client_id)}}</strong></div></div><h1>درخواست دسترسی به پانادان</h1><p>{{client_name(review_client.client_id)}} می‌خواهد با حساب شما به داده‌های زیر دسترسی داشته باشد.</p><bdi class="consent-client-id">{{review_client.client_id}}</bdi></header>
+<header class="consent-review-header"><div class="consent-connection"><div class="consent-brand"><img src="/static/favicon.svg" alt="" width="54" height="54"><strong>پانادان</strong></div><span aria-hidden="true">⇄</span><div class="consent-brand"><span class="consent-app-mark" aria-hidden="true">{% if review_client.client_id=='https://chatgpt.com/oauth/client.json' %}<img src="/static/chatgpt-mark.svg" width="42" height="42" alt="">{% else %}AI{% endif %}</span><strong>{{client_name(review_client.client_id)}}</strong></div></div><h1>درخواست دسترسی به پانادان</h1><p>{{client_name(review_client.client_id)}} می‌خواهد با حساب شما به داده‌های زیر دسترسی داشته باشد.</p><bdi class="consent-client-id">{{review_client.client_id}}</bdi></header>
 <div class="consent-review-grid"><section class="consent-review-main">{{approval_form(review_client.client_id, [], [], pending=True)}}</section><aside class="consent-benefits"><div class="consent-illustration" aria-hidden="true"><svg viewBox="0 0 260 190" fill="none"><circle cx="130" cy="95" r="84" fill="#deeee5"/><g transform="rotate(-8 130 95)"><rect x="35" y="48" width="190" height="112" rx="14" fill="white" stroke="#d0e4d9"/><path d="M60 135h140M65 119h8V96h-8zm18 0h8V80h-8zm18 0h8V66h-8z" fill="#7bb8a1" stroke="#7bb8a1" stroke-width="3"/><path d="M128 81h70M128 98h55M128 115h62" stroke="#b9ded0" stroke-width="8" stroke-linecap="round"/></g><circle cx="204" cy="47" r="25" fill="#177760"/><path d="M195 39c0 12 8 20 19 20l4-5-7-4-3 3c-4-2-7-5-9-9l3-3-4-7z" fill="white"/></svg></div><div>{{glyph('calls:transcript:read')}}<span><strong>تحلیل تماس‌ها</strong><small>بررسی اطلاعات و متن مجاز مکالمات</small></span></div><div>{{glyph('metrics:read')}}<span><strong>گزارش‌های دقیق</strong><small>دسترسی به شاخص‌های انتخاب‌شده</small></span></div><div>{{glyph('shield')}}<span><strong>امن و قابل کنترل</strong><small>فقط خواندنی؛ قابل تغییر و لغو</small></span></div></aside></div>
 </main>
 {% else %}
@@ -110,7 +110,7 @@
       onsubmit="return confirm('دسترسی این برنامه قطع شود؟')">
 <input type="hidden" name="csrf" value="{{csrf}}">
 <input type="hidden" name="client_id" value="{{app.client_id}}">
-<button type="submit" class="danger-outline">لغو دسترسی این برنامه</button>
+<button type="submit" class="danger-outline"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 15 6-6M8 16l-2 2a3 3 0 0 1-4-4l4-4a3 3 0 0 1 4 0m4 4a3 3 0 0 0 4 0l4-4a3 3 0 0 0-4-4l-2 2M3 3l18 18"/></svg>لغو دسترسی</button>
 </form>
 </div>
 </details>
