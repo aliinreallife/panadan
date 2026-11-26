@@ -4,15 +4,15 @@ Date: 2026-11-26
 Authorization: D-067, Phase 8 M00 only. [Roadmap](ROADMAP.md) approved.
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G0 BLOCKED — baseline execution environment unavailable.**
+Current gate: **G0 pending — main local verification passed; dedicated disposable PostgreSQL auth migration suite outstanding.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
 
 | Task | Status | Evidence / remaining work |
 | --- | --- | --- |
-| M00.1 | Static inspection complete | GitHub connector branch/tree inspection, current auth, ingestion, migration, frontend and verification files examined. Protected refs confirmed. No live queries. Local checkout unavailable. |
-| M00.2 | Blocked | Direct Git remote probe exit 128: Could not resolve host: github.com. Python 3.13.5, uv, Git 2.47.3, npm 10.9.2 available; Node v22.16.0 rather than Node 24. Docker and psql not present on PATH. No checkout, no locked dependency installation, no repository test or build executed. |
+| M00.1 | Static inspection complete | GitHub connector branch/tree inspection, current auth, ingestion, migration, frontend and verification files examined. Protected refs confirmed. No live queries. Assistant runner checkout unavailable; owner subsequently cloned the exact expected documentation-only HEAD in a local development environment. |
+| M00.2 | Main verification passed; remaining auth suite pending | Owner-provided terminal output at 38e176b3343ace81b1ef2fe72b840f326fbf527f: clean fresh clone, Python 3.13.14, uv 0.11.32, Node 24.22.2, npm 11.19.1, Docker Engine 29.8.1 / Docker Desktop 4.93.0. `./panadan.sh verify --docker --assets` completed successfully. Dedicated PG auth migration suite and compileall evidence outstanding. |
 | M00.3 | Draft harness conventions complete; gate pending | This ledger defines synthetic fixture plan, default-off contract, migration review, UI backlog and proposed M01 increments. These are reviewable implementation conventions, not implemented controls. G0 and separate M01 authorization required. |
 
 ### Reuse inventory
@@ -33,17 +33,20 @@ This ledger records evidence, not estimates. No implementation milestone is veri
 | Verification | Result |
 | --- | --- |
 | GitHub branch/tree/docs and protected ref inspection | Passed (static connector evidence) |
-| Direct Git remote access | Failed: DNS resolution, exit 128 |
-| Locked Python suite and compile check | Not run |
-| Node suite, browser/shell syntax, asset build | Not run |
-| Disposable PostgreSQL transactional/role/restore tests | Not run |
-| PostgreSQL auth migration integration | Not run |
+| Direct Git remote access | Assistant runner failed DNS (exit 128); owner local fresh clone succeeded at expected HEAD, clean status |
+| Locked Python offline suite | 525 passed, 27 skipped, 0 failed; 51.45s (owner-reported) |
+| Python compileall (CI parity) | Not separately run by local verify script |
+| Node dashboard tests | 65 passed, 0 failed/skipped (owner-reported) |
+| Browser/shell syntax and locked asset build | Passed; npm emitted non-fatal esbuild install-script warning |
+| Disposable PostgreSQL transactional integration | 42 passed, 0 failed/skipped; 2.14s (owner-reported) |
+| PG18.6 schema replay, restart persistence, backup/restore | Passed (owner-reported); repeated schema notices expected |
+| PostgreSQL auth migration integration | Pending dedicated run; local PG helper does not include tests/test_auth_pg_migration.py |
 | Docker image builds | Not run; not authorized PR workflow |
 | Production, live source and external AI/MCP checks | Not attempted; outside M00 |
 
-No application test counts or pass rates can be reported. Historical CI results are not current baseline evidence. CI triggers on main pushes and pull requests, not ordinary feature-branch pushes. No workflow dispatch or PR created.
+Owner terminal transcript reports 632 successful test executions across three invocations (not necessarily distinct tests), zero failures, and 27 offline skips. The final line was Local verification PASSED. The assistant reviewed the transcript and scripts, but did not independently execute the suites. Skip reasons were not printed; do not assume all skips are covered. Historical CI results are not current baseline evidence. CI triggers on main pushes and pull requests, not ordinary feature-branch pushes. No workflow dispatch or PR created.
 
-### Resume G0 in a suitable isolated development environment
+### Reproduce main G0 verification (owner completed)
 
 Use a **fresh clone**, not the production checkout. Node 24, Python 3.13, uv, Git, npm and Docker are prerequisites. Do not copy .env files, VPN configuration or production secrets, or point tests at persistent platform DBs. Verify Docker context targets a development engine. Run from Linux/WSL:
 
@@ -60,7 +63,7 @@ docker version
 ./panadan.sh verify --docker --assets
 ```
 
-Run in a clean shell without real service credentials. The inspected verify script unsets PostgreSQL source/test env variables, runs locked Python/Node and syntax tests, optionally builds assets, and starts a separate loopback-only PG18.6 container using synthetic credentials with cleanup scoped to that container. Inspect current scripts at checkout before running. The local disposable runner tests ingestion, role permissions, SCRAM, optional Odoo adapter, restart persistence and backup/restore; the CI PG job additionally includes tests/test_auth_pg_migration.py. For G0, obtain explicit PG auth migration test evidence using a reviewed disposable PG18 CI-equivalent fixture (never production); do not assume a local offline skip covers it. Record HEAD, environment, test totals, skips and exit codes; redact secrets. A failed or skipped mandatory check blocks G0 until investigated and resolved. No need for a real source connection, paid provider or deployment.
+Run in a clean shell without real service credentials. The inspected verify script unsets PostgreSQL source/test env variables, runs locked Python/Node and syntax tests, optionally builds assets, and starts a separate loopback-only PG18.6 container using synthetic credentials with cleanup scoped to that container. Inspect current scripts at checkout before running. The local disposable runner tests ingestion, role permissions, SCRAM, optional Odoo adapter, restart persistence and backup/restore; the CI PG job additionally includes tests/test_auth_pg_migration.py. For G0, obtain explicit PG auth migration test evidence using a reviewed disposable PG18 CI-equivalent fixture (never production); do not assume a local offline skip covers it. Record HEAD, environment, test totals, skips and exit codes; redact secrets. A failed or skipped mandatory check blocks G0 until investigated and resolved. Next: run the dedicated auth migration suite against a new loopback-only disposable PG18.6 container and compileall; collect offline skip reasons if needed to confirm required coverage. No need for a real source connection, paid provider or deployment.
 
 ## 2. Proposed implementation harness conventions
 
@@ -95,7 +98,7 @@ Prerequisite: G0 actual baseline tests reviewed and explicit M01 approval. First
 
 | Milestone | Status | Gate |
 | --- | --- | --- |
-| M00 Baseline/harness | Blocked (partial static/documentation evidence) | G0 not passed |
+| M00 Baseline/harness | Main baseline verified by owner; dedicated auth integration pending | G0 not closed |
 | M01 Workspace security | Not started | G0 + approval |
 | M02 Resources/privacy | Not started | G1 |
 | M03 Objectives/runs | Not started | G2 |
@@ -110,4 +113,4 @@ Prerequisite: G0 actual baseline tests reviewed and explicit M01 approval. First
 | M12 Real-data E1–E3 | Not started / unauthorized | G11 + private approvals |
 | M13 Release/E4 | Not started / unauthorized | Reviewed pilot + release approval |
 
-Next action: obtain and review G0 test evidence, resolve any required baseline failure, update ledger and request authorization for M01. No app code, database schema, source records, external connections, paid requests or production changes performed. Documentation commits only. Protected refs must be rechecked after commit.
+Next action: obtain the dedicated auth migration and compileall evidence, review mandatory skip coverage, close G0 if satisfied, then request authorization for M01.1. No app code, database schema, source records, external connections, paid requests or production changes performed. Documentation commits only. Protected refs must be rechecked after commit.
