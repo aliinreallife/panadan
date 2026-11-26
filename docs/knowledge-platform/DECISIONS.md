@@ -36,6 +36,44 @@ Evolve the existing read-only reporting product into a reusable organizational k
 
 Decision identifiers preserve the original negotiation numbering; gaps intentionally do not expose internal strategy.
 
+## Decision maintenance protocol (mandatory)
+
+This is a living decision register, not a one-time handoff. Every contributor, including AI agents, is responsible for keeping it current.
+
+- Read the latest register from the working branch at the start of every task. Consult relevant existing decisions before making recommendations or edits.
+- When the product owner explicitly approves a new or changed product, architecture, security, data-model, UX policy, or MVP-scope decision, update this register in the same task, even if no code is requested. A clear approval in a discussion is sufficient; do not ask for redundant approval to document it. Do not treat AI recommendations, examples, silence, or unresolved alternatives as accepted decisions.
+- Check existing IDs and the latest history first. Allocate the next unused sequential ID (next: D-024 as of this protocol's introduction); never reuse or renumber an ID, including historical gaps. Add a row to the accepted decisions table and a dated entry in Decision history. For a change to a prior decision, allocate a new ID, identify the superseded ID, retain its historical wording, mark it superseded, and update all affected current guidance. The active decision, not the old wording, governs future work.
+- For each new decision, capture ID, date (ISO 8601), title, status (Accepted / Superseded), accepted choice, rationale, MVP vs later scope when applicable, constraints, and affected documents/components. Record the approval source in safe terms, e.g. "owner discussion"; never copy private chats or confidential details into this public repository.
+- Update affected PRD, architecture, security, tests or other maintained documents if applicable; preserve the distinction between decisions and verified implementation. An approved design is not evidence of implementation or deployment. Keep proposals outside the accepted register until approved.
+- Documentation is part of the definition of done: check the diff, confirm the register and related guidance agree, and report decision IDs and files changed. When authorized to commit/push, include the decision update in the same branch/PR as its implementation, or a documentation-only commit if the decision precedes code. Never merge or deploy merely to record a decision.
+- If repository access, write permission, or an approved branch is unavailable, provide the proposed register entry and explicitly report it as NOT persisted. Do not claim that conversational memory alone updated the repository. If a decision is confidential, do not place its private content in this public repo; use an approved private location only if available and authorized, otherwise flag the private record as pending.
+- Routine bug fixes and implementation details that do not change agreed product behavior do not require a new product decision; update relevant technical documentation and tests where needed.
+
+### Decision history
+
+| Date | IDs | Event |
+| --- | --- | --- |
+| 2026-11 | D-001–D-023 (public subset) | Initial accepted product direction imported from owner negotiation; see accepted decisions table. |
+| 2026-11-25 | — | Owner requested ongoing decision maintenance; mandatory documentation and agent handoff protocol introduced. |
+
+Append dated entries for future accepted decisions and supersessions. Do not erase prior entries.
+
+### Template for future decision details
+
+```markdown
+### D-NNN — Short title
+- Date: YYYY-MM-DD
+- Status: Accepted
+- Approval: Product owner discussion
+- Decision: ...
+- Rationale: ...
+- MVP scope: ...
+- Deferred / out of scope: ...
+- Constraints and implications: ...
+- Supersedes: None (or D-NNN)
+- Affected documents/components: ...
+```
+
 ## Target architecture (conceptual, not current implementation)
 
 Sources (call center, CRM, web, authorized messaging, feedback, manual uploads) -> Collection & Integrations -> Resources -> Knowledge Engine -> Knowledge Base.
