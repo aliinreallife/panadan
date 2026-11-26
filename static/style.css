@@ -1604,3 +1604,23 @@ doran-datepicker::part(dialog){
 .mcp-consent-buttons{display:flex;align-items:center;gap:8px}
 .mcp-consent-buttons a{white-space:nowrap;padding:10px 14px;border-radius:8px}
 @media(max-width:700px){.mcp-apps-content .mcp-pending-body{padding:14px}.mcp-consent-toolbar{align-items:stretch;flex-direction:column}.mcp-consent-buttons{width:100%}.mcp-consent-buttons button{flex:1;min-width:0}.mcp-pending-identity{flex-wrap:wrap}}
+
+/* Permission editors: native checkbox semantics with a consistent rounded visual. */
+.consent-accordion-form input[type=checkbox],.access-content .permission-option-wrap input[type=checkbox],.access-content .user-edit-active input[type=checkbox]{
+ appearance:none!important;-webkit-appearance:none!important;box-sizing:border-box;width:20px!important;height:20px!important;min-height:20px!important;max-width:20px;flex:0 0 20px;margin:0;border:1.5px solid #aebfb5;border-radius:6px;background:#fff;display:inline-grid;place-content:center;cursor:pointer;transition:background .12s,border-color .12s
+}
+.consent-accordion-form input[type=checkbox]::before,.access-content .permission-option-wrap input[type=checkbox]::before,.access-content .user-edit-active input[type=checkbox]::before{content:"";width:10px;height:6px;border-inline-start:2px solid #fff;border-bottom:2px solid #fff;direction:ltr;transform:rotate(-45deg) scale(0);margin-top:-2px}
+.consent-accordion-form input[type=checkbox]:checked,.access-content .permission-option-wrap input[type=checkbox]:checked,.access-content .user-edit-active input[type=checkbox]:checked{background:#167760;border-color:#167760}
+.consent-accordion-form input[type=checkbox]:checked::before,.access-content .permission-option-wrap input[type=checkbox]:checked::before,.access-content .user-edit-active input[type=checkbox]:checked::before{transform:rotate(-45deg) scale(1)}
+.consent-accordion-form input[type=checkbox]:focus-visible,.access-content .permission-option-wrap input[type=checkbox]:focus-visible,.access-content .user-edit-active input[type=checkbox]:focus-visible{outline:3px solid #b6deca;outline-offset:2px}
+.consent-accordion-form input[type=checkbox]:disabled,.access-content .permission-option-wrap input[type=checkbox]:disabled{opacity:.55;cursor:not-allowed}
+.access-content .user-card-edit,.access-content .access-create-trigger-action{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #d5e5da;background:#f3f8f4;color:#285e4b;padding:7px 10px;border-radius:8px;font-size:12px;white-space:nowrap}
+.user-action-chevron{flex:none;transition:transform .15s}
+.user-card[open]>.user-card-summary .user-action-chevron,.access-create-disclosure[open] .access-create-trigger-action .user-action-chevron{transform:rotate(180deg)}
+.native-access-editor .access-editor-grants{min-width:0}
+.native-access-editor .access-editor-grants>legend{font-weight:700;font-size:15px;color:#18332c}
+.mcp-consent-revoke .danger-outline{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:9px 13px;border:1px solid #ebc8c4;background:#fff;color:#a63e35;border-radius:8px;font-size:12px;box-shadow:none}
+.mcp-consent-revoke .danger-outline:hover{background:#fdf1ef;border-color:#d99992}
+.mcp-consent-revoke .danger-outline svg{flex:none}
+.mcp-client-icon img,.consent-app-mark img{width:75%;height:75%;object-fit:contain}
+@media(prefers-reduced-motion:reduce){.user-action-chevron,.consent-accordion-form input[type=checkbox]{transition:none}}
