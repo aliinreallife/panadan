@@ -402,15 +402,28 @@ sequenceDiagram
     participant P as Approved provider
     W->>G: Scoped task and approved input refs
     G->>A: Check current scope, purpose, provider and data policy
-    A-->>G: Allow or deny with policy revision
-    G->>B: Atomically reserve org and run capacity
-    B-->>G: Reservation or budget blocked
-    G->>A: Recheck before egress
-    G->>P: Bounded minimized request
-    P-->>G: Untrusted result and reported usage
-    G->>B: Reconcile actuals or uncertain outcome
-    G->>G: Validate schema and evidence anchors
-    G-->>W: Accepted result or classified failure
+    A-->>G: Decision and policy revision
+    alt Policy denies
+        G-->>W: Blocked policy; no dispatch
+    else Policy allows
+        G->>B: Atomically reserve org and run capacity
+        B-->>G: Admission result
+        alt Budget denies
+            G-->>W: Blocked budget; no dispatch
+        else Reserved
+            G->>A: Recheck before egress
+            alt Scope or policy revoked
+                G->>B: Release verified unused reservation
+                G-->>W: Blocked policy; no dispatch
+            else Still authorized
+                G->>P: Bounded minimized request
+                P-->>G: Result, reported usage or uncertain outcome
+                G->>B: Reconcile actuals or retain uncertain reservation
+                G->>G: Validate schema and evidence anchors
+                G-->>W: Accepted result or classified failure
+            end
+        end
+    end
 ```
 
 No dispatch after deny or budget block. For each chargeable attempt, reserve a conservative upper estimate against both organization and execution budgets in one transaction using consistent lock ordering or equivalent atomic ledger constraint. Proposed admission condition: committed spend + pending/uncertain reservations + new upper estimate must fit each applicable cap. Calculate with verified rate/version, token/input/output limits, fees and currency rules; if cost cannot be safely bounded, fail closed. Retry is a new chargeable attempt with separate reservation unless verified idempotent. Actuals reconcile independently of semantic success; a failed result may still cost money. Timeout with possible provider acceptance remains uncertain, not zero spend; do not free reservation blindly. Handle reconciliation idempotently; release only when verified. If actual exceeds estimate, record discrepancy, block new requests where appropriate and alert; local admission limit cannot guarantee provider invoice exactness. Ledger immutable adjustments with authorized budget version changes; exact currency/precision/reset and rate source Phase 6. No billing/wallet or advanced pipeline/app quota. Pipeline attribution is reporting.
