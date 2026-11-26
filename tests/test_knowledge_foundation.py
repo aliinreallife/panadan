@@ -207,7 +207,7 @@ def test_unique_identity_and_membership_constraints(migrated):
             "INSERT INTO panadan_knowledge.memberships(workspace_id,principal_id,state) VALUES (%s,%s,'active')", (a,p))
     _reject(c, errors.ForeignKeyViolation,
             "INSERT INTO panadan_knowledge.memberships(workspace_id,principal_id,state) VALUES (%s,%s,'active')", (uuid4(),p))
-    _reject(c, errors.ForeignKeyViolation,
+    _reject(c, errors.RestrictViolation,
             "DELETE FROM panadan_knowledge.workspaces WHERE id=%s", (a,))
     _reject(c, errors.CheckViolation,
             "UPDATE panadan_knowledge.memberships SET state='revoked' WHERE workspace_id=%s AND id=%s", (a,m))
@@ -247,7 +247,7 @@ def test_audit_actor_consistency_and_metadata_shape(migrated):
             "UPDATE panadan_knowledge.audit_events SET safe_metadata='[]' WHERE workspace_id=%s",(b,))
     _reject(c, errors.CheckViolation,
             "UPDATE panadan_knowledge.audit_events SET safe_metadata=jsonb_build_object('reason',repeat('x',5000)) WHERE workspace_id=%s",(b,))
-    _reject(c, errors.ForeignKeyViolation,
+    _reject(c, errors.RestrictViolation,
             "DELETE FROM panadan_knowledge.memberships WHERE workspace_id=%s AND id=%s",(b,m))
 
 
