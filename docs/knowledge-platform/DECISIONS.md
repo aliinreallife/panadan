@@ -66,6 +66,16 @@ Evolve the existing read-only reporting product into a reusable organizational k
 | D-054 | Governed provider resolution and atomic budget admission (AP-08) | Resolve explicit approved provider/model and managed credentials through the shared gateway; reserve organization and execution budget atomically before chargeable dispatch. |
 | D-055 | Shared authorized query services (AP-09) | Use shared scoped query/read services for web, REST and MCP, with independent Resource and Knowledge retrieval contracts and common projections/metrics. |
 | D-056 | Durable outbox and separate destination runtime (AP-10) | Use a separate outbound sync worker with a durable outbox, approved versioned projections, dedicated narrow destination credentials and idempotent/reconciled delivery. |
+| D-057 | Additive knowledge schema (DM-01) | Create the new platform model in the separate Panadan-owned panadan_knowledge schema; preserve existing panadan_ingest and panadan_auth schemas and the approved identity bridge. |
+| D-058 | Tenant composite integrity and explicit sharing (DM-02) | Use workspace-scoped composite primary/foreign keys, scoped runtime roles and RLS; use explicitly authorized sharing projections rather than raw cross-tenant reads. |
+| D-059 | Versioned resource representations (DM-03) | Represent each source item as a logical Resource with immutable source revisions and separately versioned approved filtered representations. |
+| D-060 | Versioned execution and frozen population (DM-04) | Pin objective/pipeline versions and run manifests, retain measured population membership and use fenced durable work items and attempts. |
+| D-061 | Reusable observation sets and exact evidence anchors (DM-05) | Use compatible observation sets, evidence anchors tied to exact filtered representation revisions, and relational processed/matched aggregate membership. |
+| D-062 | Versioned knowledge lifecycle and invalidation (DM-06) | Separate logical knowledge units from revisions, record validation/review/lifecycle transitions, and invalidate affected authoritative projections when evidence becomes unavailable or stale. |
+| D-063 | Versioned taxonomy and pinned knowledge packages (DM-07) | Use governed taxonomy versions and reviewed suggestions, pinned package revision membership, and separate derived opportunity/brief records. |
+| D-064 | Dual budget reservation and usage ledger (DM-08) | Atomically reserve against organization and run budgets, record immutable usage/adjustment ledger events, and retain uncertain reservations until reconciliation. |
+| D-065 | Versioned delivery and retention barriers (DM-09) | Use versioned destination projections/outbox and scoped local erasure records/restore barriers. |
+| D-066 | Preferred visual direction with required workflow additions (UI direction) | Adopt the owner-supplied visual reference direction: warm neutral surfaces, muted green/olive accents, restrained borders, editorial typography, compact readable Persian RTL knowledge workspace, responsive layouts. Complete all required PRD workflows in the same design language. |
 
 Decision identifiers preserve the original negotiation numbering; gaps intentionally do not expose internal strategy.
 
@@ -121,6 +131,16 @@ This is a living decision register, not a one-time handoff. Every contributor, i
 | 2026-11-26 | D-054 | Owner approved architecture choice AP-08 — Governed provider resolution and atomic budget admission. |
 | 2026-11-26 | D-055 | Owner approved architecture choice AP-09 — Shared authorized query services. |
 | 2026-11-26 | D-056 | Owner approved architecture choice AP-10 — Durable outbox and separate destination runtime. |
+| 2026-11-26 | D-057 | Owner approved DM-01 — Additive knowledge schema. |
+| 2026-11-26 | D-058 | Owner approved DM-02 — Tenant composite integrity and explicit sharing. |
+| 2026-11-26 | D-059 | Owner approved DM-03 — Versioned resource representations. |
+| 2026-11-26 | D-060 | Owner approved DM-04 — Versioned execution and frozen population. |
+| 2026-11-26 | D-061 | Owner approved DM-05 — Reusable observation sets and exact evidence anchors. |
+| 2026-11-26 | D-062 | Owner approved DM-06 — Versioned knowledge lifecycle and invalidation. |
+| 2026-11-26 | D-063 | Owner approved DM-07 — Versioned taxonomy and pinned knowledge packages. |
+| 2026-11-26 | D-064 | Owner approved DM-08 — Dual budget reservation and usage ledger. |
+| 2026-11-26 | D-065 | Owner approved DM-09 — Versioned delivery and retention barriers. |
+| 2026-11-26 | D-066 | Owner approved UI direction — Preferred visual direction with required workflow additions. |
 
 Append dated entries for future accepted decisions and supersessions. Do not erase prior entries.
 
@@ -511,6 +531,116 @@ Append dated entries for future accepted decisions and supersessions. Do not era
 - Affected documents/components: [ARCHITECTURE.md](ARCHITECTURE.md), Phase 6 data model, roadmap, relevant runtime modules and acceptance tests.
 - Authorization boundary: Design approval only; no implementation, production migration, live data handling, provider request, spending or deployment authorized by this entry.
 
+### D-057 — Additive knowledge schema (DM-01)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 6, DM-01–DM-09 and preferred UI direction with required additions.
+- Decision: Create the new platform model in the separate Panadan-owned panadan_knowledge schema; preserve existing panadan_ingest and panadan_auth schemas and the approved identity bridge.
+- Rationale: Isolate new development from existing reporting and avoid destructive migration or an unapproved auth cutover.
+- MVP scope and constraints: Add migrations incrementally; never edit applied migrations or automatically assign legacy data to a tenant. Verify owned DB target, mapping and backup/restore before any approved migration.
+- Supersedes: None; refines D-046–D-049.
+- Affected documents/components: [DATA_MODEL.md](DATA_MODEL.md), architecture, roadmap, corresponding migrations/services and tests.
+- Authorization boundary: Design approval only; no implementation, live data, spending, migration, deployment or source write authorized by this entry.
+
+### D-058 — Tenant composite integrity and explicit sharing (DM-02)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 6, DM-01–DM-09 and preferred UI direction with required additions.
+- Decision: Use workspace-scoped composite primary/foreign keys, scoped runtime roles and RLS; use explicitly authorized sharing projections rather than raw cross-tenant reads.
+- Rationale: Enforce isolation and same-parent integrity at multiple layers.
+- MVP scope and constraints: Exact DDL, role grants and RLS must be tested, including missing context, pooled connection reset, revocation and negative FKs. Sharing cannot expand underlying access; no client-selected trusted context.
+- Supersedes: None; refines D-011, D-016, D-050.
+- Affected documents/components: [DATA_MODEL.md](DATA_MODEL.md), architecture, roadmap, corresponding migrations/services and tests.
+- Authorization boundary: Design approval only; no implementation, live data, spending, migration, deployment or source write authorized by this entry.
+
+### D-059 — Versioned resource representations (DM-03)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 6, DM-01–DM-09 and preferred UI direction with required additions.
+- Decision: Represent each source item as a logical Resource with immutable source revisions and separately versioned approved filtered representations.
+- Rationale: Preserve provenance and enable reprocessing without touching originals.
+- MVP scope and constraints: No durable unredacted call text; verify stable source IDs and ordering, redaction, permitted fields and retention. Payload immutability does not override authorized local erasure.
+- Supersedes: None; refines D-001, D-005, D-035–D-037, D-046, D-051.
+- Affected documents/components: [DATA_MODEL.md](DATA_MODEL.md), architecture, roadmap, corresponding migrations/services and tests.
+- Authorization boundary: Design approval only; no implementation, live data, spending, migration, deployment or source write authorized by this entry.
+
+### D-060 — Versioned execution and frozen population (DM-04)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 6, DM-01–DM-09 and preferred UI direction with required additions.
+- Decision: Pin objective/pipeline versions and run manifests, retain measured population membership and use fenced durable work items and attempts.
+- Rationale: Make execution reproducible, scoped and replay-safe.
+- MVP scope and constraints: Separate source checkpoints from processing coverage; frozen manifests do not override current authorization. Unknown eligible totals remain unknown. Implement short claim/finalize transactions, bounded retries and explicit recovery.
+- Supersedes: None; refines D-029–D-031, D-040, D-044, D-052.
+- Affected documents/components: [DATA_MODEL.md](DATA_MODEL.md), architecture, roadmap, corresponding migrations/services and tests.
+- Authorization boundary: Design approval only; no implementation, live data, spending, migration, deployment or source write authorized by this entry.
+
+### D-061 — Reusable observation sets and exact evidence anchors (DM-05)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 6, DM-01–DM-09 and preferred UI direction with required additions.
+- Decision: Use compatible observation sets, evidence anchors tied to exact filtered representation revisions, and relational processed/matched aggregate membership.
+- Rationale: Avoid duplicate extraction and inflated counts; make claims inspectable.
+- MVP scope and constraints: Validate structured outputs and Unicode codepoint spans, maintain explicit compatibility and current permissions. Use deterministic distinct-call counts and denominators; no customer identity or market-wide inference.
+- Supersedes: None; refines D-030, D-032, D-034, D-053.
+- Affected documents/components: [DATA_MODEL.md](DATA_MODEL.md), architecture, roadmap, corresponding migrations/services and tests.
+- Authorization boundary: Design approval only; no implementation, live data, spending, migration, deployment or source write authorized by this entry.
+
+### D-062 — Versioned knowledge lifecycle and invalidation (DM-06)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 6, DM-01–DM-09 and preferred UI direction with required additions.
+- Decision: Separate logical knowledge units from revisions, record validation/review/lifecycle transitions, and invalidate affected authoritative projections when evidence becomes unavailable or stale.
+- Rationale: Preserve contextual knowledge and support correction without silently rewriting claims.
+- MVP scope and constraints: No unsupported authoritative claims, automatic resurrection of prior versions or single opaque trust score. Retention may erase payloads; exact risk rules, reviewers and physical state constraints remain subject to implementation verification.
+- Supersedes: None; refines D-003, D-004, D-021, D-032, D-053.
+- Affected documents/components: [DATA_MODEL.md](DATA_MODEL.md), architecture, roadmap, corresponding migrations/services and tests.
+- Authorization boundary: Design approval only; no implementation, live data, spending, migration, deployment or source write authorized by this entry.
+
+### D-063 — Versioned taxonomy and pinned knowledge packages (DM-07)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 6, DM-01–DM-09 and preferred UI direction with required additions.
+- Decision: Use governed taxonomy versions and reviewed suggestions, pinned package revision membership, and separate derived opportunity/brief records.
+- Rationale: Keep historical meaning and reuse shared knowledge without creating a content silo.
+- MVP scope and constraints: No automatic taxonomy mutation or silent follow-latest package changes in MVP. Recheck underlying evidence/access and freshness. No in-panel drafting, CMS or publishing.
+- Supersedes: None; refines D-013, D-027, D-041, D-042, D-053, D-055.
+- Affected documents/components: [DATA_MODEL.md](DATA_MODEL.md), architecture, roadmap, corresponding migrations/services and tests.
+- Authorization boundary: Design approval only; no implementation, live data, spending, migration, deployment or source write authorized by this entry.
+
+### D-064 — Dual budget reservation and usage ledger (DM-08)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 6, DM-01–DM-09 and preferred UI direction with required additions.
+- Decision: Atomically reserve against organization and run budgets, record immutable usage/adjustment ledger events, and retain uncertain reservations until reconciliation.
+- Rationale: Prevent concurrency bypass, support audit and distinguish estimated/actual/unknown spend.
+- MVP scope and constraints: No exact provider-side cap guarantee, no missing cost treated as free, no double counting org and run charges. All application AI executes through governed run/configuration. Currency, rate, caps and provider contract still open.
+- Supersedes: None; refines D-039, D-045, D-054.
+- Affected documents/components: [DATA_MODEL.md](DATA_MODEL.md), architecture, roadmap, corresponding migrations/services and tests.
+- Authorization boundary: Design approval only; no implementation, live data, spending, migration, deployment or source write authorized by this entry.
+
+### D-065 — Versioned delivery and retention barriers (DM-09)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 6, DM-01–DM-09 and preferred UI direction with required additions.
+- Decision: Use versioned destination projections/outbox and scoped local erasure records/restore barriers.
+- Rationale: Keep customer originals intact and prevent stale delivery or restored revoked data.
+- MVP scope and constraints: Separate credentials, approved projection only, version/idempotency/reconciliation checks, no unrelated destination mutations. No implied external recall or indefinite local retention; verify private destination and retention contracts.
+- Supersedes: None; refines D-007, D-037, D-046, D-056.
+- Affected documents/components: [DATA_MODEL.md](DATA_MODEL.md), architecture, roadmap, corresponding migrations/services and tests.
+- Authorization boundary: Design approval only; no implementation, live data, spending, migration, deployment or source write authorized by this entry.
+
+### D-066 — Preferred visual direction with required workflow additions (UI direction)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 6, DM-01–DM-09 and preferred UI direction with required additions.
+- Decision: Adopt the owner-supplied visual reference direction: warm neutral surfaces, muted green/olive accents, restrained borders, editorial typography, compact readable Persian RTL knowledge workspace, responsive layouts. Complete all required PRD workflows in the same design language.
+- Rationale: Provide a distinctive coherent interface without sacrificing required knowledge, operations or access workflows.
+- MVP scope and constraints: UI_DESIGN_REVIEW.md governs fit and additions: objectives, pipelines/runs, taxonomy, review queue, distribution and legacy reporting/health; deepen existing detail, budget and access workflows. Direction approved, not final logo, exact tokens, navigation, component specs or all individual screens. Use synthetic examples and verify accessibility/contrast/licensing. Do not publish the supplied image or treat its figures as real.
+- Supersedes: None; refines D-015, D-023, D-026, D-029, D-033, D-042, D-055.
+- Affected documents/components: [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md), PRD UI requirements, roadmap and frontend acceptance.
+- Authorization boundary: Design approval only; no implementation, live data, spending, migration, deployment or source write authorized by this entry.
+
 ### Template for future decision details
 
 ```markdown
@@ -529,7 +659,7 @@ Append dated entries for future accepted decisions and supersessions. Do not era
 
 ## Target architecture (conceptual, not current implementation)
 
-Phase 5 architecture is approved: [ARCHITECTURE.md](ARCHITECTURE.md) maps AP-01–AP-10 to D-047–D-056. Use a modular monolith with independent workers, owned PostgreSQL durable state/queue, a single identity authority with workspace bridge, tenant-scoped relational keys and RLS, pre-persistence call redaction, fenced/idempotent processing, relational evidence, governed budget admission, shared query services and a separate destination outbox. Detailed implementation contracts and activation prerequisites remain open; no new capability is production-verified.
+Phase 5 architecture is approved: [ARCHITECTURE.md](ARCHITECTURE.md) maps AP-01–AP-10 to D-047–D-056. Use a modular monolith with independent workers, owned PostgreSQL durable state/queue, a single identity authority with workspace bridge, tenant-scoped relational keys and RLS, pre-persistence call redaction, fenced/idempotent processing, relational evidence, governed budget admission, shared query services and a separate destination outbox. Phase 6 data model DM-01–DM-09 is accepted as D-057–D-065: additive knowledge schema, composite integrity and sharing projection, versioned resources/execution/observations/knowledge/taxonomy/packages, dual-budget ledger and delivery/retention controls. D-066 adopts the preferred UI direction with the additions in [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md). Detailed implementation contracts and activation prerequisites remain open; no new capability is production-verified.
 
 Sources (call center, CRM, web, authorized messaging, feedback, manual uploads) -> Collection & Integrations -> Resources -> Knowledge Engine -> Knowledge Base.
 Knowledge Objectives and Knowledge Pipelines configure extraction; AI Gateway, authorization, storage and audit are cross-cutting. D-038 selects approved external AI APIs for initial execution through the centralized gateway; private/hybrid inference is not an MVP commitment. D-039 uses centrally managed provider credentials with organization-scoped usage/budget controls and a later BYOK extension path. D-045 specifies simple organization and execution spending limits with request-level accounting, pipeline attribution and an extension path for advanced allocation. Resources and Knowledge independently feed Applications, API/MCP and authorized distribution. Panadan sends validated knowledge to customer systems using a separate, explicitly authorized destination integration. Under D-046, writes are limited to designated Panadan-managed knowledge records/fields and must not mutate existing customer-owned data or the read-only source.
@@ -576,4 +706,4 @@ Defer broad connector catalogs, full visual builders, advanced knowledge graphs,
 4. Develop incrementally on the feature branch. Preserve existing interfaces, source read-only constraints, production behavior and rollback options.
 5. Verify a complete pilot flow with synthetic or explicitly approved data before deployment; do not deploy or change production without separate authorization.
 
-The initial audit and gap analysis are recorded in [CURRENT_STATE.md](CURRENT_STATE.md) and [GAP_ANALYSIS.md](GAP_ANALYSIS.md); pilot discovery and PRD have been approved, and Phase 5 architecture choices AP-01–AP-10 are accepted as D-047–D-056. Phase 6 data-model design is authorized; implementation and live activation remain separately gated. Do not infer implemented or deployed capabilities from these decisions. See [historical decisions](../DECISIONS.md), [original reporting MVP PRD](../PRD.md), [status](../STATUS.md), [security](../SECURITY.md) and [production operations](../PRODUCTION_OPERATIONS.md). Existing safety/operational rules remain in force until a reviewed migration explicitly supersedes them. Update this document when the product owner approves a changed decision; distinguish accepted decisions from proposals and implementation evidence.
+The initial audit and gap analysis are recorded in [CURRENT_STATE.md](CURRENT_STATE.md) and [GAP_ANALYSIS.md](GAP_ANALYSIS.md); pilot discovery and PRD have been approved, and Phase 5 architecture choices AP-01–AP-10 are accepted as D-047–D-056. Phase 6 data model and UI direction are approved as D-057–D-066. Phase 7 roadmap design is authorized; implementation and live activation remain separately gated. Do not infer implemented or deployed capabilities from these decisions. See [historical decisions](../DECISIONS.md), [original reporting MVP PRD](../PRD.md), [status](../STATUS.md), [security](../SECURITY.md) and [production operations](../PRODUCTION_OPERATIONS.md). Existing safety/operational rules remain in force until a reviewed migration explicitly supersedes them. Update this document when the product owner approves a changed decision; distinguish accepted decisions from proposals and implementation evidence.
