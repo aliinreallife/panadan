@@ -896,7 +896,8 @@ def update_user(request: Request, uid: int, role: str = Form(...), csrf: str = F
 
 
 @app.get('/dashboard/mcp-apps', response_class=HTMLResponse, include_in_schema=False)
-def my_connected_ai_apps(request: Request, session: dict = Depends(current_session)):
+def my_connected_ai_apps(request: Request, review: str | None = None,
+                         session: dict = Depends(current_session)):
     """Self-service client-bound consent; not an OAuth authorization server."""
     if not hasattr(store, 'user_access') or not hasattr(store, 'list_mcp_clients'):
         raise HTTPException(503, 'Consent store unavailable')
@@ -914,6 +915,18 @@ def my_connected_ai_apps(request: Request, session: dict = Depends(current_sessi
             })
         except (TypeError, ValueError, KeyError):
             continue
+    pending_clients = (store.list_pending_mcp_clients(session['user_id'])
+                       if hasattr(store, 'list_pending_mcp_clients') else [])
+    # Standalone review is a local consent screen for an observed signed client.
+    # It is NOT an OAuth authorization endpoint or an arbitrary return URL.
+    review_client = None
+    if review is not None:
+        if 'mcp:use' not in access['capabilities']:
+            raise HTTPException(403, 'MCP not available for this account')
+        review_client = next((row for row in pending_clients
+                              if row['client_id'] == review), None)
+        if review_client is None:
+            raise HTTPException(404, 'Pending client not found')
     return templates.TemplateResponse(request, 'mcp_apps.html', {
         'session': session, 'csrf': session['csrf'],
         'capabilities': access['capabilities'] & {
@@ -922,8 +935,10 @@ def my_connected_ai_apps(request: Request, session: dict = Depends(current_sessi
             'mcp:use','calls:read','metrics:read','calls:transcript:read'}),
         'field_catalog': field_catalog(),
         'client_grants': client_rows,
-        'pending_clients': (store.list_pending_mcp_clients(session['user_id'])
-                            if hasattr(store, 'list_pending_mcp_clients') else []),
+        'pending_clients': pending_clients,
+        'review_client': review_client,
+        'call_fields': capability_fields({'calls:read'}),
+        'metric_fields': capability_fields({'metrics:read'}),
         'can_manage': 'users:manage' in access['capabilities'],
         'oauth_mode': oauth_config.mode,
     }, headers={'Cache-Control':'no-store'})
