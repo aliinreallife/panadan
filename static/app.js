@@ -426,13 +426,13 @@ function recordedDateTime(value) {
   stamp.title='تاریخ و ساعت ثبت به وقت تهران';
   return stamp;
 }
-function conversationSection(id, requestId){
+function conversationSection(id, requestId, rawMode=false){
   const section=el('details','conversation-section');
   const summary=el('summary','conversation-opener');
   const icon=el('span','conversation-icon','☷');icon.setAttribute('aria-hidden','true');
   const titleBlock=el('span','conversation-title-block');
-  titleBlock.append(el('strong','conversation-opener-title','متن مکالمه'),
-    el('span','conversation-preview','متن ویرایش‌شده با تفکیک گوینده'));
+  titleBlock.append(el('strong','conversation-opener-title',rawMode?'متن خام مکالمه':'نسخه پانادان'),
+    el('span','conversation-preview',rawMode?'متن اصلی مبدأ، بدون حذف اطلاعات':'متن ویرایش‌شده با تفکیک گوینده'));
   const toggle=el('span','conversation-toggle');
   const toggleText=el('span','conversation-toggle-label','باز کردن مکالمه');
   const arrow=el('span','conversation-chevron','⌄');arrow.setAttribute('aria-hidden','true');
@@ -448,14 +448,20 @@ function conversationSection(id, requestId){
     if(busy||done||!isCurrent())return;
     busy=true;more.disabled=true;state.textContent='در حال دریافت متن…';
     try{
-      const page=await fetchJSON('/dashboard/ai/transcript/'+encodeURIComponent(id)+'?offset='+encodeURIComponent(offset));
+      const page=await fetchJSON((rawMode?'/dashboard/raw/transcript/':'/dashboard/ai/transcript/')+encodeURIComponent(id)+'?offset='+encodeURIComponent(offset));
       if(!isCurrent())return;
       if(!page || typeof page.text!=='string' || !Number.isSafeInteger(page.next_offset) ||
          page.next_offset<offset || (page.has_more && page.next_offset<=offset))throw Error('پاسخ متن نامعتبر است');
       accumulated+=page.text;offset=page.next_offset;
       loaded=true;done=!page.has_more;
       if(accumulated.trim()){
-        pages.replaceChildren(transcriptPanel(accumulated));
+        if(rawMode){
+          const original=el('pre','transcript-raw');original.textContent=accumulated;
+          const warning=el('p','transcript-note','متن اصلی مکالمه؛ ممکن است حاوی اطلاعات شخصی و محرمانه باشد.');
+          const copy=el('button','secondary copy-transcript','کپی متن خام');copy.type='button';
+          copy.onclick=async()=>{try{await navigator.clipboard.writeText(accumulated);copy.textContent='کپی شد';}catch{copy.textContent='کپی ناموفق بود';}};
+          pages.replaceChildren(warning,copy,original);
+        }else pages.replaceChildren(transcriptPanel(accumulated));
         state.textContent=done?'تمام متن قابل دریافت نمایش داده شد.':'بخشی از متن دریافت شد.';
       }else state.textContent='متن مکالمه برای این تماس ثبت نشده است.';
       more.hidden=done;more.textContent='دریافت بخش بعدی';
@@ -582,10 +588,11 @@ async function detail(id){
       }
       block.append(grid);$('detail').append(block);
     }
-    if($('webmcp-transcript-permission') && data.id!==null && data.id!==undefined){
+    if(($('webmcp-transcript-permission')||$('raw-transcript-permission')) && data.id!==null && data.id!==undefined){
       const end=el('section','detail-section transcript-last');
       end.append(el('h3','detail-section-heading','مکالمه'));
-      end.append(conversationSection(id,requestId));
+      if($('webmcp-transcript-permission'))end.append(conversationSection(id,requestId));
+      if($('raw-transcript-permission'))end.append(conversationSection(id,requestId,true));
       $('detail').append(end);
     }
   }catch(error){
