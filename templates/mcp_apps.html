@@ -25,14 +25,14 @@
 <input type="checkbox" {% if mirror %}data-shared-field="{{col.id}}" disabled{% else %}name="fields" value="{{col.id}}"{% endif %} {% if col.id in current_fields %}checked{% endif %}>
 <span><strong>{{col.label}}</strong><small>{{tips.get(col.id,col.label)}}</small></span></label>{{help(tips.get(col.id,col.label))}}</div>
 {% endmacro %}
-{% macro approval_form(client, current_caps, current_fields, is_new=False, pending=False) %}
+{% macro approval_form(client, current_caps, current_fields, is_new=False, pending=False, raw_selected=False) %}
 {% if 'mcp:use' in capabilities %}
 <form class="mcp-consent-form consent-accordion-form" method="post" action="/dashboard/mcp-apps/approve">
 <input name="csrf" type="hidden" value="{{csrf}}">
 {% if is_new %}<label class="mcp-manual-input">شناسه برنامه (Client ID)<input name="client_id" dir="ltr" maxlength="160" required autocomplete="off" placeholder="OAuth client_id"></label>
 {% else %}<input name="client_id" type="hidden" value="{{client}}">{% endif %}
 <p class="consent-limit">{{glyph('shield')}} فقط دسترسی‌های مجاز حساب شما قابل انتخاب هستند.</p>
-{% for cap, label, description in [('calls:read','گزارش تماس‌ها','دسترسی به اطلاعات پایه و جزئیات گزارش تماس‌ها.'),('metrics:read','آمار و تحلیل','دسترسی به شاخص‌ها و آمار تجمیعی تماس‌ها.'),('calls:transcript:read','متن مکالمات','دسترسی به متن ویرایش‌شده مکالمات؛ حذف اطلاعات حساس کامل نیست.')] %}
+{% for cap, label, description in [('calls:read','گزارش تماس‌ها','دسترسی به اطلاعات پایه و جزئیات گزارش تماس‌ها.'),('metrics:read','آمار و تحلیل','دسترسی به شاخص‌ها و آمار تجمیعی تماس‌ها.'),('calls:transcript:read','متن مکالمات · نسخه پانادان','دسترسی به متن ویرایش‌شده مکالمات؛ حذف اطلاعات حساس کامل نیست.')] %}
 <details class="consent-category" data-consent-group="{{cap}}" {% if loop.first %}open{% endif %}>
 <summary><span class="consent-group-icon">{{glyph(cap)}}</span><span class="consent-group-title"><strong>{{label}}</strong><small>{{description}}</small></span><span class="consent-group-count" data-group-count aria-live="polite"></span><svg class="consent-chevron" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
 <div class="consent-group-body">
@@ -54,6 +54,9 @@
 {% endif %}
 </div></details>
 {% endfor %}
+{% if raw_transcript_available %}
+<details class="consent-category raw-consent-category"><summary><span class="consent-group-icon">{{glyph('calls:transcript:read')}}</span><span class="consent-group-title"><strong>متن اصلی مکالمه</strong><small>بدون حذف یا پوشاندن اطلاعات محرمانه</small></span><svg class="consent-chevron" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="consent-group-body"><div class="consent-field-row"><label><input type="checkbox" name="raw_transcript" value="true" {% if raw_selected %}checked{% endif %}><span><strong>اجازه ارسال متن خام به این برنامه</strong><small>متن ممکن است شامل شماره تلفن، نام، آدرس و اطلاعات محرمانه باشد. فقط در صورت نیاز تأیید کنید. گزارش تماس‌ها و شناسه تماس نیز لازم است.</small></span></label></div></div></details>
+{% endif %}
 <p class="consent-form-status" data-consent-status role="status" aria-live="polite"></p>
 <div class="consent-footer"><button type="submit" class="primary">{{'تأیید دسترسی' if pending or is_new else 'ذخیره تغییرات'}} <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg></button>{% if pending %}<a class="secondary" href="/dashboard/mcp-apps">انصراف</a>{% endif %}</div>
 {% if pending %}<p class="consent-shared-note">پس از ذخیره، به گفت‌وگوی دستیار خود برگردید. دسترسی‌ها را هر زمان می‌توانید لغو کنید.</p>{% endif %}
