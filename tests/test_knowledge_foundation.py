@@ -99,7 +99,10 @@ def migrated(db):
 def _reject(conn, error, sql, params=()):
     # The enclosing fixture transaction stays usable after expected errors.
     with pytest.raises(error), conn.transaction():
-        conn.execute(sql, params)
+        if params:
+            conn.execute(sql, params)
+        else:
+            conn.execute(sql)
 
 
 def _workspace(conn, slug):
