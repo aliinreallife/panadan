@@ -40,6 +40,7 @@ class AuthKitConfig:
     admin_subject: str = ""
     origin: str = ""
     admin_uid: int = 0
+    multi_user: bool = False
 
     @classmethod
     def from_env(cls, env: Mapping[str, str], *, origin: str | None, secure: bool,
@@ -63,7 +64,10 @@ class AuthKitConfig:
                 or not re.fullmatch(r"user_[A-Za-z0-9]+", subject)
                 or not re.fullmatch(r"[1-9][0-9]{0,8}", uid)):
             raise ValueError("Invalid AuthKit administrator configuration")
-        return cls(True, client, key, email, subject, origin, int(uid))
+        multi = env.get("PANADAN_AUTHKIT_MULTI_USER", "false")
+        if multi not in ("true", "false"):
+            raise ValueError("Invalid multi-user configuration")
+        return cls(True, client, key, email, subject, origin, int(uid), multi == "true")
 
     @property
     def callback(self) -> str:
@@ -78,7 +82,8 @@ class AuthKitConfig:
         query = urlencode({
             "provider": "authkit", "response_type": "code",
             "client_id": self.client_id, "redirect_uri": self.callback,
-            "screen_hint": "sign-in", "login_hint": self.admin_email,
+            "screen_hint": "sign-in",
+            **({} if self.multi_user else {"login_hint": self.admin_email}),
             "prompt": "login",
             "state": state, "code_challenge": challenge,
             "code_challenge_method": "S256",
@@ -108,6 +113,21 @@ class AuthKitConfig:
             raise AuthKitError("Login expired")
         return parts[1]
 
+    def verified_identity(self, user: object) -> tuple[str, str]:
+        if (not isinstance(user, dict) or not isinstance(user.get("id"), str)
+                or not re.fullmatch(r"user_[A-Za-z0-9]{1,120}", user["id"])
+                or not isinstance(user.get("email"), str)
+                or len(user["email"]) > 254
+                or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", user["email"].strip())
+                or user.get("email_verified") is not True):
+            raise AuthKitError("Account not authorized")
+        subject, email = user["id"], user["email"].strip().lower()
+        if (subject == self.admin_subject) != (email == self.admin_email):
+            raise AuthKitError("Administrator identity mismatch")
+        if not self.multi_user and subject != self.admin_subject:
+            raise AuthKitError("Account not authorized")
+        return subject, email
+
     def verify_user(self, user: object) -> None:
         if (not isinstance(user, dict) or user.get("id") != self.admin_subject
                 or not isinstance(user.get("email"), str)
@@ -115,7 +135,7 @@ class AuthKitConfig:
                 or user.get("email_verified") is not True):
             raise AuthKitError("Account not authorized")
 
-    def exchange(self, code: str, verifier: str) -> None:
+    def exchange(self, code: str, verifier: str) -> tuple[str, str] | None:
         if not code or len(code) > 2048:
             raise AuthKitError("Invalid login code")
         req = Request(AUTHENTICATE, method="POST", headers={
@@ -135,4 +155,7 @@ class AuthKitConfig:
                 raise AuthKitError("Invalid authentication response")
         except (HTTPError, URLError, OSError, ValueError, TypeError):
             raise AuthKitError("AuthKit login failed") from None
+        if self.multi_user:
+            return self.verified_identity(result.get("user"))
         self.verify_user(result.get("user"))
+        return None
