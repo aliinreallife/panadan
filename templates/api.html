@@ -10,13 +10,13 @@
 <aside class="sidebar">
 <a class="logo" href="/dashboard"><span class="brand-mark small">پ</span><span>پانادان <b>Panadan</b></span></a>
 <div class="nav-caption">فضای کاری</div>
-<nav>
+{% if session.panel_grants is defined %}{% include 'native_member_nav.html' %}{% else %}<nav>
 <a href="/dashboard">▦ <span>گزارش تماس‌ها</span></a><a href="/dashboard/operators">♙ کارشناسان و مقاصد</a>
 <a href="/dashboard/connect">◈ <span>اتصال هوش مصنوعی</span></a>
 <a href="/dashboard/tokens">♢ <span>توکن‌های دسترسی</span></a>
 <a class="active" aria-current="page" href="/dashboard/api">⌘ <span>راهنمای API</span></a>
 <a href="/dashboard/oauth">◉ <span>اتصال امن OAuth</span></a><a href="/dashboard/users">♙ <span>کاربران و دسترسی‌ها</span></a><a href="/dashboard/activity">▤ فعالیت کاربران</a><a href="/dashboard/system">◷ وضعیت سیستم</a>
-</nav>
+</nav>{% endif %}
 <div class="side-footer"><span class="status"><span class="dot"></span> فقط خواندنی</span>
 <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{csrf}}"><button class="link-button">خروج</button></form></div>
 </aside>
