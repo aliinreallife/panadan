@@ -20,6 +20,7 @@
       const matchesName = normalize(card.dataset.userName).includes(query);
       const matchesRole = role?.value === 'all' || card.dataset.userRole === role?.value;
       const matchesStatus = status?.value === 'all' ||
+        (status?.value === 'pending' && card.dataset.userPending === 'true') ||
         (status?.value === 'active' && card.dataset.userActive === 'true') ||
         (status?.value === 'inactive' && card.dataset.userActive === 'false');
       const show = matchesName && matchesRole && matchesStatus;
