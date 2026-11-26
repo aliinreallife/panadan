@@ -99,7 +99,7 @@
       </div>
       {% if not native_admin_only %}<a class="primary access-add-shortcut" href="#create-user">+ افزودن کاربر</a>{% endif %}
     </header>
-    {% if native_admin_only %}<section class="panel native-account-notice"><strong>ورود با WorkOS · فقط مدیر تأییدشده</strong><p>ساخت و ویرایش حساب‌های محلی در این حالت غیرفعال است. برای تغییر دسترسی ChatGPT و سایر برنامه‌ها از <a href="/dashboard/mcp-apps">برنامه‌های متصل من</a> استفاده کنید.</p></section>{% endif %}
+    {% if native_multi_user %}<section class="panel native-account-notice"><strong>ورود کاربران با ایمیل</strong><p>کاربران جدید با ایمیل تأییدشده خود وارد می‌شوند و تا زمان تعیین مجوز توسط شما، به هیچ داده یا بخش مدیریتی دسترسی ندارند. <a href="/login">صفحه ورود کاربران</a></p></section>{% elif native_admin_only %}<section class="panel native-account-notice"><strong>ورود با WorkOS · فقط مدیر تأییدشده</strong><p>ساخت و ویرایش حساب‌های محلی در این حالت غیرفعال است. برای تغییر دسترسی ChatGPT و سایر برنامه‌ها از <a href="/dashboard/mcp-apps">برنامه‌های متصل من</a> استفاده کنید.</p></section>{% endif %}
     <section class="access-overview" aria-label="آمار کاربران">
       <div class="access-overview-stat"><span>همهٔ حساب‌ها</span><strong>{{users|length}}</strong><small>حساب ثبت‌شده</small></div>
       <div class="access-overview-stat"><span>حساب‌های فعال</span><strong>{{users|selectattr('is_active')|list|length}}</strong><small>اجازه ورود به پانادان</small></div>
@@ -132,10 +132,10 @@
       </div>
       <div class="users-list" id="access-users-list">
         {% for user in users %}
-        <details class="user-card access-user-card" data-user-name="{{user.username|lower}}" data-user-role="{{user.role}}" data-user-active="{{'true' if user.is_active else 'false'}}">
+        <details class="user-card access-user-card" data-user-name="{{(native_accounts[user.id].email if user.id in native_accounts else user.username)|lower}}" data-user-role="{{user.role}}" data-user-active="{{'true' if user.is_active else 'false'}}">
           <summary class="user-card-summary">
-            <span class="user-card-name"><bdi dir="ltr">{{user.username}}</bdi>
-              {% if user.is_active %}<span class="status-badge" data-status="SoldOut">فعال</span>
+            <span class="user-card-name"><bdi dir="ltr">{{native_accounts[user.id].email if user.id in native_accounts else user.username}}</bdi>
+              {% if user.id in native_accounts and user.is_active and not user_caps[user.id] and not native_accounts[user.id].panel_grants %}<span class="status-badge">در انتظار دسترسی</span>{% elif user.is_active %}<span class="status-badge" data-status="SoldOut">فعال</span>
               {% else %}<span class="status-badge" data-status="Canceled">غیرفعال</span>{% endif %}
             </span>
             <span class="user-card-role">
@@ -153,9 +153,29 @@
               {% else %}<span class="muted">بدون دسترسی</span>{% endfor %}
               {% if user_caps[user.id]|length > 3 %}<span class="user-capability user-capability-more">+{{user_caps[user.id]|length - 3}} مجوز</span>{% endif %}
             </span>
-            <span class="user-card-edit">{{'مشاهده' if native_admin_only else 'ویرایش'}} <span aria-hidden="true">⌄</span></span>
+            <span class="user-card-edit">{{'مشاهده' if native_admin_only and user.id not in native_accounts else 'ویرایش'}} <svg class="user-action-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
           </summary>
-          {% if native_admin_only %}
+          {% if native_multi_user and user.id in native_accounts %}
+          <form method="post" action="/dashboard/users/{{user.id}}/native-access" class="user-edit-form native-access-editor" data-access-editor="native">
+            <input type="hidden" name="csrf" value="{{csrf}}">
+            <input type="hidden" data-role-select value="reader">
+            <label>الگوی دسترسی<select data-group-select><option value="custom" selected>سفارشی — انتخاب دستی</option>{% for group in permission_groups %}<option value="{{group.id}}">{{group.label}}</option>{% endfor %}</select></label>
+            <label class="user-edit-active"><input type="checkbox" name="is_active" value="true" {% if user.is_active %}checked{% endif %}> اجازه ورود به حساب</label>
+            <p class="muted">ایمیل تأییدشده: <bdi dir="ltr">{{native_accounts[user.id].email}}</bdi></p>
+            <fieldset class="access-editor-grants"><legend>۱. دسترسی به داده‌ها و MCP</legend>
+              <span data-grant-count class="access-grant-count"></span>
+              {{grant_picker(user_caps[user.id])}}
+              {{field_picker(user_fields[user.id])}}
+              <p class="access-risk-note" data-risk-note hidden>دسترسی محرمانه را فقط در صورت نیاز کاری فعال کنید.</p>
+            </fieldset>
+            <fieldset class="access-editor-grants"><legend>۲. دسترسی به بخش‌های مدیریتی</legend><p class="access-category-help">این مجوزها مستقل از دسترسی داده هستند. مدیریت کاربران، توکن‌ها و هویت OAuth فقط در اختیار مدیر اصلی است.</p>
+              <div class="access-field-grid">{% for id, item in native_panels.items() %}
+                <div class="permission-option-wrap"><label class="access-permission-row"><input type="checkbox" name="panels" value="{{id}}" {% if id in native_accounts[user.id].panel_grants %}checked{% endif %}><span class="access-permission-copy"><strong>{{item[0]}}</strong></span></label>{{permission_help(item[1])}}</div>
+              {% endfor %}</div>
+            </fieldset>
+            <div class="user-edit-footer"><p class="description">پس از ذخیره، کاربر دوباره وارد می‌شود و اتصال‌های قبلی به تأیید مجدد نیاز دارند.</p><button class="primary" type="submit">ذخیره دسترسی‌ها</button></div>
+          </form>
+          {% elif native_admin_only %}
           <div class="native-readonly-permissions"><p class="muted">مجوزهای ثبت‌شده این حساب (فقط نمایش)</p><div class="native-permission-chips">{% for category in permission_categories %}{% for item in category['items'] if item.id in user_caps[user.id] %}<span class="native-permission-item">{{item.label}}{{permission_help(item.description)}}</span>{% endfor %}{% endfor %}</div><p class="muted">ستون‌های ثبت‌شده</p><div class="native-permission-chips">{% for col in field_catalog if col.id in user_fields[user.id] %}<span class="native-permission-item">{{col.label}}{{permission_help(descriptions.get(col.id,col.label))}}</span>{% endfor %}</div></div>
           {% else %}
           <form method="post" action="/dashboard/users/{{user.id}}/update" class="user-edit-form" data-access-editor="edit">
@@ -204,7 +224,7 @@
       <summary class="access-create-trigger">
         <span class="access-create-trigger-copy"><strong>افزودن کاربر جدید</strong>
           <small>نام کاربری، رمز موقت و دسترسی‌های اولیه را تعیین کنید</small></span>
-        <span class="access-create-trigger-action">باز کردن فرم <span aria-hidden="true">⌄</span></span>
+        <span class="access-create-trigger-action">باز کردن فرم <svg class="user-action-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
       </summary>
     <section class="panel access-create-panel">
       <div class="panel-head"><div><h2>افزودن کاربر</h2><p class="muted small-text">گروه فقط تنظیمات اولیه را وارد می‌کند؛ مجوزهای نهایی هر حساب مستقل ذخیره می‌شوند.</p></div></div>
