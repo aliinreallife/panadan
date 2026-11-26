@@ -37,6 +37,7 @@ Evolve the existing read-only reporting product into a reusable organizational k
 | D-025 | Customer intelligence granularity | Hybrid individual and aggregate analysis, with aggregate insights prioritized for the initial MVP; retain extensibility for authorized individual analysis. |
 | D-026 | Customer intelligence delivery | Hybrid delivery: evidence-backed insight feed, limited analytical dashboard and conversational access through authorized MCP initially; dedicated conversational UI later. |
 | D-027 | Content intelligence scope | Hybrid Content Intelligence: evidence-backed discovery and content briefs first, limited AI/MCP-assisted draft generation in MVP; content management and approved publishing integrations later. |
+| D-028 | Progressive multi-source strategy | Start with the existing call-center integration, add manual resources and limited approved web resources in MVP, and extend to further connectors incrementally based on need and authorized availability. |
 
 Decision identifiers preserve the original negotiation numbering; gaps intentionally do not expose internal strategy.
 
@@ -63,6 +64,7 @@ This is a living decision register, not a one-time handoff. Every contributor, i
 | 2026-11-26 | D-025 | Owner selected hybrid customer intelligence with aggregate-first delivery. |
 | 2026-11-26 | D-026 | Owner selected hybrid delivery for Customer Intelligence. |
 | 2026-11-26 | D-027 | Owner selected hybrid Content Intelligence with discovery and strategy prioritized. |
+| 2026-11-26 | D-028 | Owner selected progressive multi-source MVP delivery. |
 
 Append dated entries for future accepted decisions and supersessions. Do not erase prior entries.
 
@@ -114,6 +116,18 @@ Append dated entries for future accepted decisions and supersessions. Do not era
 - Supersedes: None; refines D-024, consistent with D-015, D-019, D-021, D-025 and D-026.
 - Affected documents/components: Content Intelligence discovery, briefs and draft generation, shared knowledge retrieval, AI Gateway and MCP access, future scoped PRD and acceptance tests.
 
+### D-028 — Progressive multi-source strategy
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner discussion during pilot discovery
+- Decision: Design the Resources and collection foundations for multiple source types from the beginning, while integrating sources progressively. Begin with the existing call-center reporting integration; add manual text, documents and supplementary information, plus limited collection from selected approved web pages in the initial MVP.
+- Rationale: Reuse the existing source adapter to deliver quickly; manual resources demonstrate multi-source capability without requiring a dedicated connector for each system; selected web pages provide an additional source type without a broad crawler.
+- MVP scope: Call-center data available under current and approved access, manual resource ingestion and limited approved web resources. Preserve available original and derivative representations, contextual metadata, source identity and provenance. Exact supported file formats, limits, web pages, refresh methods, retention, source permissions and rollout sequence within MVP remain subject to discovery and scoped PRD. Availability of audio or other unconfirmed representations is not assumed.
+- Deferred / out of scope: Dedicated CRM and organizational data connectors, messaging/Telegram, SEO and analytics, and expanded market/competitor collection are subsequent integration candidates; priority depends on use-case evidence and authorization. Broad autonomous web crawling and comprehensive connector catalogs are not initial deliverables.
+- Constraints and implications: Follow D-001, D-005, D-008, D-009, D-016, D-021 and D-022: preserve read-only source access, tenant isolation, provenance, usage rights, privacy and source-specific validation. Treat uploaded files and web content as untrusted data; enforce bounded parsing/retrieval, approved destinations, URL/network safety and applicable access restrictions. Never treat manually supplied or web content as validated Knowledge by default. No live source access, upload, crawl, or permission expansion is authorized by this decision alone. A manual or web resource may supplement a call-derived claim only if its subject, conditions and authority support that claim.
+- Supersedes: None; refines the selected-source scope under D-017, D-018 and D-024.
+- Affected documents/components: Resources, collection adapters, ingestion policies, workspace integration configuration, Knowledge Engine, future scoped PRD, architecture, data model and acceptance tests.
+
 ### Template for future decision details
 
 ```markdown
@@ -147,7 +161,7 @@ A source is authoritative only for appropriate subjects. Contradictions require 
 
 ### Collection and processing
 
-Support API/CRM/database integrations, approved external sources and manual ingestion. Knowledge objectives describe what the organization needs to learn; pipeline configuration selects input scope, schedule, model, validation policy and output. Scheduled/manual execution first; bounded discovery and event processing where useful. Track run status, errors and lineage; avoid reprocessing unchanged inputs when practical. Exact job semantics are pending technical design.
+Support API/CRM/database integrations, approved external sources and manual ingestion progressively. Under D-028, prioritize the existing call-center integration, manual resources and limited approved web resources in MVP; add other dedicated connectors when justified. Knowledge objectives describe what the organization needs to learn; pipeline configuration selects input scope, schedule, model, validation policy and output. Scheduled/manual execution first; bounded discovery and event processing where useful. Track run status, errors and lineage; avoid reprocessing unchanged inputs when practical. Exact job semantics are pending technical design.
 
 ### Applications and AI
 
@@ -163,7 +177,7 @@ Keep current source database read-only; knowledge export is a distinct destinati
 
 ## MVP boundaries and acceptance
 
-Aim for one complete pilot flow: ingest selected sources (call center, selected online and/or manual inputs), view resources, configure objectives/pipelines, extract and validate contextual knowledge, manage units/packages, use authorized API/MCP and one-way sync, and deliver selected practical applications. D-024 selects limited Customer Intelligence and Content Intelligence as the initial applications on shared infrastructure. Market Intelligence is a subsequent desired extension; its release scope and timing remain open. D-025 prioritizes aggregate customer intelligence while preserving an extensible model for authorized individual analysis; individual profiling is not a required initial deliverable. D-026 selects a hybrid Customer Intelligence experience: evidence-backed insight feed, limited analytical dashboard and authorized MCP conversational access, with a dedicated conversational UI deferred. D-027 selects hybrid Content Intelligence: discovery and content briefs first, limited AI/MCP-assisted drafting, with full content management and publishing integrations deferred. Detailed workflows, data availability and rights, output requirements, validation and acceptance targets are still pending pilot discovery. Other proposed applications are not commitments.
+Aim for one complete pilot flow: ingest selected sources (call center, selected online and/or manual inputs), view resources, configure objectives/pipelines, extract and validate contextual knowledge, manage units/packages, use authorized API/MCP and one-way sync, and deliver selected practical applications. D-024 selects limited Customer Intelligence and Content Intelligence as the initial applications on shared infrastructure. Market Intelligence is a subsequent desired extension; its release scope and timing remain open. D-025 prioritizes aggregate customer intelligence while preserving an extensible model for authorized individual analysis; individual profiling is not a required initial deliverable. D-026 selects a hybrid Customer Intelligence experience: evidence-backed insight feed, limited analytical dashboard and authorized MCP conversational access, with a dedicated conversational UI deferred. D-027 selects hybrid Content Intelligence: discovery and content briefs first, limited AI/MCP-assisted drafting, with full content management and publishing integrations deferred. D-028 selects progressive multi-source delivery: call-center data first, manual resources and limited approved web resources in MVP, further dedicated connectors later as justified. Detailed workflows, data availability and rights, output requirements, validation and acceptance targets are still pending pilot discovery. Other proposed applications are not commitments.
 
 Measure ingestion reliability, evidence-backed quality, reuse of knowledge across applications, freshness, access isolation, export correctness, measurable customer benefit and ability to onboard a second customer without rewriting the core. Quantitative targets need pilot validation.
 
