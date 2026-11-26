@@ -810,7 +810,9 @@ class Store:
         if not row or row['raw_transcript']!=1:
             return False
         try:
-            return {'mcp:use','calls:read'}<=set(json.loads(row['capabilities'])) and 'id' in json.loads(row['fields'])
+            caps, fields=json.loads(row['capabilities']),json.loads(row['fields'])
+            return (isinstance(caps,list) and isinstance(fields,list) and
+                    {'mcp:use','calls:read'}<=set(caps) and 'id' in fields)
         except (ValueError,TypeError):
             return False
 
@@ -861,9 +863,8 @@ class Store:
                 if ('calls:read' not in caps or 'id' not in selected or not native_issuer or
                     not self._native_raw_allowed(c,user_id,native_issuer,native_owner_uid)):
                     raise ValueError('Raw transcript grant is unavailable')
-                observed=c.execute("""SELECT 1 FROM mcp_client_requests WHERE user_id=? AND client_id=?
-                    UNION SELECT 1 FROM mcp_client_grants WHERE user_id=? AND client_id=?""",
-                    (user_id,client_id,user_id,client_id)).fetchone()
+                observed=c.execute('SELECT 1 FROM mcp_client_requests WHERE user_id=? AND client_id=?',
+                    (user_id,client_id)).fetchone()
                 if not observed:
                     raise ValueError('Raw transcript requires an observed OAuth client')
             c.execute(
