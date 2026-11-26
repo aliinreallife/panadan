@@ -1,7 +1,7 @@
 # Panadan — UI Design Direction Review
 
-Date: 2026-11-26 | Status: Owner-preferred visual reference, conditional fit review; not final UI approval.
-Basis: owner-supplied composite visual reference reviewed against [PRD.md](PRD.md) §12, [ARCHITECTURE.md](ARCHITECTURE.md), and [DECISIONS.md](DECISIONS.md). The image itself is not republished to the public repository. Its figures and examples are illustrative, not operational metrics. This review does not replace the product requirements, create a new accepted D-ID, approve a logo asset, or authorize implementation.
+Date: 2026-11-26 | Status: Visual direction approved by owner as D-066, with required additions; detailed UI and production assets remain subject to review.
+Basis: owner-supplied composite visual reference reviewed against [PRD.md](PRD.md) §12, [ARCHITECTURE.md](ARCHITECTURE.md), and [DECISIONS.md](DECISIONS.md). The image itself is not republished to the public repository. Its figures and examples are illustrative, not operational metrics. This review does not replace product requirements. D-066 records the subsequent explicit owner approval of the direction and required additions; it does not approve final logo assets or authorize implementation.
 
 ## 1. Visual direction
 
@@ -50,6 +50,6 @@ Sections can be grouped, renamed or combined. The workflow coverage, not the num
 
 ## 5. Handoff
 
-Recommended: adopt this visual direction conditionally, extend it with the missing workflows above, and review individual desktop/mobile screens and a component/token specification before final UI approval. Design team may reorganize navigation and interactions without sacrificing requirements. No final UI decision recorded until the owner confirms the completed design baseline; do not infer full approval from preference for the reference.
+Approved direction (D-066): adopt this visual language, extend it with the missing workflows above, and review individual desktop/mobile screens and a component/token specification before final detailed UI approval. Design team may reorganize navigation and interactions without sacrificing requirements. Exact tokens, logo assets, components and screen implementations are not approved merely by direction approval.
 
 Implementation roadmap should include UI deliverables alongside each functional vertical slice, rather than redesigning the full application after backend completion. See PRD §12 for governing functionality and Phase 6 data model for proposed data/permission states.
