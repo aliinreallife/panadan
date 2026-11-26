@@ -33,8 +33,8 @@ Evolve the existing read-only reporting product into a reusable organizational k
 | D-021 | Validation method | Evidence-based Knowledge Validation; explicit rules, inspectable evidence, source authority by subject, context, freshness and conflict handling first. |
 | D-022 | Data model | Core Schema + Extensible Attributes: typed, validated extensions and contextual/temporal scope. No advanced schema builder in MVP. |
 | D-023 | Organization architecture | Shared Core + Organization Workspace; configuration over custom code, isolated customer workspaces and reusable modules. |
-
 | D-024 | Initial application priorities | Start with limited Customer Intelligence and Content Intelligence on shared reusable infrastructure; plan Market Intelligence as a subsequent extension, with its release scope and timing still open. |
+| D-025 | Customer intelligence granularity | Hybrid individual and aggregate analysis, with aggregate insights prioritized for the initial MVP; retain extensibility for authorized individual analysis. |
 
 Decision identifiers preserve the original negotiation numbering; gaps intentionally do not expose internal strategy.
 
@@ -58,6 +58,7 @@ This is a living decision register, not a one-time handoff. Every contributor, i
 | 2026-11 | D-001–D-023 (public subset) | Initial accepted product direction imported from owner negotiation; see accepted decisions table. |
 | 2026-11-25 | — | Owner requested ongoing decision maintenance; mandatory documentation and agent handoff protocol introduced. |
 | 2026-11-26 | D-024 | Owner selected initial application priorities during pilot discovery. |
+| 2026-11-26 | D-025 | Owner selected hybrid customer intelligence with aggregate-first delivery. |
 
 Append dated entries for future accepted decisions and supersessions. Do not erase prior entries.
 
@@ -72,6 +73,18 @@ Append dated entries for future accepted decisions and supersessions. Do not era
 - Constraints and implications: Preserve independent resource and knowledge access, common evidence-backed knowledge, configurable application execution, tenant isolation, source read-only and privacy constraints under existing decisions. Do not assume access to unconfirmed sources or promise market-wide conclusions from customer conversations alone.
 - Supersedes: None; refines application selection under D-015, D-017 and D-018.
 - Affected documents/components: MVP boundaries below; future knowledge-platform PRD, architecture, roadmap, shared Resources/Knowledge Engine/Knowledge Base and application configuration. Phase 2 gap analysis remains a historical snapshot; D-024 resolves its initial application selection question, not all discovery requirements.
+
+### D-025 — Customer intelligence granularity
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner discussion during pilot discovery
+- Decision: Support both individual and aggregate customer intelligence as an extensible product direction; prioritize aggregate analysis for initial delivery.
+- Rationale: Aggregate insights support customer, content and later market intelligence with less dependency on cross-system identity matching and a reusable shared knowledge foundation.
+- MVP scope: Focus on evidence-backed patterns within defined populations, periods and conditions. Preserve extensibility for authorized individual analysis; this does not require individual profiling, identity resolution or CRM enrichment in the initial release.
+- Deferred / out of scope: Detailed individual workflows, identity matching and profile access rules remain to be discovered and approved. Exact aggregate categories, measures, reporting periods and thresholds are not yet selected.
+- Constraints and implications: Keep observations and inferred patterns distinct, retain provenance and authorized scope, distinguish call counts from unique customer counts where identity is not reliably established, avoid unsupported population-wide inference. Aggregation alone is not anonymization; protect small groups, sensitive fields and evidence drill-down under existing authorization and data policies. No unnecessary collection of individual identifiers.
+- Supersedes: None; refines D-024 and D-022.
+- Affected documents/components: Customer Intelligence, shared knowledge schema, validation and application configuration; future scoped PRD, data model and acceptance tests.
 
 ### Template for future decision details
 
@@ -122,7 +135,7 @@ Keep current source database read-only; knowledge export is a distinct destinati
 
 ## MVP boundaries and acceptance
 
-Aim for one complete pilot flow: ingest selected sources (call center, selected online and/or manual inputs), view resources, configure objectives/pipelines, extract and validate contextual knowledge, manage units/packages, use authorized API/MCP and one-way sync, and deliver selected practical applications. D-024 selects limited Customer Intelligence and Content Intelligence as the initial applications on shared infrastructure. Market Intelligence is a subsequent desired extension; its release scope and timing remain open. Detailed workflows, data availability and rights, output requirements, validation and acceptance targets are still pending pilot discovery. Other proposed applications are not commitments.
+Aim for one complete pilot flow: ingest selected sources (call center, selected online and/or manual inputs), view resources, configure objectives/pipelines, extract and validate contextual knowledge, manage units/packages, use authorized API/MCP and one-way sync, and deliver selected practical applications. D-024 selects limited Customer Intelligence and Content Intelligence as the initial applications on shared infrastructure. Market Intelligence is a subsequent desired extension; its release scope and timing remain open. D-025 prioritizes aggregate customer intelligence while preserving an extensible model for authorized individual analysis; individual profiling is not a required initial deliverable. Detailed workflows, data availability and rights, output requirements, validation and acceptance targets are still pending pilot discovery. Other proposed applications are not commitments.
 
 Measure ingestion reliability, evidence-backed quality, reuse of knowledge across applications, freshness, access isolation, export correctness, measurable customer benefit and ability to onboard a second customer without rewriting the core. Quantitative targets need pilot validation.
 
