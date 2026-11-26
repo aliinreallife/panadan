@@ -1,6 +1,7 @@
 """FastAPI dashboard, scoped REST API and authenticated MCP Streamable HTTP."""
 from __future__ import annotations
 from contextlib import asynccontextmanager
+import asyncio
 from datetime import date, datetime, timezone
 from typing import Literal
 import hmac
@@ -30,13 +31,16 @@ from .permission_catalog import (
 )
 from .ingress import allowed_hosts, external_base_url, read_public_origin, valid_form_origin
 from .reporting_retries import read_with_retry
-from .transcript_ai import transcript_for_ai, MAX_TRANSCRIPT_CHARS
+from .transcript_ai import transcript_for_ai, raw_transcript_page, MAX_TRANSCRIPT_CHARS
 from .mcp_tools import mcp
 from mcp.server.transport_security import TransportSecuritySettings
 from .oauth_mcp import OAuthConfig, OAuthVerifier
 from .oauth_discovery import VerifiedOAuthDiscovery
+from .workos_standalone import WorkOSBridgeConfig, WorkOSBridgeError, PENDING_COOKIE
+from .authkit_login import AuthKitConfig, AuthKitError, FLOW_COOKIE
 from .security import SESSION_SECONDS, CAPABILITIES, ROLE_GRANTS, permissions, has_capability, is_rate_limited, record_failure
 from .auth_store import create_auth_store
+from .security import NATIVE_PANEL_GRANTS
 
 # Default remains SQLite. A synthetic loopback PG18 test requires deliberate
 # staging-only flags; invalid settings refuse startup with no fallback.
@@ -52,6 +56,31 @@ oauth_verifier = OAuthVerifier(oauth_config) if oauth_config.mode == 'oauth' els
 COOKIE_SECURE = os.getenv('PANADAN_COOKIE_SECURE', 'true').lower() == 'true'
 COOKIE_NAME = 'panadan_session'
 PUBLIC_ORIGIN = read_public_origin(cookie_secure=COOKIE_SECURE)
+workos_bridge = WorkOSBridgeConfig.from_env(
+    os.environ, oauth_mode=oauth_config.mode, oauth_issuer=oauth_config.issuer,
+    public_origin=PUBLIC_ORIGIN,
+)
+authkit_login = AuthKitConfig.from_env(
+    os.environ, origin=PUBLIC_ORIGIN, secure=COOKIE_SECURE,
+    oauth_mode=oauth_config.mode, standalone=workos_bridge.enabled,
+)
+if authkit_login.enabled:
+    COOKIE_NAME = '__Host-panadan_authkit_session'
+if authkit_login.multi_user:
+    from .mcp_tools import register_raw_transcript_tool
+    register_raw_transcript_tool()
+class AuthCallbackAccessLogFilter(logging.Filter):
+    """Keep OAuth codes and state out of the Uvicorn access log."""
+    def filter(self, record):
+        args = record.args
+        if isinstance(args, tuple) and len(args) == 5 and isinstance(args[2], str):
+            path = args[2].split('?', 1)[0]
+            if path in ('/auth/workos/callback', '/oauth/workos/login'):
+                record.args = (*args[:2], path, *args[3:])
+        return True
+
+
+logging.getLogger('uvicorn.access').addFilter(AuthCallbackAccessLogFilter())
 templates = Jinja2Templates(directory='templates')
 templates.env.filters['date_time'] = lambda value: datetime.fromtimestamp(value, timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if value else '—'
 # Date/time are separate isolated runs in RTL templates (clock on the right).
@@ -63,7 +92,13 @@ templates.env.filters['date_time_iso'] = lambda value: datetime.fromtimestamp(va
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    store.bootstrap(os.getenv('PANADAN_ADMIN_USER', 'admin'), os.getenv('PANADAN_ADMIN_PASSWORD'))
+    if authkit_login.enabled:
+        # Validate the existing admin without relying on legacy password config.
+        # Never bootstrap a new administrator from a provider callback.
+        store.prepare_authkit_admin(authkit_login.admin_uid, oauth_config.issuer,
+                                    authkit_login.admin_subject, multi_user=authkit_login.multi_user)
+    else:
+        store.bootstrap(os.getenv('PANADAN_ADMIN_USER', 'admin'), os.getenv('PANADAN_ADMIN_PASSWORD'))
     async with mcp.session_manager.run():
         yield
 
@@ -82,7 +117,7 @@ async def audit_http_activity(request: Request, call_next):
     start = time.monotonic()
     user_id = None
     if path.startswith('/dashboard'):
-        session = store.session(request.cookies.get(COOKIE_NAME))
+        session = browser_session(request)
         user_id = session['user_id'] if session else None
         surface = 'dashboard'
     else:
@@ -104,6 +139,8 @@ async def audit_http_activity(request: Request, call_next):
         action = path
     elif path.startswith('/dashboard/ai/transcript/'):
         action = '/dashboard/ai/transcript/{id}'
+    elif path.startswith('/dashboard/raw/transcript/'):
+        action = '/dashboard/raw/transcript/{id}'
     elif path.startswith('/dashboard/overview/'):
         action = '/dashboard/overview/{id}'
     elif path.startswith('/dashboard/data/'):
@@ -137,8 +174,24 @@ async def audit_http_activity(request: Request, call_next):
 
 
 
+def browser_session(request: Request):
+    raw = request.cookies.get(COOKIE_NAME)
+    if not authkit_login.enabled:
+        return store.session(raw)
+    session = store.session(raw, auth_source='authkit')
+    if session and session['user_id'] == authkit_login.admin_uid and session['role'] == 'admin':
+        return session
+    if session and authkit_login.multi_user:
+        account = store.native_account(session['user_id'], oauth_config.issuer)
+        if account and account['is_active']:
+            session['username'] = account['email']
+            session['panel_grants'] = account['panel_grants']
+            return session
+    return None
+
+
 def current_session(request: Request) -> dict:
-    session = store.session(request.cookies.get(COOKIE_NAME))
+    session = browser_session(request)
     if not session: raise HTTPException(status_code=401, detail='Login required')
     return session
 
@@ -165,6 +218,24 @@ def required(session: dict, capability: str):
 def admin_only(session: dict):
     return required(session, 'users:manage')
 
+
+def panel_allowed(session: dict, panel: str) -> bool:
+    return has_capability(session, 'users:manage') or (
+        authkit_login.multi_user and panel in session.get('panel_grants', ()))
+
+def require_panel(session: dict, panel: str):
+    if not panel_allowed(session, panel):
+        raise HTTPException(403, 'Insufficient panel permissions')
+
+def panel_context(session: dict) -> dict:
+    return {key:panel_allowed(session,key) for key in NATIVE_PANEL_GRANTS}
+
+templates.env.globals['panel_allowed'] = panel_allowed
+templates.env.globals['has_capability'] = has_capability
+
+def native_raw_allowed(session: dict) -> bool:
+    return bool(authkit_login.multi_user and store.native_raw_allowed(
+        session['user_id'],oauth_config.issuer,authkit_login.admin_uid))
 
 def user_field_access(session: dict) -> frozenset[str]:
     access = store.user_access(session['user_id']) if hasattr(store, 'user_access') else None
@@ -271,7 +342,7 @@ def root(request: Request):
 def login(request: Request):
     if logged_in(request): return RedirectResponse('/dashboard', status_code=303)
     nonce = secrets.token_urlsafe(24)
-    response = templates.TemplateResponse(request, 'login.html', {'nonce':nonce, 'error':False})
+    response = templates.TemplateResponse(request, 'login.html', {'nonce':nonce, 'error':False, 'authkit':authkit_login.enabled, 'native_multi_user':authkit_login.multi_user}, headers={'Cache-Control':'no-store'})
     response.set_cookie('panadan_login_nonce', nonce, httponly=True, secure=COOKIE_SECURE,
                         samesite='lax', max_age=600)
     return response
@@ -279,6 +350,8 @@ def login(request: Request):
 
 @app.post('/login', include_in_schema=False)
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...), nonce: str = Form(...)):
+    if authkit_login.enabled:
+        raise HTTPException(403, 'Local password login disabled')
     cookie_nonce = request.cookies.get('panadan_login_nonce', '')
     if not cookie_nonce or not hmac.compare_digest(nonce, cookie_nonce) or (
         not valid_form_origin(request, PUBLIC_ORIGIN)):
@@ -299,10 +372,116 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     store.clear_login_failures(username)
     raw, _ = store.create_session(uid)
     audit_auth_event(uid,'POST /login:success',200)
-    response = RedirectResponse('/dashboard', status_code=303)
+    pending_workos = workos_bridge.read_pending(request.cookies.get(PENDING_COOKIE))
+    response = RedirectResponse('/oauth/workos/continue' if pending_workos
+                                else '/dashboard', status_code=303)
     response.set_cookie(COOKIE_NAME, raw, max_age=SESSION_SECONDS, httponly=True,
                         secure=COOKIE_SECURE, samesite='lax')
     response.delete_cookie('panadan_login_nonce')
+    return response
+
+
+@app.get('/auth/workos/start', include_in_schema=False)
+def authkit_start(request: Request):
+    if not authkit_login.enabled:
+        raise HTTPException(404)
+    target, flow = authkit_login.begin()
+    response = RedirectResponse(target, status_code=303,
+                                headers={'Cache-Control':'no-store', 'Referrer-Policy':'no-referrer'})
+    response.set_cookie(FLOW_COOKIE, flow, max_age=600, httponly=True,
+                        secure=True, samesite='lax', path='/')
+    return response
+
+
+@app.get('/auth/workos/callback', include_in_schema=False)
+async def authkit_callback(request: Request):
+    if not authkit_login.enabled:
+        raise HTTPException(404)
+    try:
+        verifier = authkit_login.verifier_for(request.cookies.get(FLOW_COOKIE),
+                                              request.query_params.get('state'))
+        identity = await asyncio.to_thread(authkit_login.exchange,
+                                request.query_params.get('code', ''), verifier)
+        uid = authkit_login.admin_uid
+        if authkit_login.multi_user:
+            if not identity:
+                raise AuthKitError('Missing verified identity')
+            subject, email = identity
+            if subject != authkit_login.admin_subject:
+                uid = store.provision_native_user(oauth_config.issuer, subject, email)
+        access = store.user_access(uid)
+        if not access or (uid == authkit_login.admin_uid and
+                          not {'users:manage', 'mcp:use'} <= access['capabilities']):
+            raise AuthKitError('Account disabled')
+        raw, _ = store.create_session(uid, auth_source='authkit')
+    except (AuthKitError, ValueError, __import__('sqlite3').IntegrityError):
+        audit_auth_event(None, 'AuthKit sign-in rejected', 403)
+        response = RedirectResponse('/login?error=1', status_code=303)
+    else:
+        audit_auth_event(uid, 'AuthKit sign-in successful', 200)
+        response = RedirectResponse('/dashboard', status_code=303)
+        response.set_cookie(COOKIE_NAME, raw, max_age=SESSION_SECONDS, httponly=True,
+                            secure=True, samesite='lax', path='/')
+    response.delete_cookie(FLOW_COOKIE, path='/', secure=True, httponly=True, samesite='lax')
+    response.delete_cookie('panadan_session', path='/', secure=True, httponly=True, samesite='lax')
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    return response
+
+
+@app.get('/oauth/workos/login', include_in_schema=False)
+def workos_existing_login(request: Request, external_auth_id: str = Query(...)):
+    """WorkOS delegates only login to Panadan's existing session system."""
+    if not workos_bridge.enabled:
+        raise HTTPException(404)
+    try:
+        pending = workos_bridge.issue_pending(external_auth_id)
+    except WorkOSBridgeError as exc:
+        raise HTTPException(400, str(exc)) from None
+    target = '/oauth/workos/continue' if logged_in(request) else '/login'
+    response = RedirectResponse(target, status_code=303)
+    response.set_cookie(PENDING_COOKIE, pending, httponly=True,
+                        secure=COOKIE_SECURE, samesite='lax', max_age=600)
+    return response
+
+
+@app.get('/oauth/workos/continue', include_in_schema=False)
+async def workos_existing_login_complete(request: Request):
+    """Complete ONLY after Panadan session auth and verified email attestation."""
+    if not workos_bridge.enabled:
+        raise HTTPException(404)
+    session = logged_in(request)
+    if not session:
+        return RedirectResponse('/login', status_code=303)
+    pending = workos_bridge.read_pending(request.cookies.get(PENDING_COOKIE))
+    if not pending:
+        raise HTTPException(400, 'WorkOS authorization expired; restart connection')
+    uid = session['user_id']
+    if not hasattr(store, 'workos_verified_email'):
+        raise HTTPException(503, 'External-auth contact store unavailable')
+    email = store.workos_verified_email(uid)
+    if not email:
+        raise HTTPException(403, 'No administrator-verified email for this Panadan account')
+    subject = workos_bridge.external_subject(uid)
+    actor = store.actor_for_oauth(workos_bridge.issuer, subject)
+    if actor is None:
+        try:
+            store.bind_oauth_identity(workos_bridge.issuer, subject, uid)
+        except (ValueError, __import__('sqlite3').IntegrityError):
+            raise HTTPException(409, 'OAuth subject binding needs administrator review') from None
+    elif actor != uid:
+        raise HTTPException(403, 'OAuth subject linked to another Panadan account')
+    if not store.oauth_identity_has_mcp_access(workos_bridge.issuer, subject):
+        raise HTTPException(403, 'Current Panadan role does not permit MCP access')
+    try:
+        target = await asyncio.to_thread(
+            workos_bridge.complete, pending, user_id=uid, email=email)
+    except WorkOSBridgeError:
+        audit_auth_event(uid, 'WorkOS authorization completion failed', 502)
+        raise HTTPException(502, 'WorkOS could not complete authorization') from None
+    audit_auth_event(uid, 'WorkOS authorization complete', 200)
+    response = RedirectResponse(target, status_code=303)
+    response.delete_cookie(PENDING_COOKIE)
     return response
 
 
@@ -312,7 +491,7 @@ def logout(request: Request, csrf: str = Form(...), session: dict = Depends(curr
     store.logout(request.cookies.get(COOKIE_NAME))
     audit_auth_event(session['user_id'],'POST /logout',200)
     r = RedirectResponse('/login', status_code=303)
-    r.delete_cookie(COOKIE_NAME)
+    r.delete_cookie(COOKIE_NAME, secure=COOKIE_SECURE, httponly=True, samesite='lax')
     return r
 
 
@@ -370,9 +549,17 @@ def operator_display(name: str) -> str:
 def dashboard(request: Request):
     session = logged_in(request)
     if not session: return RedirectResponse('/login', status_code=303)
+    if authkit_login.multi_user and not any(has_capability(session,cap) for cap in ('calls:read','metrics:read')):
+        return templates.TemplateResponse(request,'account_access.html',{
+            'session':session,'csrf':session['csrf'],
+            'panels':panel_context(session),
+            'account':store.native_account(session['user_id'],oauth_config.issuer),
+        },headers={'Cache-Control':'no-store'})
     return templates.TemplateResponse(request, 'dashboard.html', {
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
+        'transcript_available': {'id','transcription'} <= user_field_access(session),
+        'raw_transcript_available': native_raw_allowed(session),
         'selected_operator':None, 'operator_title':None, 'operator_meta':{},
     })
 
@@ -380,7 +567,7 @@ def dashboard(request: Request):
 @app.get('/dashboard/system', response_class=HTMLResponse, include_in_schema=False)
 def system_health_page(request: Request, session: dict = Depends(current_session)):
     """Admin-only monitoring UI; no source database access on page render."""
-    admin_only(session)
+    require_panel(session, 'system:read')
     return templates.TemplateResponse(request, 'system.html', {
         'session': session, 'csrf': session['csrf'],
     }, headers={'Cache-Control': 'no-store'})
@@ -389,7 +576,7 @@ def system_health_page(request: Request, session: dict = Depends(current_session
 @app.get('/dashboard/mirror-health', include_in_schema=False)
 def dashboard_mirror_health(session: dict = Depends(current_session)):
     # Aggregate-only health; the reporting database is not touched here.
-    admin_only(session)
+    require_panel(session, 'system:read')
     return JSONResponse(mirror_health.load_admin_mirror_health(),
                         headers={'Cache-Control': 'no-store'})
 
@@ -403,6 +590,8 @@ def operator_profile(request: Request, name: str = Query(...,min_length=1,max_le
     return templates.TemplateResponse(request,'dashboard.html',{
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
+        'transcript_available': {'id','transcription'} <= user_field_access(session),
+        'raw_transcript_available': native_raw_allowed(session),
         'selected_operator':name,'operator_title':operator_display(name),
         'operator_meta':store.operator_assignments().get(name,{'destination':'نامشخص','team':'نامشخص'}),
     },headers={'Cache-Control':'no-store'})
@@ -423,7 +612,7 @@ def operators_page(request: Request, session: dict = Depends(current_session)):
     } for name in names]
     return templates.TemplateResponse(request,'operators.html',{
         'session':session,'csrf':session['csrf'],
-        'entries':entries,'can_manage':has_capability(session,'users:manage'),
+        'entries':entries,'can_manage':panel_allowed(session,'operators:manage'),
     },headers={'Cache-Control':'no-store'})
 
 
@@ -432,7 +621,11 @@ def assign_operator(request: Request, name: str = Form(...),
                     destination: str = Form(''), team: str = Form(''),
                     csrf: str = Form(...),
                     session: dict = Depends(current_session)):
-    admin_only(session)
+    require_panel(session,'operators:manage')
+    if not has_capability(session,'users:manage'):
+        required(session,'calls:read')
+        if 'vw_danix_base_info_users_name' not in user_field_access(session):
+            raise HTTPException(403,'Operator field unavailable')
     csrf_check(request,csrf,session)
     try:
         if name not in database.operators():
@@ -556,6 +749,22 @@ def browser_ai_transcript(call_id: int, offset: int = Query(0,ge=0,le=2147483646
     return JSONResponse(transcript_for_ai(raw, limit=limit, offset=offset), headers={'Cache-Control':'no-store'})
 
 
+@app.get('/dashboard/raw/transcript/{call_id}', include_in_schema=False)
+def browser_raw_transcript(call_id: int, offset: int = Query(0,ge=0,le=2147483646),
+                          limit: int = Query(6000,ge=1,le=6000),
+                          session: dict = Depends(current_session)):
+    if not authkit_login.multi_user or not store.audit_raw_transcript_request(
+            uid=session['user_id'],issuer=oauth_config.issuer,
+            owner_uid=authkit_login.admin_uid,call_id=call_id,char_limit=limit):
+        raise HTTPException(403,'Original transcript not authorized')
+    try: row=database.transcript_excerpt(call_id,limit,offset)
+    except Exception as e: json_failure(e)
+    if row is None:
+        raise HTTPException(404,'Call not found')
+    return JSONResponse(raw_transcript_page(row,limit=limit,offset=offset),
+                        headers={'Cache-Control':'no-store'})
+
+
 @app.get('/dashboard/overview/{call_id}', include_in_schema=False)
 def dashboard_public_call_overview(call_id: int, session: dict = Depends(current_session)):
     """Metadata-only lookup for browser agents; never fetch sensitive columns."""
@@ -666,13 +875,13 @@ def api_states(request: Request):
 
 @app.get('/docs', include_in_schema=False)
 def private_docs(request: Request, session: dict = Depends(current_session)):
-    admin_only(session)
+    require_panel(session, 'api:docs')
     return get_swagger_ui_html(openapi_url='/openapi.json',title='Panadan API Docs')
 
 
 @app.get('/openapi.json', include_in_schema=False)
 def private_openapi(request: Request, session: dict = Depends(current_session)):
-    admin_only(session)
+    require_panel(session, 'api:docs')
     from fastapi.openapi.utils import get_openapi
     return get_openapi(title=app.title, version=app.version, routes=app.routes)
 
@@ -697,6 +906,10 @@ def users_page(request: Request, session: dict = Depends(current_session)):
             for user in users
         },
         'permission_categories': PERMISSION_CATEGORIES,
+        'native_admin_only': authkit_login.enabled,
+        'native_multi_user': authkit_login.multi_user,
+        'native_accounts': store.native_accounts(oauth_config.issuer) if authkit_login.multi_user else {},
+        'native_panels': NATIVE_PANEL_GRANTS,
         'permission_groups': group_options(),
         'field_catalog': field_catalog(),
         'default_fields': capability_fields(set(ROLE_GRANTS['analyst'])),
@@ -727,6 +940,8 @@ def add_user(request: Request, username: str = Form(...), password: str = Form(.
              fields_present: bool = Form(False), session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     admin_only(session)
+    if authkit_login.enabled:
+        raise HTTPException(403, 'Only the pinned AuthKit administrator is permitted')
     try: store.create_user(username.strip(),password,role,grants if role != 'admin' else None,
                            fields=fields if fields_present else None)
     except (ValueError, __import__('sqlite3').IntegrityError) as exc:
@@ -741,15 +956,53 @@ def update_user(request: Request, uid: int, role: str = Form(...), csrf: str = F
                 session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     admin_only(session)
+    if authkit_login.enabled:
+        raise HTTPException(403, 'Local user changes disabled in AuthKit mode')
     try: store.update_user(uid,role,grants if role != 'admin' else None,is_active,session['user_id'],
                            fields=fields if fields_present else None)
     except ValueError as exc: raise HTTPException(400,str(exc)) from exc
     return RedirectResponse('/dashboard/users',status_code=303)
 
 
+@app.post('/dashboard/request-access', include_in_schema=False)
+def request_native_access(request: Request, csrf: str = Form(...), note: str = Form(''),
+                          session: dict = Depends(current_session)):
+    csrf_check(request,csrf,session)
+    if not authkit_login.multi_user or session['user_id']==authkit_login.admin_uid:
+        raise HTTPException(403,'Native member account required')
+    try:
+        store.request_native_access(session['user_id'],oauth_config.issuer,note)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc)) from exc
+    return RedirectResponse('/dashboard',status_code=303)
+
+
+@app.post('/dashboard/users/{uid}/native-access', include_in_schema=False)
+def update_native_access(request: Request, uid: int, csrf: str = Form(...),
+                         is_active: bool = Form(False), grants: list[str] = Form([]),
+                         fields: list[str] = Form([]), panels: list[str] = Form([]),
+                         raw_transcript: bool = Form(False),
+                         session: dict = Depends(current_session)):
+    csrf_check(request,csrf,session)
+    admin_only(session)
+    if not authkit_login.multi_user or session['user_id'] != authkit_login.admin_uid:
+        raise HTTPException(403,'Native owner access required')
+    try:
+        store.update_native_user(uid,oauth_config.issuer,actor_id=session['user_id'],
+                                 active=is_active,caps=grants,fields=fields,panels=panels,
+                                 raw_transcript=raw_transcript)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc)) from exc
+    audit_auth_event(session['user_id'],'Native user permissions updated',200)
+    return RedirectResponse('/dashboard/users',status_code=303)
+
+
 @app.get('/dashboard/mcp-apps', response_class=HTMLResponse, include_in_schema=False)
-def my_connected_ai_apps(request: Request, session: dict = Depends(current_session)):
+def my_connected_ai_apps(request: Request, review: str | None = None,
+                         session: dict = Depends(current_session)):
     """Self-service client-bound consent; not an OAuth authorization server."""
+    if authkit_login.multi_user:
+        required(session, 'mcp:use')
     if not hasattr(store, 'user_access') or not hasattr(store, 'list_mcp_clients'):
         raise HTTPException(503, 'Consent store unavailable')
     access = store.user_access(session['user_id'])
@@ -762,10 +1015,23 @@ def my_connected_ai_apps(request: Request, session: dict = Depends(current_sessi
                 'client_id': record['client_id'],
                 'capabilities': set(json.loads(record['capabilities'])),
                 'fields': set(json.loads(record['fields'])),
-                'approved_at': record['approved_at']
+                'approved_at': record['approved_at'],
+                'raw_transcript': bool(record.get('raw_transcript',False))
             })
         except (TypeError, ValueError, KeyError):
             continue
+    pending_clients = (store.list_pending_mcp_clients(session['user_id'])
+                       if hasattr(store, 'list_pending_mcp_clients') else [])
+    # Standalone review is a local consent screen for an observed signed client.
+    # It is NOT an OAuth authorization endpoint or an arbitrary return URL.
+    review_client = None
+    if review is not None:
+        if 'mcp:use' not in access['capabilities']:
+            raise HTTPException(403, 'MCP not available for this account')
+        review_client = next((row for row in pending_clients
+                              if row['client_id'] == review), None)
+        if review_client is None:
+            raise HTTPException(404, 'Pending client not found')
     return templates.TemplateResponse(request, 'mcp_apps.html', {
         'session': session, 'csrf': session['csrf'],
         'capabilities': access['capabilities'] & {
@@ -774,6 +1040,11 @@ def my_connected_ai_apps(request: Request, session: dict = Depends(current_sessi
             'mcp:use','calls:read','metrics:read','calls:transcript:read'}),
         'field_catalog': field_catalog(),
         'client_grants': client_rows,
+        'pending_clients': pending_clients,
+        'review_client': review_client,
+        'raw_transcript_available': native_raw_allowed(session),
+        'call_fields': capability_fields({'calls:read'}),
+        'metric_fields': capability_fields({'metrics:read'}),
         'can_manage': 'users:manage' in access['capabilities'],
         'oauth_mode': oauth_config.mode,
     }, headers={'Cache-Control':'no-store'})
@@ -784,13 +1055,20 @@ def approve_my_ai_app(request: Request, csrf: str = Form(...),
                       client_id: str = Form(...),
                       capabilities: list[str] = Form([]),
                       fields: list[str] = Form([]),
+                      raw_transcript: bool = Form(False),
                       session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
+    if raw_transcript and not native_raw_allowed(session):
+        raise HTTPException(403,'Original transcript not authorized')
     if not hasattr(store, 'approve_mcp_client'):
         raise HTTPException(503, 'Consent store unavailable')
     try:
-        store.approve_mcp_client(session['user_id'], client_id,
-                                 ['mcp:use', *capabilities], fields)
+        if authkit_login.multi_user:
+            store.approve_mcp_client(session['user_id'],client_id,['mcp:use',*capabilities],fields,
+                raw_transcript=raw_transcript,native_issuer=oauth_config.issuer,
+                native_owner_uid=authkit_login.admin_uid)
+        else:
+            store.approve_mcp_client(session['user_id'],client_id,['mcp:use',*capabilities],fields)
         store.record_activity(user_id=session['user_id'], surface='auth',
                               action='MCP client consent updated',
                               http_status=200, duration_ms=0)
@@ -882,7 +1160,7 @@ def read_my_access(request: Request):
 
 @app.get('/dashboard/activity', response_class=HTMLResponse, include_in_schema=False)
 def activity_page(request: Request, session: dict = Depends(current_session)):
-    admin_only(session)
+    require_panel(session, 'activity:read')
     return templates.TemplateResponse(request, 'activity.html', {
         'session':session, 'csrf':session['csrf'],
         'users':store.list_users(),
@@ -894,7 +1172,7 @@ def activity_data(days: int = Query(14,ge=1,le=90),
                   user_id: int | None = Query(None,ge=1),
                   surface: str | None = None, errors_only: bool = False,
                   session: dict = Depends(current_session)):
-    admin_only(session)
+    require_panel(session, 'activity:read')
     try: result = store.activity_report(days=days,user_id=user_id,surface=surface,errors_only=errors_only)
     except ValueError as e: raise HTTPException(400,str(e)) from e
     return JSONResponse(result,headers={'Cache-Control':'no-store'})
@@ -902,7 +1180,7 @@ def activity_data(days: int = Query(14,ge=1,le=90),
 
 @app.get('/dashboard/api', response_class=HTMLResponse, include_in_schema=False)
 def api_guide(request: Request, session: dict = Depends(current_session)):
-    admin_only(session)
+    require_panel(session, 'api:docs')
     return templates.TemplateResponse(request, 'api.html', {
         'session': session, 'csrf': session['csrf'],
         'base_url': external_base_url(request, PUBLIC_ORIGIN),
@@ -918,7 +1196,46 @@ def oauth_admin_page(request: Request, session: dict = Depends(current_session))
         'oauth': oauth_config,
         'users': store.list_users(),
         'bindings': store.list_oauth_identities(oauth_config.issuer) if oauth_config.mode == 'oauth' else [],
+        'workos_enabled': workos_bridge.enabled,
+        'native_multi_user': authkit_login.multi_user,
+        'verified_emails': (store.list_workos_verified_emails()
+                            if workos_bridge.enabled and hasattr(store, 'list_workos_verified_emails')
+                            else []),
     }, headers={'Cache-Control': 'no-store'})
+
+
+@app.post('/dashboard/oauth/verified-email', include_in_schema=False)
+def workos_admin_attest_email(request: Request, user_id: int = Form(...),
+                              email: str = Form(...), evidence_ref: str = Form(...),
+                              confirmed: bool = Form(False), csrf: str = Form(...),
+                              session: dict = Depends(current_session)):
+    csrf_check(request, csrf, session)
+    admin_only(session)
+    if not workos_bridge.enabled:
+        raise HTTPException(404)
+    if not confirmed:
+        raise HTTPException(400, 'Independent email ownership verification required')
+    try:
+        store.attest_workos_email(user_id, email,
+                                  attested_by=session['user_id'],
+                                  evidence_ref=evidence_ref)
+    except (ValueError, __import__('sqlite3').IntegrityError):
+        raise HTTPException(400, 'Invalid, unverified, or duplicate email') from None
+    audit_auth_event(session['user_id'], 'WorkOS verified contact attested', 200)
+    return RedirectResponse('/dashboard/oauth', status_code=303)
+
+
+@app.post('/dashboard/oauth/verified-email/revoke', include_in_schema=False)
+def workos_admin_revoke_email(request: Request, user_id: int = Form(...),
+                              csrf: str = Form(...),
+                              session: dict = Depends(current_session)):
+    csrf_check(request, csrf, session)
+    admin_only(session)
+    if not workos_bridge.enabled:
+        raise HTTPException(404)
+    store.revoke_workos_email(user_id)
+    audit_auth_event(session['user_id'], 'WorkOS verified contact revoked', 200)
+    return RedirectResponse('/dashboard/oauth', status_code=303)
 
 
 @app.post('/dashboard/oauth/link', include_in_schema=False)
@@ -926,6 +1243,8 @@ def oauth_admin_link(request: Request, user_id: int = Form(...), subject: str = 
                      csrf: str = Form(...), session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     admin_only(session)
+    if authkit_login.multi_user:
+        raise HTTPException(403,'Native identity bindings cannot be manually modified')
     if oauth_config.mode != 'oauth':
         raise HTTPException(400, 'Enable OAuth configuration first')
     try:
@@ -940,6 +1259,8 @@ def oauth_admin_unlink(request: Request, identity_id: int, csrf: str = Form(...)
                        session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
     admin_only(session)
+    if authkit_login.multi_user:
+        raise HTTPException(403,'Native identity bindings cannot be manually modified')
     if oauth_config.mode != 'oauth':
         raise HTTPException(400, 'OAuth is not enabled')
     store.revoke_oauth_identity(oauth_config.issuer, identity_id)
@@ -948,7 +1269,8 @@ def oauth_admin_unlink(request: Request, identity_id: int, csrf: str = Form(...)
 
 @app.get('/dashboard/connect', response_class=HTMLResponse, include_in_schema=False)
 def connect_page(request: Request, session: dict = Depends(current_session)):
-    admin_only(session)
+    if not (authkit_login.multi_user and has_capability(session,'mcp:use')):
+        require_panel(session,'connect:read')
     return templates.TemplateResponse(request,'connect.html', {
         'session':session,'csrf':session['csrf'],
         'mcp_path':'/mcp/', 'base_url':external_base_url(request, PUBLIC_ORIGIN),
@@ -988,6 +1310,13 @@ class MCPBearerGate:
                              oauth_config.issuer, details['subject']))
             if valid:
                 actor = store.actor_for_oauth(oauth_config.issuer, details['subject'])
+                # A client ID in a verified JWT can be shown as pending;
+                # never automatically grant report capabilities or fields.
+                if actor is not None and hasattr(store, 'note_signed_mcp_client'):
+                    try:
+                        store.note_signed_mcp_client(actor, details['client_id'])
+                    except Exception:
+                        pass
         else:
             valid = store.verify_token(raw, 'mcp:read')
             if valid: actor=store.actor_for_token(raw, 'mcp:read')

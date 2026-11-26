@@ -39,6 +39,16 @@ SAFE_PANADAN_CHECKS = {
     "production web release must retain SQLite authentication": "SQLite auth backend selector",
     "disposable staging credentials in live environment": "forbidden staging-auth settings",
     "unapproved MCP OAuth mode on routine web release": "MCP legacy authentication mode",
+    "explicit WorkOS OAuth requires OAuth mode": "intentional OAuth mode",
+    "WorkOS bridge must be enabled only in OAuth mode": "WorkOS bridge selector",
+    "WorkOS issuer must be a canonical AuthKit HTTPS origin": "WorkOS issuer",
+    "WorkOS JWKS must match issuer": "WorkOS JWKS endpoint",
+    "WorkOS OAuth resource must match production MCP": "OAuth resource",
+    "WorkOS OAuth requires standard openid scope": "OAuth scope",
+    "WorkOS API key is missing or invalid": "WorkOS API key configuration",
+    "WorkOS pending secret is missing or invalid": "WorkOS pending secret configuration",
+    "unsupported web authentication mode": "web authentication mode",
+    "native AuthKit administrator configuration invalid": "AuthKit administrator configuration",
     "web authentication volume declaration missing": "web auth volume structure",
     "web SQLite /data must be backed by a persistent writable named volume": "SQLite persistent named /data mount",
     "web must use a reviewed digest or commit-specific image tag": "pinned web image",
@@ -98,7 +108,8 @@ def private_port_bindings(svc: Mapping, name: str) -> None:
                 f"{name} cannot publish ports beyond host loopback")
 
 
-def validate_panadan(data: Mapping, *, auth_enabled: bool) -> None:
+def validate_panadan(data: Mapping, *, auth_enabled: bool,
+                     allow_workos_oauth: bool = False) -> None:
     web = service(data, "web")
     vpn = service(data, "vpn")
     require(web.get("network_mode") == "service:vpn",
@@ -121,8 +132,54 @@ def validate_panadan(data: Mapping, *, auth_enabled: bool) -> None:
     for key in ("PANADAN_AUTH_STAGING_ENABLE", "PANADAN_AUTH_STAGING_ISOLATED",
                 "PANADAN_AUTH_STAGING_DSN"):
         require(not env.get(key), "disposable staging credentials in live environment")
-    require(env.get("PANADAN_MCP_AUTH_MODE", "legacy") in ("", "legacy"),
-            "unapproved MCP OAuth mode on routine web release")
+    mode = env.get("PANADAN_MCP_AUTH_MODE", "legacy")
+    bridge = env.get("PANADAN_WORKOS_STANDALONE_ENABLED", "false")
+    web_mode = env.get("PANADAN_WEB_AUTH_MODE", "local")
+    require(web_mode in ("local", "authkit"), "unsupported web authentication mode")
+    multi = env.get("PANADAN_AUTHKIT_MULTI_USER", "false")
+    require(multi in ("true", "false") and (multi == "false" or web_mode == "authkit"),
+            "multi-user mode requires explicit native AuthKit configuration")
+    if allow_workos_oauth:
+        require(mode == "oauth", "explicit WorkOS OAuth requires OAuth mode")
+        require(bridge == ("false" if web_mode == "authkit" else "true"),
+                "WorkOS bridge must be enabled only in OAuth mode")
+        issuer = env.get("PANADAN_OAUTH_ISSUER")
+        # This cutover supports WorkOS-hosted AuthKit issuers only. A custom
+        # issuer or a different provider requires a separately reviewed policy.
+        require(isinstance(issuer, str) and bool(re.fullmatch(
+            r"https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.authkit\.app", issuer)),
+            "WorkOS issuer must be a canonical AuthKit HTTPS origin")
+        require(env.get("PANADAN_OAUTH_JWKS_URL") == issuer + "/oauth2/jwks",
+                "WorkOS JWKS must match issuer")
+        require(env.get("PANADAN_OAUTH_RESOURCE") == "https://dan.panafor.com/mcp/",
+                "WorkOS OAuth resource must match production MCP")
+        require(env.get("PANADAN_OAUTH_SCOPE") == "openid",
+                "WorkOS OAuth requires standard openid scope")
+        key = env.get("WORKOS_API_KEY")
+        require(isinstance(key, str) and key.startswith("sk_") and len(key) >= 16
+                and not any(c.isspace() for c in key)
+                and "placeholder" not in key.lower(),
+                "WorkOS API key is missing or invalid")
+        if web_mode == "authkit":
+            def matches(name, pattern):
+                value = env.get(name)
+                return isinstance(value, str) and bool(re.fullmatch(pattern, value))
+            require(matches("WORKOS_CLIENT_ID", r"client_[A-Za-z0-9]+")
+                    and matches("PANADAN_AUTHKIT_ADMIN_SUBJECT", r"user_[A-Za-z0-9]+")
+                    and matches("PANADAN_AUTHKIT_ADMIN_EMAIL", r"[^@\s]+@[^@\s]+\.[^@\s]+")
+                    and matches("PANADAN_AUTHKIT_ADMIN_UID", r"[1-9][0-9]{0,8}"),
+                    "native AuthKit administrator configuration invalid")
+        else:
+            pending = env.get("PANADAN_WORKOS_PENDING_SECRET")
+            require(isinstance(pending, str) and bool(re.fullmatch(r"[a-fA-F0-9]{64}", pending))
+                    and len(set(pending.lower())) > 1,
+                    "WorkOS pending secret is missing or invalid")
+    else:
+        require(web_mode == "local", "unsupported web authentication mode")
+        require(mode in ("", "legacy"),
+                "unapproved MCP OAuth mode on routine web release")
+        require(bridge in ("", "false"),
+                "WorkOS bridge must be enabled only in OAuth mode")
     volumes = web.get("volumes") or []
     require(isinstance(volumes, list), "web authentication volume declaration missing")
     auth_mounts = [v for v in volumes if isinstance(v, dict) and v.get("target") == "/data"]
@@ -254,12 +311,12 @@ def validate_caddy_adapted(data: Mapping) -> None:
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print("Usage: validate_production_compose.py panadan|plane|gateway|auth-network|private-networks|caddy-adapted [--auth] [--explain-safe]", file=sys.stderr)
+        print("Usage: validate_production_compose.py panadan|plane|gateway|auth-network|private-networks|caddy-adapted [--auth] [--explain-safe] [--allow-workos-oauth]", file=sys.stderr)
         return 2
     part = sys.argv[1]
     flags = sys.argv[2:]
     if part == "panadan":
-        if len(flags) != len(set(flags)) or any(f not in ("--auth", "--explain-safe") for f in flags):
+        if len(flags) != len(set(flags)) or any(f not in ("--auth", "--explain-safe", "--allow-workos-oauth") for f in flags):
             print("REFUSED: invalid validator arguments", file=sys.stderr)
             return 2
     elif flags:
@@ -272,7 +329,8 @@ def main() -> int:
         else:
             if part == "panadan":
                 validate_panadan(object_value(data, "invalid Compose file"),
-                                 auth_enabled="--auth" in flags)
+                                 auth_enabled="--auth" in flags,
+                                 allow_workos_oauth="--allow-workos-oauth" in flags)
             else:
                 if part == "plane":
                     validate_plane(object_value(data, "invalid Compose file"))

@@ -305,14 +305,14 @@ function transcriptPanel(raw){
   const panel=el('section','transcript-panel');
   const head=el('div','transcript-heading');
   const title=el('div','transcript-title');
-  title.append(el('strong','', 'متن مکالمه'),el('span','transcript-label','نسخهٔ خوانای پانادان · Panadan'));
+  title.append(el('strong','', 'متن مکالمه'),el('span','transcript-label','متن ویرایش‌شده · حذف اطلاعات حساس تا حد امکان'));
   const actions=el('div','transcript-actions');
   const formatted=el('button','transcript-tab active','نسخهٔ پانادان');
-  const original=el('button','transcript-tab','متن خام (Raw)');
+  const original=el('button','transcript-tab','متن ساده');
   formatted.type=original.type='button';
-  const copy=el('button','secondary copy-transcript','کپی متن اصلی');copy.type='button';
+  const copy=el('button','secondary copy-transcript','کپی متن ویرایش‌شده');copy.type='button';
   const display=el('div','transcript-content');
-  const explanation=el('p','transcript-note','قالب‌بندی خودکار است؛ متن و ترتیب گفتار تغییر داده نشده و تشخیص گوینده ممکن است کامل نباشد.');
+  const explanation=el('p','transcript-note','این متن با حذف خودکار برخی اطلاعات حساس نمایش داده می‌شود؛ ممکن است نام‌ها یا اطلاعات خصوصی همچنان باقی بمانند. تشخیص گوینده و متن نیز ممکن است خطا داشته باشد.');
   const switchTo=(rawMode)=>{
     formatted.classList.toggle('active',!rawMode);
     original.classList.toggle('active',rawMode);
@@ -426,31 +426,53 @@ function recordedDateTime(value) {
   stamp.title='تاریخ و ساعت ثبت به وقت تهران';
   return stamp;
 }
-function conversationSection(raw){
+function conversationSection(id, requestId, rawMode=false){
   const section=el('details','conversation-section');
   const summary=el('summary','conversation-opener');
-  const icon=el('span','conversation-icon');
-  icon.textContent='☷';
-  icon.setAttribute('aria-hidden','true');
+  const icon=el('span','conversation-icon','☷');icon.setAttribute('aria-hidden','true');
   const titleBlock=el('span','conversation-title-block');
-  titleBlock.append(
-    el('strong','conversation-opener-title','متن کامل مکالمه'),
-    el('span','conversation-preview','نسخهٔ خوانا، تفکیک گوینده و متن اصلی')
-  );
-  const meta=el('span','conversation-opener-info',numberFormat(raw.length)+' نویسه');
+  titleBlock.append(el('strong','conversation-opener-title',rawMode?'متن خام مکالمه':'نسخه پانادان'),
+    el('span','conversation-preview',rawMode?'متن اصلی مبدأ، بدون حذف اطلاعات':'متن ویرایش‌شده با تفکیک گوینده'));
   const toggle=el('span','conversation-toggle');
   const toggleText=el('span','conversation-toggle-label','باز کردن مکالمه');
-  const arrow=el('span','conversation-chevron','⌄');
-  arrow.setAttribute('aria-hidden','true');
-  toggle.append(toggleText,arrow);
-  summary.append(icon,titleBlock,meta,toggle);
-  section.append(summary);
-  let rendered=false;
+  const arrow=el('span','conversation-chevron','⌄');arrow.setAttribute('aria-hidden','true');
+  toggle.append(toggleText,arrow);summary.append(icon,titleBlock,toggle);
+  const content=el('div','conversation-paged-content');
+  const state=el('p','muted');state.setAttribute('role','status');
+  const more=el('button','secondary load-transcript','دریافت متن مکالمه');more.type='button';
+  const pages=el('div','conversation-pages');
+  content.append(state,pages,more);section.append(summary,content);
+  let offset=0, busy=false, done=false, loaded=false, accumulated='';
+  const isCurrent=()=>requestId===detailRequestId && !$('veil').hidden && section.isConnected;
+  const load=async()=>{
+    if(busy||done||!isCurrent())return;
+    busy=true;more.disabled=true;state.textContent='در حال دریافت متن…';
+    try{
+      const page=await fetchJSON((rawMode?'/dashboard/raw/transcript/':'/dashboard/ai/transcript/')+encodeURIComponent(id)+'?offset='+encodeURIComponent(offset));
+      if(!isCurrent())return;
+      if(!page || typeof page.text!=='string' || !Number.isSafeInteger(page.next_offset) ||
+         page.next_offset<offset || (page.has_more && page.next_offset<=offset))throw Error('پاسخ متن نامعتبر است');
+      accumulated+=page.text;offset=page.next_offset;
+      loaded=true;done=!page.has_more;
+      if(accumulated.trim()){
+        if(rawMode){
+          const original=el('pre','transcript-raw');original.textContent=accumulated;
+          const warning=el('p','transcript-note','متن اصلی مکالمه؛ ممکن است حاوی اطلاعات شخصی و محرمانه باشد.');
+          const copy=el('button','secondary copy-transcript','کپی متن خام');copy.type='button';
+          copy.onclick=async()=>{try{await navigator.clipboard.writeText(accumulated);copy.textContent='کپی شد';}catch{copy.textContent='کپی ناموفق بود';}};
+          pages.replaceChildren(warning,copy,original);
+        }else pages.replaceChildren(transcriptPanel(accumulated));
+        state.textContent=done?'تمام متن قابل دریافت نمایش داده شد.':'بخشی از متن دریافت شد.';
+      }else state.textContent='متن مکالمه برای این تماس ثبت نشده است.';
+      more.hidden=done;more.textContent='دریافت بخش بعدی';
+    }catch(error){
+      if(isCurrent()){state.textContent=error.message||'دریافت متن ناموفق بود.';more.textContent='تلاش دوباره';}
+    }finally{busy=false;if(isCurrent())more.disabled=false;}
+  };
+  more.addEventListener('click',load);
   section.addEventListener('toggle',()=>{
     toggleText.textContent=section.open?'بستن مکالمه':'باز کردن مکالمه';
-    if(!section.open||rendered)return;
-    rendered=true;
-    section.append(transcriptPanel(raw));
+    if(section.open&&!loaded&&!busy&&!done)load();
   });
   return section;
 }
@@ -566,10 +588,11 @@ async function detail(id){
       }
       block.append(grid);$('detail').append(block);
     }
-    if(typeof data.transcription==='string'&&data.transcription.trim()){
+    if(($('webmcp-transcript-permission')||$('raw-transcript-permission')) && data.id!==null && data.id!==undefined){
       const end=el('section','detail-section transcript-last');
       end.append(el('h3','detail-section-heading','مکالمه'));
-      end.append(conversationSection(data.transcription));
+      if($('webmcp-transcript-permission'))end.append(conversationSection(id,requestId));
+      if($('raw-transcript-permission'))end.append(conversationSection(id,requestId,true));
       $('detail').append(end);
     }
   }catch(error){

@@ -50,7 +50,7 @@ for (const form of document.querySelectorAll('form[data-access-editor]')) {
     }
   };
   // Event handlers from users.js run first and update prerequisites.
-  for (const checkbox of grants) checkbox.addEventListener('change', () => sync(true));
+  for (const checkbox of grants) checkbox.addEventListener('change', () => sync(form.dataset?.accessEditor !== 'native'));
   role.addEventListener('change', () => sync(true));
   group?.addEventListener('change', () => sync(true));
   sync(false);

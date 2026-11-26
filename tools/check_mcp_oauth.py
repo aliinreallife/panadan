@@ -31,7 +31,8 @@ def protected_resource_url(resource: str) -> str:
     return f"{p.scheme}://{p.netloc}/.well-known/oauth-protected-resource"
 
 
-def validate_resource(document: dict, expected_resource: str) -> tuple[str, str]:
+def validate_resource(document: dict, expected_resource: str, *,
+                      required_scope: str = "panadan:mcp:read") -> tuple[str, str]:
     if not isinstance(document, dict):
         raise ValueError("Protected-resource metadata is not an object")
     if document.get("resource") != expected_resource:
@@ -41,9 +42,9 @@ def validate_resource(document: dict, expected_resource: str) -> tuple[str, str]
         raise ValueError("Expected one explicit authorization server issuer")
     issuer = require_https(issuers[0])
     scope_list = document.get("scopes_supported")
-    if not isinstance(scope_list, list) or "panadan:mcp:read" not in scope_list:
+    if not isinstance(scope_list, list) or required_scope not in scope_list:
         raise ValueError("Required Panadan MCP scope missing from protected-resource metadata")
-    return issuer, "panadan:mcp:read"
+    return issuer, required_scope
 
 
 def authorization_server_urls(issuer: str) -> tuple[str, str]:
@@ -59,7 +60,9 @@ def authorization_server_urls(issuer: str) -> tuple[str, str]:
     )
 
 
-def validate_authorization_server(document: dict, issuer: str) -> str:
+def validate_authorization_server(document: dict, issuer: str, *,
+                                  allow_unadvertised_scope: bool = False,
+                                  required_scope: str = "panadan:mcp:read") -> str:
     if not isinstance(document, dict) or document.get("issuer") != issuer:
         raise ValueError("Authorization-server metadata issuer does not match protected resource")
     for key in ("authorization_endpoint", "token_endpoint"):
@@ -86,8 +89,22 @@ def validate_authorization_server(document: dict, issuer: str) -> str:
         raise ValueError("Authorization server does not support code response type")
     scopes = document.get("scopes_supported")
     if scopes is not None and (
-        not isinstance(scopes, list) or "panadan:mcp:read" not in scopes
+        not isinstance(scopes, list)
+        or any(not isinstance(scope, str) for scope in scopes)
     ):
+        raise ValueError("Authorization server advertises invalid scopes_supported")
+    if required_scope == "openid" and (scopes is None or "openid" not in scopes):
+        raise ValueError("Authorization server does not advertise the required standard scope")
+    scope_unadvertised = scopes is not None and required_scope not in scopes
+    # A pre-registered client's approved custom scopes need not be listed in
+    # general discovery. Never treat an undocumented scope as working until a
+    # REAL signed access token passes all resource-server checks.
+    # No bypass for CIMD/DCR; default remains fail-closed.
+    preregistered = (
+        document.get("client_id_metadata_document_supported") is not True
+        and not isinstance(document.get("registration_endpoint"), str)
+    )
+    if scope_unadvertised and not (allow_unadvertised_scope and preregistered):
         raise ValueError("Authorization server does not advertise the Panadan MCP scope")
     jwks = document.get("jwks_uri")
     if jwks is not None:
@@ -161,11 +178,20 @@ def discover_authorization_server(issuer: str) -> dict:
     raise ValueError("Issuer exposes neither RFC 8414 nor OIDC discovery")
 
 
-def check_provider(issuer: str) -> None:
+def check_provider(issuer: str, *, allow_unadvertised_scope: bool = False,
+                   required_scope: str = "panadan:mcp:read") -> None:
     """Preflight a candidate IdP BEFORE enabling Panadan OAuth or touching prod."""
     issuer = require_https(issuer)
     metadata = discover_authorization_server(issuer)
-    registration = validate_authorization_server(metadata, issuer)
+    registration = validate_authorization_server(
+        metadata, issuer, allow_unadvertised_scope=allow_unadvertised_scope,
+        required_scope=required_scope
+    )
+    if (allow_unadvertised_scope
+            and metadata.get("scopes_supported") is not None
+            and required_scope not in metadata["scopes_supported"]):
+        print("WARNING: Custom scope is absent from public discovery; the")
+        print("         pre-registered client's grant and actual JWT scope are UNVERIFIED.")
     jwks_url = metadata.get("jwks_uri")
     if not isinstance(jwks_url, str):
         raise ValueError("Provider does not advertise JWKS URI required for Panadan RS256 verification")
@@ -202,7 +228,7 @@ def check_provider(issuer: str) -> None:
     print("SAFETY: Production must remain on legacy bearer mode until staged acceptance")
 
 
-def run(resource: str) -> None:
+def run(resource: str, *, required_scope: str = "panadan:mcp:read") -> None:
     resource = require_https(resource)
     metadata = protected_resource_url(resource)
     status, _, raw = request(metadata)
@@ -212,13 +238,13 @@ def run(resource: str) -> None:
                          "authorization server before changing its auth mode.")
     if status != 200 or len(raw) > 65536:
         raise ValueError(f"Protected-resource metadata returned HTTP {status}")
-    issuer, scope = validate_resource(json.loads(raw), resource)
+    issuer, scope = validate_resource(json.loads(raw), resource, required_scope=required_scope)
     suffix = metadata.replace("/.well-known/oauth-protected-resource",
                               "/.well-known/oauth-protected-resource/mcp")
     if fetch_json(suffix).get("resource") != resource:
         raise ValueError("Path-specific protected resource metadata disagrees")
     doc = discover_authorization_server(issuer)
-    method = validate_authorization_server(doc, issuer)
+    method = validate_authorization_server(doc, issuer, required_scope=required_scope)
     code, headers, _ = request(resource)
     if code != 401:
         raise ValueError(f"Unauthenticated MCP request must be 401; got {code}")
@@ -242,12 +268,25 @@ def main() -> int:
     parser.add_argument("--issuer",
                         help="Preflight an IdP's PUBLIC HTTPS discovery/JWKS only, "
                              "without enabling OAuth or contacting production Panadan")
+    parser.add_argument("--allow-unadvertised-scope", action="store_true",
+                        help="Provider-only preflight: accept absent custom scope in "
+                             "discovery ONLY for a pre-registered OAuth client. "
+                             "Requires independent proof of a correctly scoped JWT.")
+    parser.add_argument("--scope", choices=("panadan:mcp:read", "openid"),
+                        default="panadan:mcp:read",
+                        help="Expected scope; use openid for WorkOS Standalone Connect")
     args = parser.parse_args()
     try:
+        if args.allow_unadvertised_scope and args.scope != "panadan:mcp:read":
+            raise ValueError("--allow-unadvertised-scope is for the custom scope only")
         if args.issuer:
-            check_provider(args.issuer)
+            check_provider(args.issuer,
+                           allow_unadvertised_scope=args.allow_unadvertised_scope,
+                           required_scope=args.scope)
         else:
-            run(args.url)
+            if args.allow_unadvertised_scope:
+                raise ValueError("--allow-unadvertised-scope requires --issuer")
+            run(args.url, required_scope=args.scope)
         return 0
     except (ValueError, HTTPError, URLError, TimeoutError) as exc:
         print(f"FAIL: {exc}")

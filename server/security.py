@@ -5,6 +5,7 @@ SQLite is for Panadan identities only. Never use it to store customer reporting 
 import hashlib
 import hmac
 import json
+import re
 import secrets
 import sqlite3
 import time
@@ -25,6 +26,14 @@ ROLE_GRANTS = {
     'metrics': ('metrics:read',),
 }
 
+# Independently delegated browser administration; not REST/MCP data grants.
+NATIVE_PANEL_GRANTS = {
+    'system:read': ('وضعیت سیستم', 'مشاهده سلامت سامانه و وضعیت همگام‌سازی، بدون تغییر زیرساخت.'),
+    'activity:read': ('فعالیت کاربران', 'مشاهده فراداده فعالیت و رویدادهای همه کاربران؛ بدون متن مکالمه یا توکن.'),
+    'operators:manage': ('مدیریت کارشناسان', 'تغییر مقصد و تیم کارشناسان؛ نیازمند مجوز گزارش و ستون کارشناس.'),
+    'api:docs': ('مستندات API', 'مشاهده مستندات فنی API؛ به خودی خود مجوز داده نیست.'),
+    'connect:read': ('راهنمای اتصال', 'مشاهده راهنمای اتصال دستیارها؛ بدون اعطای مجوز MCP یا داده.'),
+}
 MCP_PREREQUISITES = frozenset(('calls:read', 'metrics:read'))
 
 
@@ -111,6 +120,10 @@ class Store:
                     token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL,
                     csrf TEXT NOT NULL, expires_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS authkit_sessions (
+                    token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL,
+                    csrf TEXT NOT NULL, expires_at INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS access_tokens (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL,
@@ -131,6 +144,23 @@ class Store:
                 existing = {r['name'] for r in c.execute(f'PRAGMA table_info({table})')}
                 if col not in existing:
                     c.execute(f'ALTER TABLE {table} ADD COLUMN {col} {definition}')
+            c.execute("""CREATE TABLE IF NOT EXISTS authkit_accounts (
+                user_id INTEGER PRIMARY KEY,
+                issuer TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                panel_grants TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                last_login INTEGER NOT NULL,
+                UNIQUE(issuer,subject)
+            )""")
+            account_columns = {r['name'] for r in c.execute('PRAGMA table_info(authkit_accounts)')}
+            if 'requested_at' not in account_columns:
+                c.execute('ALTER TABLE authkit_accounts ADD COLUMN requested_at INTEGER')
+            if 'request_note' not in account_columns:
+                c.execute('ALTER TABLE authkit_accounts ADD COLUMN request_note TEXT')
+            if 'raw_transcript' not in account_columns:
+                c.execute('ALTER TABLE authkit_accounts ADD COLUMN raw_transcript INTEGER NOT NULL DEFAULT 0')
             c.execute('''CREATE TABLE IF NOT EXISTS mcp_client_grants (
                 user_id INTEGER NOT NULL,
                 client_id TEXT NOT NULL,
@@ -139,6 +169,36 @@ class Store:
                 approved_at INTEGER NOT NULL,
                 PRIMARY KEY(user_id,client_id)
             )''')
+            client_columns = {r['name'] for r in c.execute('PRAGMA table_info(mcp_client_grants)')}
+            if 'raw_transcript' not in client_columns:
+                c.execute('ALTER TABLE mcp_client_grants ADD COLUMN raw_transcript INTEGER NOT NULL DEFAULT 0')
+            c.execute("""CREATE TABLE IF NOT EXISTS raw_transcript_access_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL, client_id TEXT,
+                surface TEXT NOT NULL CHECK(surface IN ('web','mcp')),
+                call_id INTEGER NOT NULL, char_limit INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            )""")
+            c.execute('CREATE INDEX IF NOT EXISTS raw_transcript_audit_user_time ON raw_transcript_access_audit(user_id,created_at)')
+            # Optional WorkOS login handoff requires an explicitly attested
+            # email for each Panadan user. This is contact metadata only;
+            # Panadan retains all passwords, sessions, roles and permissions.
+            c.execute("""CREATE TABLE IF NOT EXISTS oauth_verified_emails (
+                user_id INTEGER PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                attested_by INTEGER NOT NULL,
+                attested_at INTEGER NOT NULL,
+                evidence_ref TEXT NOT NULL
+            )""")
+            # A signed OAuth token may announce a new client without giving
+            # it access. User approval remains necessary on the dashboard.
+            c.execute("""CREATE TABLE IF NOT EXISTS mcp_client_requests (
+                user_id INTEGER NOT NULL,
+                client_id TEXT NOT NULL,
+                first_seen INTEGER NOT NULL,
+                last_seen INTEGER NOT NULL,
+                PRIMARY KEY(user_id,client_id)
+            )""")
             # OAuth subject bindings are separate from browser sessions and
             # legacy API tokens. No personal information from the provider
             # is automatically used to grant reporting permissions.
@@ -261,18 +321,24 @@ class Store:
         ok = password_check(password, row['password_hash'] if row else _DUMMY_HASH)
         return int(row['id']) if row and row['is_active'] and ok else None
 
-    def create_session(self, uid: int) -> tuple[str, str]:
+    def create_session(self, uid: int, *, auth_source: str = 'local') -> tuple[str, str]:
         raw, csrf = secrets.token_urlsafe(40), secrets.token_urlsafe(32)
         with self.db() as c:
-            c.execute('INSERT INTO sessions VALUES(?,?,?,?)',
+            if auth_source not in ('local', 'authkit'):
+                raise ValueError('Unknown session authentication source')
+            table = 'authkit_sessions' if auth_source == 'authkit' else 'sessions'
+            c.execute(f'INSERT INTO {table}(token_hash,user_id,csrf,expires_at) VALUES(?,?,?,?)',
                       (digest(raw), uid, csrf, int(time.time()) + SESSION_SECONDS))
         return raw, csrf
 
-    def session(self, raw: str | None):
+    def session(self, raw: str | None, *, auth_source: str = 'local'):
         if not raw: return None
+        if auth_source not in ('local', 'authkit'):
+            return None
+        table = 'authkit_sessions' if auth_source == 'authkit' else 'sessions'
         with self.db() as c:
-            row = c.execute('''SELECT s.user_id,s.csrf,u.username,u.role,u.grants,u.field_grants
-                               FROM sessions s JOIN users u ON u.id=s.user_id
+            row = c.execute(f'''SELECT s.user_id,s.csrf,u.username,u.role,u.grants,u.field_grants
+                               FROM {table} s JOIN users u ON u.id=s.user_id
                                WHERE s.token_hash=? AND s.expires_at>? AND u.is_active=1''',
                             (digest(raw), int(time.time()))).fetchone()
         return dict(row) if row else None
@@ -281,6 +347,215 @@ class Store:
         if raw:
             with self.db() as c:
                 c.execute('DELETE FROM sessions WHERE token_hash=?', (digest(raw),))
+                c.execute('DELETE FROM authkit_sessions WHERE token_hash=?', (digest(raw),))
+
+    def prepare_authkit_admin(self, uid: int, issuer: str, subject: str, *, multi_user: bool = False) -> None:
+        """Cut over only the pinned local admin, preserving all historical rows.
+
+        No password is accepted in native mode. Old users are disabled, not
+        deleted. Replace only the known Standalone subject or the native one.
+        """
+        with self.db() as c:
+            c.execute("BEGIN IMMEDIATE")
+            admin = c.execute("SELECT role,is_active FROM users WHERE id=?", (uid,)).fetchone()
+            if not admin or admin["role"] != "admin" or not admin["is_active"]:
+                raise ValueError("Pinned local administrator must be active")
+            old = c.execute("SELECT subject FROM oauth_identities WHERE issuer=? AND user_id=?",
+                            (issuer, uid)).fetchone()
+            owner = c.execute("SELECT user_id FROM oauth_identities WHERE issuer=? AND subject=?",
+                              (issuer, subject)).fetchone()
+            if (old and old["subject"] not in (subject, f"panadan-user-{uid}")) or (
+                    owner and owner["user_id"] != uid):
+                raise ValueError("Native OAuth identity requires administrator review")
+            if multi_user:
+                # Existing native accounts retain explicitly assigned status.
+                # Historical password-only accounts remain disabled.
+                c.execute("""UPDATE users SET is_active=0 WHERE id<>?
+                    AND (role='admin' OR id NOT IN
+                    (SELECT user_id FROM authkit_accounts WHERE issuer=?))""", (uid,issuer))
+            else:
+                c.execute("UPDATE users SET is_active=0 WHERE id<>?", (uid,))
+            if not old or old["subject"] != subject:
+                c.execute("DELETE FROM oauth_identities WHERE issuer=? AND user_id=?", (issuer, uid))
+                c.execute("INSERT INTO oauth_identities(issuer,subject,user_id,created_at) VALUES(?,?,?,?)",
+                          (issuer, subject, uid, int(time.time())))
+                c.execute("DELETE FROM mcp_client_grants WHERE user_id=?", (uid,))
+                c.execute("DELETE FROM mcp_client_requests WHERE user_id=?", (uid,))
+
+    def native_account(self, uid: int, issuer: str) -> dict | None:
+        with self.db() as c:
+            row = c.execute("""SELECT a.*,u.is_active FROM authkit_accounts a
+                JOIN users u ON u.id=a.user_id
+                JOIN oauth_identities i ON i.user_id=u.id AND i.issuer=a.issuer AND i.subject=a.subject
+                WHERE a.user_id=? AND a.issuer=? AND u.role<>'admin'""", (uid,issuer)).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        try:
+            parsed = json.loads(result['panel_grants'])
+            result['panel_grants'] = set(parsed) & set(NATIVE_PANEL_GRANTS) if isinstance(parsed,list) else set()
+        except (ValueError, TypeError):
+            result['panel_grants'] = set()
+        return result
+
+    def native_accounts(self, issuer: str) -> dict[int, dict]:
+        with self.db() as c:
+            ids = [r['user_id'] for r in c.execute(
+                'SELECT user_id FROM authkit_accounts WHERE issuer=?', (issuer,))]
+        return {uid: account for uid in ids if (account := self.native_account(uid,issuer)) is not None}
+
+    def provision_native_user(self, issuer: str, subject: str, email: str) -> int:
+        """Only call after a verified WorkOS code exchange. Never link by email."""
+        if (not issuer or not re.fullmatch(r'user_[A-Za-z0-9]{1,120}', subject)
+                or len(email)>254 or not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+',email)):
+            raise ValueError('Invalid verified identity')
+        email=email.lower()
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            existing = c.execute("""SELECT a.user_id,a.email,u.is_active,u.role
+                FROM authkit_accounts a JOIN users u ON u.id=a.user_id
+                JOIN oauth_identities i ON i.user_id=u.id AND i.issuer=a.issuer AND i.subject=a.subject
+                WHERE a.issuer=? AND a.subject=?""", (issuer,subject)).fetchone()
+            if existing:
+                if not existing['is_active'] or existing['role']=='admin' or existing['email']!=email:
+                    raise ValueError('Account disabled or identity changed')
+                uid=existing['user_id']
+                c.execute('UPDATE authkit_accounts SET last_login=? WHERE user_id=?',(int(time.time()),uid))
+                return uid
+            # A matching legacy subject or email never inherits an old account.
+            if c.execute('SELECT 1 FROM oauth_identities WHERE issuer=? AND subject=?',(issuer,subject)).fetchone():
+                raise ValueError('Existing identity requires review')
+            if c.execute('SELECT 1 FROM authkit_accounts WHERE email=?',(email,)).fetchone():
+                raise ValueError('Existing email requires review')
+            now=int(time.time())
+            cur=c.execute("""INSERT INTO users(username,password_hash,role,grants,field_grants,is_active)
+                VALUES(?,?,'reader','[]','[]',1)""",('workos_'+secrets.token_hex(16),password_hash(secrets.token_urlsafe(48))))
+            uid=cur.lastrowid
+            c.execute("""INSERT INTO authkit_accounts(user_id,issuer,subject,email,created_at,last_login)
+                VALUES(?,?,?,?,?,?)""",(uid,issuer,subject,email,now,now))
+            c.execute('INSERT INTO oauth_identities(issuer,subject,user_id,created_at) VALUES(?,?,?,?)',(issuer,subject,uid,now))
+            return uid
+
+    def request_native_access(self, uid: int, issuer: str, note: str) -> None:
+        note=note.strip()
+        if len(note)>500 or any(ord(ch)<32 and ch not in '\n\t' for ch in note):
+            raise ValueError('Invalid access request')
+        with self.db() as c:
+            cur=c.execute("""UPDATE authkit_accounts SET requested_at=?,request_note=?
+                WHERE user_id=? AND issuer=? AND EXISTS(
+                SELECT 1 FROM users u WHERE u.id=authkit_accounts.user_id AND u.is_active=1)""",
+                (int(time.time()),note,uid,issuer))
+            if cur.rowcount!=1:
+                raise ValueError('Account unavailable')
+
+    def update_native_user(self, uid: int, issuer: str, *, actor_id: int,
+                           active: bool, caps: list[str], fields: list[str], panels: list[str],
+                           raw_transcript: bool = False) -> None:
+        """Owner-only edit. Identity stays immutable; downstream grants are revoked."""
+        if uid==actor_id or not set(panels)<=set(NATIVE_PANEL_GRANTS) or len(panels)!=len(set(panels)):
+            raise ValueError('Invalid administrative grants')
+        if len(caps)!=len(set(caps)):
+            raise ValueError('Duplicate capabilities')
+        validate_user_grants('reader',caps)
+        grants=json.dumps(sorted(caps))
+        selected=validate_fields(fields,permissions('reader',grants))
+        if raw_transcript and ('calls:read' not in caps or 'id' not in selected):
+            raise ValueError('Raw transcript requires call reports and call ID')
+        if 'operators:manage' in panels and ('calls:read' not in caps or 'vw_danix_base_info_users_name' not in selected):
+            raise ValueError('Operator management requires operator data access')
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            actor=c.execute("SELECT role,is_active FROM users WHERE id=?",(actor_id,)).fetchone()
+            target=c.execute("""SELECT u.role FROM users u JOIN authkit_accounts a ON a.user_id=u.id
+                JOIN oauth_identities i ON i.user_id=u.id AND i.issuer=a.issuer AND i.subject=a.subject
+                WHERE u.id=? AND a.issuer=?""",(uid,issuer)).fetchone()
+            if not actor or actor['role']!='admin' or not actor['is_active'] or not target or target['role']=='admin':
+                raise ValueError('Account cannot be edited')
+            c.execute("UPDATE users SET role='reader',grants=?,field_grants=?,is_active=? WHERE id=?",
+                      (grants,json.dumps(selected),int(active),uid))
+            c.execute('UPDATE authkit_accounts SET panel_grants=?,raw_transcript=?,requested_at=NULL,request_note=NULL WHERE user_id=?',
+                      (json.dumps(sorted(panels)),int(raw_transcript),uid))
+            c.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
+            c.execute('DELETE FROM authkit_sessions WHERE user_id=?',(uid,))
+            c.execute('DELETE FROM access_tokens WHERE owner_id=?',(uid,))
+            c.execute('DELETE FROM mcp_client_grants WHERE user_id=?',(uid,))
+            c.execute('DELETE FROM mcp_client_requests WHERE user_id=?',(uid,))
+
+    def attest_workos_email(self, user_id: int, email: str,
+                            *, attested_by: int, evidence_ref: str) -> None:
+        """Explicit admin attestation; never infer account ownership from email."""
+        if not isinstance(email, str):
+            raise ValueError('Invalid email address')
+        email = email.strip().lower()
+        if (len(email) > 254 or not re.fullmatch(
+                r'[a-z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+', email)):
+            raise ValueError('Invalid email address')
+        if (not isinstance(evidence_ref, str) or
+                not 8 <= len(evidence_ref.strip()) <= 160 or
+                any(ord(ch) < 32 for ch in evidence_ref)):
+            raise ValueError('Verification evidence reference is required')
+        with self.db() as c:
+            admin = c.execute(
+                "SELECT role,is_active FROM users WHERE id=?", (attested_by,)
+            ).fetchone()
+            user = c.execute(
+                "SELECT is_active FROM users WHERE id=?", (user_id,)
+            ).fetchone()
+            if not admin or not admin['is_active'] or admin['role'] != 'admin':
+                raise ValueError('Only an active administrator can attest identity')
+            if not user or not user['is_active']:
+                raise ValueError('User must be active')
+            c.execute("""INSERT INTO oauth_verified_emails(
+                user_id,email,attested_by,attested_at,evidence_ref
+            ) VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+                email=excluded.email, attested_by=excluded.attested_by,
+                attested_at=excluded.attested_at,
+                evidence_ref=excluded.evidence_ref""",
+                (user_id, email, attested_by, int(time.time()), evidence_ref.strip()))
+
+    def workos_verified_email(self, user_id: int) -> str | None:
+        with self.db() as c:
+            row = c.execute("""SELECT e.email FROM oauth_verified_emails e
+                JOIN users u ON u.id=e.user_id
+                WHERE e.user_id=? AND u.is_active=1""", (user_id,)).fetchone()
+        return row['email'] if row else None
+
+    def list_workos_verified_emails(self) -> list[dict]:
+        with self.db() as c:
+            return [dict(row) for row in c.execute(
+                'SELECT user_id,email,attested_by,attested_at,evidence_ref '
+                'FROM oauth_verified_emails ORDER BY user_id')]
+
+    def revoke_workos_email(self, user_id: int) -> None:
+        with self.db() as c:
+            c.execute('DELETE FROM oauth_verified_emails WHERE user_id=?', (user_id,))
+            c.execute('DELETE FROM oauth_identities WHERE user_id=?', (user_id,))
+            c.execute('DELETE FROM mcp_client_grants WHERE user_id=?', (user_id,))
+
+    def note_signed_mcp_client(self, user_id: int, client_id: str) -> None:
+        """Discovery is NOT consent; only record client IDs from verified JWTs."""
+        if (type(client_id) is not str or not 1 <= len(client_id) <= 160 or
+                any(ord(ch) < 33 or ord(ch) > 126 for ch in client_id)):
+            return
+        now = int(time.time())
+        with self.db() as c:
+            c.execute("""INSERT OR IGNORE INTO mcp_client_requests(
+                user_id,client_id,first_seen,last_seen
+            ) VALUES(?,?,?,?)""", (user_id,client_id,now,now))
+            c.execute("""UPDATE mcp_client_requests SET last_seen=?
+                WHERE user_id=? AND client_id=? AND last_seen<?""",
+                (now,user_id,client_id,now-3600))
+
+    def list_pending_mcp_clients(self, user_id: int) -> list[dict]:
+        with self.db() as c:
+            return [dict(row) for row in c.execute(
+                """SELECT r.client_id,r.first_seen,r.last_seen
+                   FROM mcp_client_requests r
+                   LEFT JOIN mcp_client_grants g
+                   ON g.user_id=r.user_id AND g.client_id=r.client_id
+                   WHERE r.user_id=? AND g.client_id IS NULL
+                     AND r.last_seen>? ORDER BY r.last_seen DESC LIMIT 20""",
+                (user_id,int(time.time())-30*86400))]
 
     def list_users(self):
         with self.db() as c:
@@ -355,10 +630,13 @@ class Store:
                       (role, grants, stored_fields, int(active), user_id))
             # A role change or disable must invalidate all outstanding sessions/tokens.
             c.execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
+            c.execute('DELETE FROM authkit_sessions WHERE user_id=?', (user_id,))
             c.execute('DELETE FROM access_tokens WHERE owner_id=?', (user_id,))
             # Reauthorization is required after a role or status update.
             c.execute('DELETE FROM oauth_identities WHERE user_id=?', (user_id,))
             c.execute('DELETE FROM mcp_client_grants WHERE user_id=?', (user_id,))
+            c.execute('DELETE FROM oauth_verified_emails WHERE user_id=?', (user_id,))
+            c.execute('DELETE FROM mcp_client_requests WHERE user_id=?', (user_id,))
 
     def bind_oauth_identity(self, issuer: str, subject: str, user_id: int) -> int:
         """Administrator-approved binding of an IdP subject to a local account.
@@ -496,8 +774,68 @@ class Store:
         except (TypeError, ValueError):
             return None
 
+    def _native_raw_allowed(self, c, uid: int, issuer: str, owner_uid: int) -> bool:
+        # Subject ownership is checked against the immutable native identity.
+        row = c.execute("""SELECT u.role,u.grants,u.field_grants,u.is_active,
+            a.raw_transcript,a.subject AS native_subject,i.subject AS bound_subject
+            FROM users u JOIN oauth_identities i ON i.user_id=u.id AND i.issuer=?
+            LEFT JOIN authkit_accounts a ON a.user_id=u.id AND a.issuer=i.issuer
+            WHERE u.id=?""",(issuer,uid)).fetchone()
+        if not row or not row['is_active']:
+            return False
+        caps=permissions(row['role'],row['grants'])
+        if 'calls:read' not in caps or 'id' not in effective_fields(caps,row['field_grants']):
+            return False
+        return bool((uid==owner_uid and row['role']=='admin') or
+                    (row['role']!='admin' and row['raw_transcript']==1 and
+                     row['native_subject']==row['bound_subject']))
+
+    def native_raw_allowed(self, uid: int, issuer: str, owner_uid: int) -> bool:
+        with self.db() as c:
+            return self._native_raw_allowed(c,uid,issuer,owner_uid)
+
+    def native_raw_client_allowed(self, uid: int, issuer: str, owner_uid: int,
+                                  client_id: str) -> bool:
+        with self.db() as c:
+            return self._native_raw_client_allowed(c,uid,issuer,owner_uid,client_id)
+
+    def _native_raw_client_allowed(self,c,uid,issuer,owner_uid,client_id) -> bool:
+        if not client_id or not self._native_raw_allowed(c,uid,issuer,owner_uid):
+            return False
+        user=c.execute('SELECT role,grants FROM users WHERE id=?',(uid,)).fetchone()
+        if 'mcp:use' not in permissions(user['role'],user['grants']):
+            return False
+        row=c.execute('SELECT capabilities,fields,raw_transcript FROM mcp_client_grants WHERE user_id=? AND client_id=?',
+                      (uid,client_id)).fetchone()
+        if not row or row['raw_transcript']!=1:
+            return False
+        try:
+            caps, fields=json.loads(row['capabilities']),json.loads(row['fields'])
+            return (isinstance(caps,list) and isinstance(fields,list) and
+                    {'mcp:use','calls:read'}<=set(caps) and 'id' in fields)
+        except (ValueError,TypeError):
+            return False
+
+    def audit_raw_transcript_request(self, *, uid: int, issuer: str, owner_uid: int,
+                                     call_id: int, char_limit: int,
+                                     client_id: str | None = None) -> bool:
+        if type(call_id) is not int or call_id<1 or not 1<=char_limit<=6000:
+            return False
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            allowed=(self._native_raw_client_allowed(c,uid,issuer,owner_uid,client_id)
+                     if client_id is not None else self._native_raw_allowed(c,uid,issuer,owner_uid))
+            if not allowed:
+                return False
+            c.execute("""INSERT INTO raw_transcript_access_audit
+                (user_id,client_id,surface,call_id,char_limit,created_at) VALUES(?,?,?,?,?,?)""",
+                (uid,client_id,'mcp' if client_id is not None else 'web',call_id,char_limit,int(time.time())))
+            return True
+
     def approve_mcp_client(self, user_id: int, client_id: str,
-                           caps: list[str], fields: list[str]) -> None:
+                           caps: list[str], fields: list[str], *,
+                           raw_transcript: bool = False, native_issuer: str = "",
+                           native_owner_uid: int = 0) -> None:
         """Explicit logged-in user's approval for one trusted OAuth client ID."""
         if (type(client_id) is not str or not 1 <= len(client_id) <= 160 or
                 any(ord(ch) < 33 or ord(ch) > 126 for ch in client_id)):
@@ -520,13 +858,22 @@ class Store:
         if not set(selected) <= capability_fields(set(caps)):
             raise ValueError('Delegated fields require matching approved capability')
         with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            if raw_transcript:
+                if ('calls:read' not in caps or 'id' not in selected or not native_issuer or
+                    not self._native_raw_allowed(c,user_id,native_issuer,native_owner_uid)):
+                    raise ValueError('Raw transcript grant is unavailable')
+                observed=c.execute('SELECT 1 FROM mcp_client_requests WHERE user_id=? AND client_id=?',
+                    (user_id,client_id)).fetchone()
+                if not observed:
+                    raise ValueError('Raw transcript requires an observed OAuth client')
             c.execute(
-                'INSERT INTO mcp_client_grants(user_id,client_id,capabilities,fields,approved_at) '
-                'VALUES(?,?,?,?,?) ON CONFLICT(user_id,client_id) DO UPDATE SET '
+                'INSERT INTO mcp_client_grants(user_id,client_id,capabilities,fields,approved_at,raw_transcript) '
+                'VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,client_id) DO UPDATE SET '
                 'capabilities=excluded.capabilities,fields=excluded.fields,'
-                'approved_at=excluded.approved_at',
+                'approved_at=excluded.approved_at,raw_transcript=excluded.raw_transcript',
                 (user_id, client_id, json.dumps(sorted(caps)),
-                 json.dumps(selected), int(time.time()))
+                 json.dumps(selected), int(time.time()),int(raw_transcript))
             )
 
     def revoke_mcp_client(self, user_id: int, client_id: str) -> None:
@@ -537,7 +884,7 @@ class Store:
     def list_mcp_clients(self, user_id: int) -> list[dict]:
         with self.db() as c:
             return [dict(row) for row in c.execute(
-                'SELECT client_id,capabilities,fields,approved_at '
+                'SELECT client_id,capabilities,fields,approved_at,raw_transcript '
                 'FROM mcp_client_grants WHERE user_id=? ORDER BY approved_at DESC',
                 (user_id,))]
 

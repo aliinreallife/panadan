@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+import re
 import time
 from urllib.parse import urlsplit
 
@@ -32,6 +33,8 @@ class OAuthConfig:
     resource: str = ""
     scope: str = "panadan:mcp:read"
     max_ttl_seconds: int = 3600
+    authkit_admin_subject: str = ''
+    authkit_multi_user: bool = False
 
     @classmethod
     def from_env(cls) -> "OAuthConfig":
@@ -48,6 +51,10 @@ class OAuthConfig:
             resource=os.getenv("PANADAN_OAUTH_RESOURCE", "").strip(),
             scope=os.getenv("PANADAN_OAUTH_SCOPE", "panadan:mcp:read").strip(),
             max_ttl_seconds=ttl,
+            authkit_admin_subject=(os.getenv("PANADAN_AUTHKIT_ADMIN_SUBJECT", "")
+                if os.getenv("PANADAN_WEB_AUTH_MODE") == "authkit" else ""),
+            authkit_multi_user=(os.getenv("PANADAN_WEB_AUTH_MODE") == "authkit"
+                and os.getenv("PANADAN_AUTHKIT_MULTI_USER") == "true"),
         )
         config.validate()
         return config
@@ -66,6 +73,11 @@ class OAuthConfig:
         if (not self.scope or any(c.isspace() for c in self.scope)
                 or len(self.scope) > 128):
             raise ValueError("PANADAN_OAUTH_SCOPE must be one non-empty OAuth scope")
+        if self.authkit_admin_subject and (
+                self.scope != "openid" or re.fullmatch(r"user_[A-Za-z0-9]+", self.authkit_admin_subject) is None):
+            raise ValueError("Invalid native AuthKit MCP subject")
+        if self.authkit_multi_user and not self.authkit_admin_subject:
+            raise ValueError("Multi-user mode requires native AuthKit")
         if not 60 <= self.max_ttl_seconds <= 3600:
             raise ValueError("OAuth maximum access token TTL must be 60–3600 seconds")
 
@@ -149,6 +161,23 @@ class OAuthVerifier:
                 return None
             if payload.get("token_use", "access") != "access":
                 return None
+            # Standard OIDC scope mode is limited to WorkOS USER access tokens.
+            # Native AuthKit accepts only the pinned provider user ID. An OIDC scope alone
+            # is not permission to read reports. The exact MCP audience,
+            # signed consent, external local subject and client identity
+            # are required in addition to the existing signature/time checks.
+            # Report permissions are still intersected locally per client.
+            if self.config.scope == "openid":
+                if (payload.get("aud") != self.config.resource
+                        or (re.fullmatch(r"user_[A-Za-z0-9]{1,120}", sub) is None if self.config.authkit_multi_user
+                            else sub != self.config.authkit_admin_subject if self.config.authkit_admin_subject
+                            else re.fullmatch(r"panadan-user-[1-9][0-9]*", sub) is None)
+                        or payload.get("sub_profile") == "ai_agent"
+                        or not all(isinstance(payload.get(claim), str)
+                                   and 1 <= len(payload[claim]) <= 256
+                                   for claim in ("sid", "jti", "client_id"))
+                        or not isinstance(raw_scopes, str)):
+                    return None
             # Client identity must be part of the signed JWT. Never use a
             # model argument, display name, header or unverified claim.
             azp, client_id = payload.get("azp"), payload.get("client_id")

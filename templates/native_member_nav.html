@@ -1,0 +1,9 @@
+<nav>
+<a href="/dashboard">▦ حساب و گزارش‌ها</a>
+{% if has_capability(session,'calls:read') %}<a href="/dashboard/operators">♙ کارشناسان و مقاصد</a>{% endif %}
+{% if panel_allowed(session,'connect:read') or has_capability(session,'mcp:use') %}<a href="/dashboard/connect">◈ اتصال هوش مصنوعی</a>{% endif %}
+{% if has_capability(session,'mcp:use') %}<a href="/dashboard/mcp-apps">◉ برنامه‌های متصل من</a>{% endif %}
+{% if panel_allowed(session,'api:docs') %}<a href="/dashboard/api">⌘ راهنمای API</a>{% endif %}
+{% if panel_allowed(session,'activity:read') %}<a href="/dashboard/activity">▤ فعالیت کاربران</a>{% endif %}
+{% if panel_allowed(session,'system:read') %}<a href="/dashboard/system">◷ وضعیت سیستم</a>{% endif %}
+</nav>

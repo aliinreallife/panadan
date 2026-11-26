@@ -40,10 +40,36 @@
 <p class="source-note">این صفحه به‌معنای تکمیل اتصال ChatGPT نیست. اتصال نهایی به پیکربندی OAuth ارائه‌دهنده، HTTPS، قابلیت دسترسی خارجی و تست عملی نیاز دارد.</p>
 </section>
 
+{% if workos_enabled %}
+<section class="panel">
+<div class="panel-head"><h2>ایمیل تأییدشده برای اتصال WorkOS</h2></div>
+<p>ورود پانادان بدون تغییر باقی می‌ماند. فقط مدیر پس از تأیید مستقلِ مالکیت ایمیل می‌تواند یک آدرس را برای اتصال OAuth کاربر ثبت کند. این آدرس رمز یا نقش کاربر را تغییر نمی‌دهد.</p>
+<form method="post" action="/dashboard/oauth/verified-email" class="token-form">
+<input type="hidden" name="csrf" value="{{csrf}}">
+<label>حساب پانادان<select name="user_id" data-searchable required>
+{% for user in users if user.is_active %}<option value="{{user.id}}">{{user.username}}</option>{% endfor %}
+</select></label>
+<label>ایمیل متعلق به همین کاربر<input name="email" type="email" autocomplete="off" dir="ltr" maxlength="254" required></label>
+<label>شناسهٔ مدرک راستی‌آزمایی<input name="evidence_ref" type="text" autocomplete="off" dir="ltr" minlength="8" maxlength="160" placeholder="Verification ticket / admin reference" required></label>
+<label><input name="confirmed" type="checkbox" value="true" required> مالکیت این ایمیل را خارج از این فرم به‌طور مستقل بررسی کرده‌ام.</label>
+<button class="primary" type="submit">ثبت ایمیل تأییدشده</button>
+</form>
+<div class="table-scroller"><table><thead><tr><th>شناسهٔ کاربر</th><th>ایمیل</th><th>مرجع راستی‌آزمایی</th><th></th></tr></thead><tbody>
+{% for item in verified_emails %}
+<tr><td>{{item.user_id}}</td><td dir="ltr">{{item.email}}</td><td><code>{{item.evidence_ref}}</code></td>
+<td><form method="post" action="/dashboard/oauth/verified-email/revoke" onsubmit="return confirm('ایمیل و تمامی اتصالات OAuth این کاربر لغو شوند؟')">
+<input type="hidden" name="csrf" value="{{csrf}}">
+<input type="hidden" name="user_id" value="{{item.user_id}}">
+<button type="submit" class="danger-outline">لغو ایمیل و اتصال</button></form></td></tr>
+{% else %}<tr><td colspan="4">هنوز هیچ ایمیل تأییدشده‌ای ثبت نشده است.</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="source-note">بدون ایمیل راستی‌آزمایی‌شدهٔ مربوط به همین کاربر، مسیر WorkOS بسته می‌ماند. برای حساب‌های موجود، ایمیل جایگزین نام کاربری یا رمز عبور نیست.</p>
+</section>
+{% endif %}
 <section class="panel"><div class="panel-head"><div><h2>تخصیص حساب‌ها</h2>
 <p class="muted small-text">فقط مدیر می‌تواند شناسهٔ قطعی یک کاربر را به حساب پانادان متصل کند.</p></div></div>
 {% if oauth.mode == 'oauth' %}
-<form action="/dashboard/oauth/link" method="post" class="token-form">
+{% if not native_multi_user %}<form action="/dashboard/oauth/link" method="post" class="token-form">
 <input type="hidden" name="csrf" value="{{csrf}}">
 <label>حساب پانادان
 <select name="user_id" data-searchable required>
@@ -55,14 +81,14 @@
 <input name="subject" required maxlength="256" autocomplete="off" placeholder="شناسهٔ دقیق از ارائه‌دهندهٔ هویت" dir="ltr"></label>
 <button class="primary" type="submit">اتصال حساب</button>
 </form>
-<p class="source-note">برای جلوگیری از اعطای دسترسی اشتباه، هیچ حسابی بر اساس ایمیل یا نام مشابه به‌طور خودکار متصل نمی‌شود. فقط کاربر فعال دارای مجوزهای MCP، تماس و آمار قابل اتصال است.</p>
+<p class="source-note">برای جلوگیری از اعطای دسترسی اشتباه، هیچ حسابی بر اساس ایمیل یا نام مشابه به‌طور خودکار متصل نمی‌شود. فقط کاربر فعال دارای مجوزهای MCP، تماس و آمار قابل اتصال است.</p>{% else %}<p>هویت کاربران از ورود تأییدشده WorkOS ثبت می‌شود. برای جلوگیری از اتصال اشتباه، تغییر دستی هویت غیرفعال است. دسترسی‌ها را از <a href="/dashboard/users">کاربران و دسترسی‌ها</a> مدیریت کنید.</p>{% endif %}
 <div class="table-scroller"><table><thead><tr><th>کاربر</th><th>شناسهٔ ارائه‌دهنده</th><th>وضعیت</th><th></th></tr></thead><tbody>
 {% for item in bindings %}<tr>
 <td>{{item.username}}</td><td><code dir="ltr">{{item.subject}}</code></td>
 <td>{{'فعال' if item.is_active else 'غیرفعال'}}</td>
-<td><form action="/dashboard/oauth/{{item.id}}/revoke" method="post" onsubmit="return confirm('اتصال این هویت لغو شود؟')">
+<td>{% if not native_multi_user %}<form action="/dashboard/oauth/{{item.id}}/revoke" method="post" onsubmit="return confirm('اتصال این هویت لغو شود؟')">
 <input type="hidden" name="csrf" value="{{csrf}}">
-<button type="submit" class="danger-outline">قطع اتصال</button></form></td></tr>
+<button type="submit" class="danger-outline">قطع اتصال</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="4" class="muted">هیچ هویتی متصل نشده است.</td></tr>{% endfor %}
 </tbody></table></div>
 {% else %}

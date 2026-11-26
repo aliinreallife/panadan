@@ -127,9 +127,9 @@ for (const form of document.querySelectorAll('form[data-access-editor]')) {
   }
 
   form.addEventListener('submit', event => {
-    const elevated = role.value === 'admin' ||
+    const elevated = role.value === 'admin' || form.querySelector('input[name="raw_transcript"]')?.checked ||
       [...confidential].some(name => checked().has(name));
-    const editing = form.dataset.accessEditor === 'edit';
+    const editing = ['edit','native'].includes(form.dataset.accessEditor);
     const message = elevated
       ? 'این تغییر دسترسی سطح بالا یا محرمانه ایجاد می‌کند. آیا مجوزهای نمایش‌داده‌شده را تأیید می‌کنید؟'
       : editing
