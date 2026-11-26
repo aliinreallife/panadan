@@ -4,7 +4,6 @@ from pathlib import Path
 import subprocess
 import sys
 from urllib.parse import urlsplit, parse_qs
-from dataclasses import replace
 import pytest
 from server.security import Store
 from server.authkit_login import AuthKitConfig, AuthKitError
@@ -127,8 +126,13 @@ def _exercise(tmp_path):
             assert member.get(path).status_code==403,path
         assert member.post(f'/dashboard/users/{uid}/native-access',data={'csrf':m['csrf'],
             'is_active':'true','panels':'system:read'}).status_code==403
+        req=member.post('/dashboard/request-access',data={'csrf':m['csrf'],'note':'Need approved reports'},follow_redirects=False)
+        assert req.status_code==303
+        assert main.store.native_account(uid,ISSUER)['request_note']=='Need approved reports'
+        assert main.store.user_access(uid)['capabilities']==set()
         users=owner.get('/dashboard/users')
         assert users.status_code==200 and 'member@example.invalid' in users.text and '/native-access' in users.text
+        assert 'Need approved reports' in users.text
         r=owner.post(f'/dashboard/users/{uid}/native-access',data={'csrf':a['csrf'],
             'is_active':'true','panels':'system:read'},follow_redirects=False)
         assert r.status_code==303,r.text
