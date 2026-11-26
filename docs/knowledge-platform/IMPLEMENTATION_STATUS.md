@@ -1,0 +1,113 @@
+# Panadan Knowledge Platform — Implementation Status
+
+Date: 2026-11-26
+Authorization: D-067, Phase 8 M00 only. [Roadmap](ROADMAP.md) approved.
+Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
+Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
+Current gate: **G0 BLOCKED — baseline execution environment unavailable.**
+This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
+
+## 1. M00 progress and evidence
+
+| Task | Status | Evidence / remaining work |
+| --- | --- | --- |
+| M00.1 | Static inspection complete | GitHub connector branch/tree inspection, current auth, ingestion, migration, frontend and verification files examined. Protected refs confirmed. No live queries. Local checkout unavailable. |
+| M00.2 | Blocked | Direct Git remote probe exit 128: Could not resolve host: github.com. Python 3.13.5, uv, Git 2.47.3, npm 10.9.2 available; Node v22.16.0 rather than Node 24. Docker and psql not present on PATH. No checkout, no locked dependency installation, no repository test or build executed. |
+| M00.3 | Draft harness conventions complete; gate pending | This ledger defines synthetic fixture plan, default-off contract, migration review, UI backlog and proposed M01 increments. These are reviewable implementation conventions, not implemented controls. G0 and separate M01 authorization required. |
+
+### Reuse inventory
+
+| Area | Existing evidence | Disposition |
+| --- | --- | --- |
+| Identity | server/security.py, auth_store.py, field_permissions.py, permission_catalog.py; SQLite default and postgres-staging guard; account IDs and OAuth bindings | Reuse authentication, extend explicit stable principal bridge and scoped membership policy. Verify account lifecycle/recreation, revocation and legacy grants; no name/email binding or silent auth cutover. |
+| Web/API/MCP | server/main.py, mcp_tools.py, oauth_mcp.py and transport/access tests | Extend shared authorized query service later; preserve legacy routes, consent and permissions. Existing global routes do not become workspace-scoped by adding a UI selector. |
+| Owned DB | database/migrations/001_multisource_foundation.sql and 003_auth_foundation.sql, database/permissions/002_platform_runtime_roles.sql and 003_auth_runtime_role.sql | Preserve files and old schemas. New additive panadan_knowledge schema, separate role grants and tenant keys/RLS in M01. Review migration runner before choosing next numbering. |
+| Ingestion | platform_ingest.py, platform_processing.py, Odoo adapter, coordinator | Reuse checkpoint and deterministic processing concepts. Existing raw revisions and global source keys not suitable as the new filtered tenant store; no automatic migration. |
+| Source access | database.py fixed read-only parameterized view, historical READ_ONLY and source audits | Preserve source-only reader and independent privileges. Source grant/ID/clock/assignment verification required privately before real activation; no actual source audit in M00. |
+| Frontend | templates/dashboard.html and other Jinja templates; static/style.css, app.js, mobile-nav.js, labels.js, jalali.js; web/build.mjs, Doran and self-hosted Vazirmatn | Reuse RTL, date/formatting and asset infrastructure where compatible. Develop isolated knowledge shell/components with both approved design references. Existing CSS uses green palette and repeated shell styles; do not globally overwrite legacy selectors before regression tests. |
+| Verification | panadan.sh dispatches tools/verify-local.sh; tools/test-platform-integration.sh; .github/workflows/tests.yml | Reuse offline locked harness and disposable PG18.6 integration. Extend reviewed tests at each increment; no production DSN or persistent DB volume. |
+| Missing product modules | Approved PRD / architecture / data model | Build progressively per M01–M11, not all schema objects at once. |
+
+### Baseline test results
+
+| Verification | Result |
+| --- | --- |
+| GitHub branch/tree/docs and protected ref inspection | Passed (static connector evidence) |
+| Direct Git remote access | Failed: DNS resolution, exit 128 |
+| Locked Python suite and compile check | Not run |
+| Node suite, browser/shell syntax, asset build | Not run |
+| Disposable PostgreSQL transactional/role/restore tests | Not run |
+| PostgreSQL auth migration integration | Not run |
+| Docker image builds | Not run; not authorized PR workflow |
+| Production, live source and external AI/MCP checks | Not attempted; outside M00 |
+
+No application test counts or pass rates can be reported. Historical CI results are not current baseline evidence. CI triggers on main pushes and pull requests, not ordinary feature-branch pushes. No workflow dispatch or PR created.
+
+### Resume G0 in a suitable isolated development environment
+
+Use a **fresh clone**, not the production checkout. Node 24, Python 3.13, uv, Git, npm and Docker are prerequisites. Do not copy .env files, VPN configuration or production secrets, or point tests at persistent platform DBs. Verify Docker context targets a development engine. Run from Linux/WSL:
+
+```bash
+git clone --single-branch --branch feature/knowledge-platform https://github.com/aliinreallife/panadan.git panadan-m00
+cd panadan-m00
+git rev-parse HEAD
+git status --short
+python3.13 --version
+uv --version
+node --version
+npm --version
+docker version
+./panadan.sh verify --docker --assets
+```
+
+Run in a clean shell without real service credentials. The inspected verify script unsets PostgreSQL source/test env variables, runs locked Python/Node and syntax tests, optionally builds assets, and starts a separate loopback-only PG18.6 container using synthetic credentials with cleanup scoped to that container. Inspect current scripts at checkout before running. The local disposable runner tests ingestion, role permissions, SCRAM, optional Odoo adapter, restart persistence and backup/restore; the CI PG job additionally includes tests/test_auth_pg_migration.py. For G0, obtain explicit PG auth migration test evidence using a reviewed disposable PG18 CI-equivalent fixture (never production); do not assume a local offline skip covers it. Record HEAD, environment, test totals, skips and exit codes; redact secrets. A failed or skipped mandatory check blocks G0 until investigated and resolved. No need for a real source connection, paid provider or deployment.
+
+## 2. Proposed implementation harness conventions
+
+Default-off contract (design, not implemented): new knowledge routes/features unavailable unless explicitly enabled in reviewed owned environment, workspace enabled and current membership/permission passes. Default disabled for source connectors, schedules, real AI egress, external MCP knowledge access and destination delivery independently. Synthetic fixtures and mock providers may be enabled only in isolated test configuration. A feature flag never grants authorization. Fail closed on missing config, invalid scope, unknown cost, missing evidence or policy failure. Do not modify legacy reporting behavior or expose new users to global reports.
+
+Migration review: inspect actual runner and existing migration numbers; new additive files only; no source DSN, no editing applied migrations, no unreviewed broad grants. For every increment review clean/existing-schema disposable install, ownership, tenant composite constraints, RLS negative cases, context reset, rollback by disablement and data preservation. No auto-assign legacy rows. Exact migration and feature-flag naming to be proposed with M01. No production migration.
+
+Synthetic fixtures: two fictional workspaces with intentionally overlapping source external IDs and separate stable principals; one designated synthetic operator and fixed 30-day half-open interval per primary scenario, plus out-of-window/operator and ambiguous assignments; invented Persian/mixed-language call text including clearly synthetic sensitive canaries; duplicate/replayed/changed markers, missing dates/transcripts and contradictory evidence; compatible/incompatible extraction signatures; synthetic cost/rate ledger with concurrency and uncertain outcomes; mock AI and local fake destination only. No actual transcripts, customers, provider tokens or private deployment IDs. Store fixtures in reviewed tests, no raw durable payload in the new knowledge path. Record explicit expected counts, scope and denial outcomes; do not infer unique customers.
+
+Test map: M01 AT-01 / DM-T01; M02 AT-02/03 / DM-T02–04; M03 AT-04 / DM-T05; M04 AT-08 / DM-T10; M05 AT-05 / DM-T06/07; M06 AT-06/07 / DM-T08/09; M07/08 AT-09; M09 AT-07/10 / DM-T09/12; M10 AT-03/11 / DM-T11; M11 AT-01–12 and DM-T01–12, recovery and all required regression. See roadmap for complete traceability. New integration tests must be explicitly included in reviewed test runner/CI; no PR or CI configuration change in M00.
+
+## 3. U0 design preparation
+
+D-066/D-067 adopt both references as inputs. [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md) governs reconciliation. Preserve warm editorial visual language and Persian RTL; design Home briefing, Explore, Knowledge, Applications, Infrastructure with role-aware access, workspace switching and legacy reporting. Navigation remains a proposed detailed design, not a permission policy. Candidate Forest #293F34, Sage #A4B5A0, Ink #202822, Canvas #F6F5F1, Surface #FFFFFF, Border #DADFD7; alternate reference palette remains available. Use dark ink on warm surfaces; test sage/semantic contrast before using for text. Proposed 4px grid, 40px controls, >=44px mobile touch targets, 6–12px radii, functional reduced-motion-aware transitions, Vazirmatn/Inter subject to asset/license review. No final token or logo artwork approval.
+
+| UI increment | Reviewable screens and interactions |
+| --- | --- |
+| U0/U1 | Isolated RTL shell, workspace selection, briefing, member/access views, denied/empty states, preserve existing reporting |
+| U2/U3 | Resources and permitted representation inspector, integrations, seven objective templates, pipeline configuration and run history |
+| U4/U5/U6 | Usage and cap controls, observation/evidence inspector, knowledge list/detail, review queue, taxonomy |
+| U7/U8 | Customer insight feed/dashboard/detail, content opportunity and full brief |
+| U9/U10 | Pinned packages, access preview and MCP/API, additional source setup and separate destination delivery |
+| U11 | Full desktop/mobile journeys, keyboard/contrast, errors, partial/stale/restricted/budget states and detailed UI review |
+
+Three-pane knowledge inspector on desktop and sequential detail on mobile are candidates; preserve filter/selection state without retaining unauthorized cached payload. No new design dependency/framework or dark-mode requirement added. No actual UI implementation or screen rendering performed in M00.
+
+## 4. Proposed next increment — M01 (not authorized yet)
+
+Prerequisite: G0 actual baseline tests reviewed and explicit M01 approval. First M01.1 only: inspect migration runner and existing ownership, propose new schema migration and minimal workspace/principal/membership/policy and audit tables, composite PK/FK and safe role bootstrap. Use disposable clean + existing-schema fixtures, default off. Then separately scoped M01.2 identity bridge, M01.3 scoped RLS/role and pool tests, M01.4 workspace shell/access UI. Define stable account authority binding after checking current identity lifecycle; if unsafe, stop and review alternative instead of inventing identity mapping. No all-table migration, auth cutover, new source access, provider, deployment or broad UI redesign. G1 requires two synthetic tenants, fail-closed scope and legacy regression evidence.
+
+## 5. Milestone ledger
+
+| Milestone | Status | Gate |
+| --- | --- | --- |
+| M00 Baseline/harness | Blocked (partial static/documentation evidence) | G0 not passed |
+| M01 Workspace security | Not started | G0 + approval |
+| M02 Resources/privacy | Not started | G1 |
+| M03 Objectives/runs | Not started | G2 |
+| M04 AI gateway/budgets | Not started | G3 |
+| M05 Observations/aggregation | Not started | G4 |
+| M06 Knowledge/review/taxonomy | Not started | G5 |
+| M07 Customer Intelligence | Not started | G6 |
+| M08 Content Intelligence | Not started | G7 |
+| M09 Packages/API/MCP | Not started | G8 |
+| M10 Extra sources/distribution | Not started | G9 |
+| M11 Synthetic E0 readiness | Not started | G10 |
+| M12 Real-data E1–E3 | Not started / unauthorized | G11 + private approvals |
+| M13 Release/E4 | Not started / unauthorized | Reviewed pilot + release approval |
+
+Next action: obtain and review G0 test evidence, resolve any required baseline failure, update ledger and request authorization for M01. No app code, database schema, source records, external connections, paid requests or production changes performed. Documentation commits only. Protected refs must be rechecked after commit.
