@@ -1,0 +1,9 @@
+---
+description: Mandatory Panadan product and architecture context
+alwaysApply: true
+---
+
+Read and follow `AGENTS.md` and `docs/knowledge-platform/DECISIONS.md` before planning or implementing changes. Distinguish accepted target decisions from current implementation; preserve existing security constraints and the read-only source database. Do not deploy or modify main without explicit authorization. Do not expose private customer or commercial information in this public repository.
+
+@AGENTS.md
+@docs/knowledge-platform/DECISIONS.md
