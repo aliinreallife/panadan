@@ -146,3 +146,39 @@ def _exercise(tmp_path):
             'is_active':'true','grants':'users:manage'},follow_redirects=False)
         assert r.status_code==400
         assert owner.get('/dashboard/users').status_code==200
+
+        # Raw transcript must be denied before database access. Only an
+        # explicit owner grant enables the browser; each signed client
+        # needs its own independent consent.
+        from types import SimpleNamespace
+        from server.mcp_tools import get_raw_call_transcript, get_my_access
+        source="مشتری: 09123456789"
+        ctx=SimpleNamespace(headers={"authorization":"Bearer synthetic"})
+        with patch.object(main.database,"transcript_excerpt",return_value={
+                "id":42,"transcription":source,"total_chars":len(source),"_window_start":0}) as fetch:
+            assert member.get('/dashboard/raw/transcript/42').status_code==403
+            fetch.assert_not_called()
+            r=owner.post(f'/dashboard/users/{uid}/native-access',data={
+                'csrf':a['csrf'],'is_active':'true','grants':['calls:read','mcp:use'],
+                'fields':['id'],'raw_transcript':'true'},follow_redirects=False)
+            assert r.status_code==303,r.text
+            m=signin(member,'member')
+            assert member.get('/dashboard/ai/transcript/42').status_code==403
+            response=member.get('/dashboard/raw/transcript/42')
+            assert response.status_code==200 and response.json()['text']==source
+            app_id='https://example.invalid/oauth/client.json'
+            with patch.object(main.oauth_verifier,'verify_details',return_value={
+                    'subject':'user_member123','client_id':app_id}):
+                assert get_raw_call_transcript(42,ctx)['error']=='permission_denied'
+                assert 'calls:transcript:raw' not in get_my_access(ctx)['capabilities']
+                main.store.note_signed_mcp_client(uid,app_id)
+                r=member.post('/dashboard/mcp-apps/approve',data={
+                    'csrf':m['csrf'],'client_id':app_id,'capabilities':['calls:read'],
+                    'fields':['id'],'raw_transcript':'true'},follow_redirects=False)
+                assert r.status_code==303,r.text
+                assert get_raw_call_transcript(42,ctx)['text']==source
+                assert 'calls:transcript:raw' in get_my_access(ctx)['capabilities']
+                assert 'raw_transcription' in [x['id'] for x in get_my_access(ctx)['columns']]
+                member.post('/dashboard/mcp-apps/revoke',data={'csrf':m['csrf'],'client_id':app_id},follow_redirects=False)
+                assert get_raw_call_transcript(42,ctx)['error']=='permission_denied'
+            assert member.get('/dashboard/raw/transcript/42').status_code==200
