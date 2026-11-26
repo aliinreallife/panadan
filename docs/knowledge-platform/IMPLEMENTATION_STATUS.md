@@ -4,7 +4,7 @@ Date: 2026-11-26
 Authorization: D-067 roadmap; M00 completed and owner explicitly authorized M01.1 only on 2026-11-26. [Roadmap](ROADMAP.md) approved.
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G0 passed; M01.1 implemented, awaiting disposable PostgreSQL and regression test evidence. G1 not passed.**
+Current gate: **G0 passed; M01.1 test assertions corrected after first local run; rerun required. G1 not passed.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -105,7 +105,9 @@ Structural approval fields do not establish actual authority; identity binding, 
 
 ### Verification and next action
 
-Static inspection confirmed the expected tables, constraints, guard, RLS, tests and runner wiring. The assistant execution environment still cannot resolve github.com, lacks Docker, PostgreSQL and psycopg, and cannot run the locked repo suites. No new tests actually run; M01.1 is implemented but unverified. Prior M00 evidence is baseline only. Run from the existing local synthetic clone:
+Owner-reported verification at 3f01e8ed870e249270092e123277e5401e37df4f: 534 Python offline tests passed, 36 skipped (nine more than M00, corresponding to the new PG-dependent foundation cases); 65 Node tests passed; syntax checks and asset build passed. Disposable PG18 integration: 79 passed, two failed in 21.14s. Both failures were incorrect test expectations for ON DELETE RESTRICT: PostgreSQL emitted psycopg.errors.RestrictViolation when deleting a workspace referenced by memberships or a membership referenced by audit events. The deletion was correctly rejected in each case. Commit 4e157217879f70612b23f2040a9e555d821d75aa corrects only these two expected exception types; migration SQL and its RESTRICT constraints are unchanged. The first run did not reach the runner's subsequent restart/backup/restore checks; compileall success was not explicitly reported. No tests executed by the assistant. M01.1 remains unverified pending a successful rerun at the corrected revision. Prior M00 evidence remains baseline only.
+
+Run from the existing local synthetic clone:
 
 ```bash
 cd ~/panadan-m00
@@ -123,7 +125,7 @@ The disposable runner now includes both auth and knowledge integration suites; r
 | Milestone | Status | Gate |
 | --- | --- | --- |
 | M00 Baseline/harness | Complete — verified synthetic baseline (owner-reported) and reviewed harness | G0 passed |
-| M01 Workspace security | M01.1 implemented unverified; M01.2–M01.4 not started | G1 pending |
+| M01 Workspace security | M01.1 two test expectation failures corrected; verification rerun pending; M01.2–M01.4 not started | G1 pending |
 | M02 Resources/privacy | Not started | G1 |
 | M03 Objectives/runs | Not started | G2 |
 | M04 AI gateway/budgets | Not started | G3 |
