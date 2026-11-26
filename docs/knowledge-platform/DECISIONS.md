@@ -56,6 +56,16 @@ Evolve the existing read-only reporting product into a reusable organizational k
 | D-044 | Initial pilot time window | Limit the first historical evaluation to the most recent 30 days of eligible calls for the selected operator; retain configurable historical-window support without automatically extending the approved pilot scope. |
 | D-045 | Simple hard AI budget limits with extension path | Enforce organization and execution-level spending limits in MVP (B+), with request/token/cost accounting and pipeline attribution; preserve an extension path for advanced multi-level budget allocation. |
 | D-046 | Non-destructive source preservation | The pilot may proceed toward authorized processing subject to execution prerequisites; source/customer-owned originals must never be deleted, overwritten or modified by Panadan. Redaction and local data lifecycle operations affect only Panadan-controlled representations. |
+| D-047 | Modular monolith and independent workers (AP-01) | Keep a shared Python/FastAPI codebase with explicit domain module boundaries and separate collection, scheduling, knowledge-processing and outbound worker runtimes. Scale processes independently without introducing mandatory microservices. |
+| D-048 | Owned PostgreSQL state and durable queue (AP-02) | Use Panadan-owned PostgreSQL 18-compatible relational state, typed validated JSONB extensions and a PostgreSQL-backed durable job queue as the initial architecture. |
+| D-049 | Single identity authority and workspace identity bridge (AP-03) | Retain the existing identity authority initially, with an explicit stable principal bridge and one authoritative platform workspace-policy store. Intersect current authentication, consent and domain grants. |
+| D-050 | Tenant-scoped schema and defense-in-depth RLS (AP-04) | Use a shared schema with tenant-scoped keys and foreign keys, server-side scope enforcement, PostgreSQL row-level security and narrow runtime roles. |
+| D-051 | Pre-persistence redaction and separate source reader (AP-05) | Handle unredacted call text transiently inside a separately governed read-only collection/preprocessing runtime; persist only approved filtered representations and provenance in the new knowledge path. |
+| D-052 | Versioned durable orchestration and idempotent effects (AP-06) | Use deterministic orchestration with versioned tasks, leased claims, fencing, bounded retries and short transactional local effects. At-least-once execution with replay-safe results; no false exactly-once external guarantee. |
+| D-053 | Relational knowledge and evidence architecture (AP-07) | Use relational version/evidence links, typed extraction, deterministic aggregation and bounded semantic grouping for initial knowledge retrieval and validation. |
+| D-054 | Governed provider resolution and atomic budget admission (AP-08) | Resolve explicit approved provider/model and managed credentials through the shared gateway; reserve organization and execution budget atomically before chargeable dispatch. |
+| D-055 | Shared authorized query services (AP-09) | Use shared scoped query/read services for web, REST and MCP, with independent Resource and Knowledge retrieval contracts and common projections/metrics. |
+| D-056 | Durable outbox and separate destination runtime (AP-10) | Use a separate outbound sync worker with a durable outbox, approved versioned projections, dedicated narrow destination credentials and idempotent/reconciled delivery. |
 
 Decision identifiers preserve the original negotiation numbering; gaps intentionally do not expose internal strategy.
 
@@ -101,6 +111,16 @@ This is a living decision register, not a one-time handoff. Every contributor, i
 | 2026-11-26 | D-044 | Owner selected the most recent 30 days for the initial pilot. |
 | 2026-11-26 | D-045 | Owner selected simple hard AI budget limits with an extension path to multi-level budget control. |
 | 2026-11-26 | D-046 | Owner confirmed the non-destructive source preservation requirement for pilot processing. |
+| 2026-11-26 | D-047 | Owner approved architecture choice AP-01 — Modular monolith and independent workers. |
+| 2026-11-26 | D-048 | Owner approved architecture choice AP-02 — Owned PostgreSQL state and durable queue. |
+| 2026-11-26 | D-049 | Owner approved architecture choice AP-03 — Single identity authority and workspace identity bridge. |
+| 2026-11-26 | D-050 | Owner approved architecture choice AP-04 — Tenant-scoped schema and defense-in-depth RLS. |
+| 2026-11-26 | D-051 | Owner approved architecture choice AP-05 — Pre-persistence redaction and separate source reader. |
+| 2026-11-26 | D-052 | Owner approved architecture choice AP-06 — Versioned durable orchestration and idempotent effects. |
+| 2026-11-26 | D-053 | Owner approved architecture choice AP-07 — Relational knowledge and evidence architecture. |
+| 2026-11-26 | D-054 | Owner approved architecture choice AP-08 — Governed provider resolution and atomic budget admission. |
+| 2026-11-26 | D-055 | Owner approved architecture choice AP-09 — Shared authorized query services. |
+| 2026-11-26 | D-056 | Owner approved architecture choice AP-10 — Durable outbox and separate destination runtime. |
 
 Append dated entries for future accepted decisions and supersessions. Do not erase prior entries.
 
@@ -381,6 +401,116 @@ Append dated entries for future accepted decisions and supersessions. Do not era
 - Supersedes: None; reinforces D-001, D-005, D-007, D-028 and D-037.
 - Affected documents/components: Source connectors and database privileges, ingestion/redaction, resource representations and retention, reconciliation, destination integration, future scoped PRD, architecture, data model, roadmap and security acceptance tests.
 
+### D-047 — Modular monolith and independent workers (AP-01)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 5 architecture and AP-01–AP-10.
+- Decision: Keep a shared Python/FastAPI codebase with explicit domain module boundaries and separate collection, scheduling, knowledge-processing and outbound worker runtimes. Scale processes independently without introducing mandatory microservices.
+- Rationale: Reuse the existing stack and reduce operational overhead; split services only when measured load, security isolation or failure characteristics justify it.
+- MVP scope and constraints: Logical module names and process counts remain implementation details; separate credentials and network permissions by runtime; preserve legacy reporting and guarded deployment.
+- Supersedes: None; refines D-002, D-018, D-019, D-023.
+- Affected documents/components: [ARCHITECTURE.md](ARCHITECTURE.md), Phase 6 data model, roadmap, relevant runtime modules and acceptance tests.
+- Authorization boundary: Design approval only; no implementation, production migration, live data handling, provider request, spending or deployment authorized by this entry.
+
+### D-048 — Owned PostgreSQL state and durable queue (AP-02)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 5 architecture and AP-01–AP-10.
+- Decision: Use Panadan-owned PostgreSQL 18-compatible relational state, typed validated JSONB extensions and a PostgreSQL-backed durable job queue as the initial architecture.
+- Rationale: Reuse the existing owned database and transactional consistency rather than adding unneeded infrastructure.
+- MVP scope and constraints: Exact schema, migrations, indexes, workload bounds and roles require review. No required Redis, broker, graph/vector database or object storage initially; future additions depend on evidence. Never use Odoo for platform state.
+- Supersedes: None; refines D-005, D-022, D-031.
+- Affected documents/components: [ARCHITECTURE.md](ARCHITECTURE.md), Phase 6 data model, roadmap, relevant runtime modules and acceptance tests.
+- Authorization boundary: Design approval only; no implementation, production migration, live data handling, provider request, spending or deployment authorized by this entry.
+
+### D-049 — Single identity authority and workspace identity bridge (AP-03)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 5 architecture and AP-01–AP-10.
+- Decision: Retain the existing identity authority initially, with an explicit stable principal bridge and one authoritative platform workspace-policy store. Intersect current authentication, consent and domain grants.
+- Rationale: Avoid a speculative auth replacement while establishing tenant authorization.
+- MVP scope and constraints: No binding by unverified email/name, duplicate login authority, silent fallback or production use of the staging-only PG auth selector. Recheck revocations and isolate legacy global reporting. Block activation and review an authorized single-authority migration if the bridge cannot meet safety requirements.
+- Supersedes: None; refines D-010, D-016, D-023.
+- Affected documents/components: [ARCHITECTURE.md](ARCHITECTURE.md), Phase 6 data model, roadmap, relevant runtime modules and acceptance tests.
+- Authorization boundary: Design approval only; no implementation, production migration, live data handling, provider request, spending or deployment authorized by this entry.
+
+### D-050 — Tenant-scoped schema and defense-in-depth RLS (AP-04)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 5 architecture and AP-01–AP-10.
+- Decision: Use a shared schema with tenant-scoped keys and foreign keys, server-side scope enforcement, PostgreSQL row-level security and narrow runtime roles.
+- Rationale: Enable reusable organization configuration while rejecting cross-tenant data references and accidental queries.
+- MVP scope and constraints: Exact policies, pool context reset, privileged dispatcher boundaries and role grants require Phase 6 design and negative tests. RLS is not protection from compromised arbitrary SQL; no client-controlled trusted context. Explicitly authorized sharing is a projection/grant boundary, not a raw tenant bypass.
+- Supersedes: None; refines D-011, D-016, D-023.
+- Affected documents/components: [ARCHITECTURE.md](ARCHITECTURE.md), Phase 6 data model, roadmap, relevant runtime modules and acceptance tests.
+- Authorization boundary: Design approval only; no implementation, production migration, live data handling, provider request, spending or deployment authorized by this entry.
+
+### D-051 — Pre-persistence redaction and separate source reader (AP-05)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 5 architecture and AP-01–AP-10.
+- Decision: Handle unredacted call text transiently inside a separately governed read-only collection/preprocessing runtime; persist only approved filtered representations and provenance in the new knowledge path.
+- Rationale: Prevent accidental raw transcript persistence and isolate source access from AI processing.
+- MVP scope and constraints: No raw text in queues, caches, logs, backups or failed jobs. Knowledge workers do not receive source DB credentials. Deterministic filtering remains best effort and must meet approved privacy policy before real use. Existing source records and legacy data stay untouched.
+- Supersedes: None; refines D-035, D-036, D-037, D-046.
+- Affected documents/components: [ARCHITECTURE.md](ARCHITECTURE.md), Phase 6 data model, roadmap, relevant runtime modules and acceptance tests.
+- Authorization boundary: Design approval only; no implementation, production migration, live data handling, provider request, spending or deployment authorized by this entry.
+
+### D-052 — Versioned durable orchestration and idempotent effects (AP-06)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 5 architecture and AP-01–AP-10.
+- Decision: Use deterministic orchestration with versioned tasks, leased claims, fencing, bounded retries and short transactional local effects. At-least-once execution with replay-safe results; no false exactly-once external guarantee.
+- Rationale: Support safe resumption, incremental processing, durable error visibility and cost accounting.
+- MVP scope and constraints: Do not hold transactions over network calls. Separate source checkpoint and processing coverage; reconcile uncertain external effects and costs before retry. Exact state transitions and leases require design/tests.
+- Supersedes: None; refines D-009, D-019, D-030, D-031, D-045.
+- Affected documents/components: [ARCHITECTURE.md](ARCHITECTURE.md), Phase 6 data model, roadmap, relevant runtime modules and acceptance tests.
+- Authorization boundary: Design approval only; no implementation, production migration, live data handling, provider request, spending or deployment authorized by this entry.
+
+### D-053 — Relational knowledge and evidence architecture (AP-07)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 5 architecture and AP-01–AP-10.
+- Decision: Use relational version/evidence links, typed extraction, deterministic aggregation and bounded semantic grouping for initial knowledge retrieval and validation.
+- Rationale: Support inspectable lineage and exact counts without speculative graph or embedding infrastructure.
+- MVP scope and constraints: No required graph/ontology/vector store initially. Preserve context, uncertainty, scope, source authority and review. Evaluate future search/indexing choices with measured workload and permission tests.
+- Supersedes: None; refines D-004, D-021, D-022, D-030, D-032, D-041.
+- Affected documents/components: [ARCHITECTURE.md](ARCHITECTURE.md), Phase 6 data model, roadmap, relevant runtime modules and acceptance tests.
+- Authorization boundary: Design approval only; no implementation, production migration, live data handling, provider request, spending or deployment authorized by this entry.
+
+### D-054 — Governed provider resolution and atomic budget admission (AP-08)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 5 architecture and AP-01–AP-10.
+- Decision: Resolve explicit approved provider/model and managed credentials through the shared gateway; reserve organization and execution budget atomically before chargeable dispatch.
+- Rationale: Enforce consistent disclosure, model and spending policy across feature modules.
+- MVP scope and constraints: Existing gateway reuse is conditional on verified capabilities; no provider selected. Recheck authorization before egress, reconcile actual/uncertain charges, avoid unapproved fallback. No direct feature-to-provider calls, billing or BYOK in MVP.
+- Supersedes: None; refines D-020, D-038, D-039, D-045.
+- Affected documents/components: [ARCHITECTURE.md](ARCHITECTURE.md), Phase 6 data model, roadmap, relevant runtime modules and acceptance tests.
+- Authorization boundary: Design approval only; no implementation, production migration, live data handling, provider request, spending or deployment authorized by this entry.
+
+### D-055 — Shared authorized query services (AP-09)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 5 architecture and AP-01–AP-10.
+- Decision: Use shared scoped query/read services for web, REST and MCP, with independent Resource and Knowledge retrieval contracts and common projections/metrics.
+- Rationale: Prevent duplicated application data silos and inconsistent permission/aggregation semantics.
+- MVP scope and constraints: Preserve legacy interfaces; new contracts and compatible client flows require verification. No unrestricted SQL, implicit raw transcript access or unauthorized evidence projection. Exact routes/tool names remain open.
+- Supersedes: None; refines D-013, D-015, D-016, D-026, D-042.
+- Affected documents/components: [ARCHITECTURE.md](ARCHITECTURE.md), Phase 6 data model, roadmap, relevant runtime modules and acceptance tests.
+- Authorization boundary: Design approval only; no implementation, production migration, live data handling, provider request, spending or deployment authorized by this entry.
+
+### D-056 — Durable outbox and separate destination runtime (AP-10)
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner explicitly approved Phase 5 architecture and AP-01–AP-10.
+- Decision: Use a separate outbound sync worker with a durable outbox, approved versioned projections, dedicated narrow destination credentials and idempotent/reconciled delivery.
+- Rationale: Preserve source immutability and handle delivery retry/out-of-order effects safely.
+- MVP scope and constraints: Never mutate unrelated customer-owned data or reuse source credentials. Destination contract, version ordering, revocation and live rights must be verified; synthetic target first. No two-way sync or promise to recall external copies.
+- Supersedes: None; refines D-007, D-013, D-016, D-046.
+- Affected documents/components: [ARCHITECTURE.md](ARCHITECTURE.md), Phase 6 data model, roadmap, relevant runtime modules and acceptance tests.
+- Authorization boundary: Design approval only; no implementation, production migration, live data handling, provider request, spending or deployment authorized by this entry.
+
 ### Template for future decision details
 
 ```markdown
@@ -398,6 +528,8 @@ Append dated entries for future accepted decisions and supersessions. Do not era
 ```
 
 ## Target architecture (conceptual, not current implementation)
+
+Phase 5 architecture is approved: [ARCHITECTURE.md](ARCHITECTURE.md) maps AP-01–AP-10 to D-047–D-056. Use a modular monolith with independent workers, owned PostgreSQL durable state/queue, a single identity authority with workspace bridge, tenant-scoped relational keys and RLS, pre-persistence call redaction, fenced/idempotent processing, relational evidence, governed budget admission, shared query services and a separate destination outbox. Detailed implementation contracts and activation prerequisites remain open; no new capability is production-verified.
 
 Sources (call center, CRM, web, authorized messaging, feedback, manual uploads) -> Collection & Integrations -> Resources -> Knowledge Engine -> Knowledge Base.
 Knowledge Objectives and Knowledge Pipelines configure extraction; AI Gateway, authorization, storage and audit are cross-cutting. D-038 selects approved external AI APIs for initial execution through the centralized gateway; private/hybrid inference is not an MVP commitment. D-039 uses centrally managed provider credentials with organization-scoped usage/budget controls and a later BYOK extension path. D-045 specifies simple organization and execution spending limits with request-level accounting, pipeline attribution and an extension path for advanced allocation. Resources and Knowledge independently feed Applications, API/MCP and authorized distribution. Panadan sends validated knowledge to customer systems using a separate, explicitly authorized destination integration. Under D-046, writes are limited to designated Panadan-managed knowledge records/fields and must not mutate existing customer-owned data or the read-only source.
@@ -444,4 +576,4 @@ Defer broad connector catalogs, full visual builders, advanced knowledge graphs,
 4. Develop incrementally on the feature branch. Preserve existing interfaces, source read-only constraints, production behavior and rollback options.
 5. Verify a complete pilot flow with synthetic or explicitly approved data before deployment; do not deploy or change production without separate authorization.
 
-The initial audit and gap analysis are recorded in [CURRENT_STATE.md](CURRENT_STATE.md) and [GAP_ANALYSIS.md](GAP_ANALYSIS.md); pilot discovery is in progress. Do not infer implemented or deployed capabilities from these decisions. See [historical decisions](../DECISIONS.md), [original reporting MVP PRD](../PRD.md), [status](../STATUS.md), [security](../SECURITY.md) and [production operations](../PRODUCTION_OPERATIONS.md). Existing safety/operational rules remain in force until a reviewed migration explicitly supersedes them. Update this document when the product owner approves a changed decision; distinguish accepted decisions from proposals and implementation evidence.
+The initial audit and gap analysis are recorded in [CURRENT_STATE.md](CURRENT_STATE.md) and [GAP_ANALYSIS.md](GAP_ANALYSIS.md); pilot discovery and PRD have been approved, and Phase 5 architecture choices AP-01–AP-10 are accepted as D-047–D-056. Phase 6 data-model design is authorized; implementation and live activation remain separately gated. Do not infer implemented or deployed capabilities from these decisions. See [historical decisions](../DECISIONS.md), [original reporting MVP PRD](../PRD.md), [status](../STATUS.md), [security](../SECURITY.md) and [production operations](../PRODUCTION_OPERATIONS.md). Existing safety/operational rules remain in force until a reviewed migration explicitly supersedes them. Update this document when the product owner approves a changed decision; distinguish accepted decisions from proposals and implementation evidence.
