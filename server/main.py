@@ -333,7 +333,7 @@ def root(request: Request):
 def login(request: Request):
     if logged_in(request): return RedirectResponse('/dashboard', status_code=303)
     nonce = secrets.token_urlsafe(24)
-    response = templates.TemplateResponse(request, 'login.html', {'nonce':nonce, 'error':False, 'authkit':authkit_login.enabled}, headers={'Cache-Control':'no-store'})
+    response = templates.TemplateResponse(request, 'login.html', {'nonce':nonce, 'error':False, 'authkit':authkit_login.enabled, 'native_multi_user':authkit_login.multi_user}, headers={'Cache-Control':'no-store'})
     response.set_cookie('panadan_login_nonce', nonce, httponly=True, secure=COOKIE_SECURE,
                         samesite='lax', max_age=600)
     return response
@@ -958,6 +958,8 @@ def update_native_access(request: Request, uid: int, csrf: str = Form(...),
 def my_connected_ai_apps(request: Request, review: str | None = None,
                          session: dict = Depends(current_session)):
     """Self-service client-bound consent; not an OAuth authorization server."""
+    if authkit_login.multi_user:
+        required(session, 'mcp:use')
     if not hasattr(store, 'user_access') or not hasattr(store, 'list_mcp_clients'):
         raise HTTPException(503, 'Consent store unavailable')
     access = store.user_access(session['user_id'])
@@ -1143,6 +1145,7 @@ def oauth_admin_page(request: Request, session: dict = Depends(current_session))
         'users': store.list_users(),
         'bindings': store.list_oauth_identities(oauth_config.issuer) if oauth_config.mode == 'oauth' else [],
         'workos_enabled': workos_bridge.enabled,
+        'native_multi_user': authkit_login.multi_user,
         'verified_emails': (store.list_workos_verified_emails()
                             if workos_bridge.enabled and hasattr(store, 'list_workos_verified_emails')
                             else []),
@@ -1214,7 +1217,7 @@ def oauth_admin_unlink(request: Request, identity_id: int, csrf: str = Form(...)
 
 @app.get('/dashboard/connect', response_class=HTMLResponse, include_in_schema=False)
 def connect_page(request: Request, session: dict = Depends(current_session)):
-    if not has_capability(session,'mcp:use'):
+    if not (authkit_login.multi_user and has_capability(session,'mcp:use')):
         require_panel(session,'connect:read')
     return templates.TemplateResponse(request,'connect.html', {
         'session':session,'csrf':session['csrf'],
