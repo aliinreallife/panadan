@@ -56,7 +56,7 @@ Implementation roadmap should include UI deliverables alongside each functional 
 
 ## 6. Supplemental interaction concept (owner-supplied reference, 2026-11-26)
 
-The additional textual Product Design Concept complements the previously approved D-066 visual direction. It is useful design input, not a new accepted product decision or replacement for the PRD, architecture, data model or roadmap. Exact screen layout, navigation, tokens, dark mode and any expanded capability remain proposals for detailed UI review. The source document is not republished verbatim; examples below describe design intent, not real metrics or customer information.
+The additional textual Product Design Concept complements the previously approved D-066 visual direction. The owner approved use of both references under D-067 on 2026-11-26. They are design inputs, not approval of every detailed proposal or a replacement for the PRD, architecture, data model or roadmap. Exact screen layout, navigation, tokens, dark mode and any expanded capability remain proposals for detailed UI review. The source document is not republished verbatim; examples below describe design intent, not real metrics or customer information.
 
 ### 6.1 Recommended design synthesis
 
@@ -105,4 +105,4 @@ Keep the independently authorized one-way destination distribution and legacy re
 
 ### 6.5 Implementation handoff
 
-Use the supplemental concept as a design input within existing [ROADMAP.md](ROADMAP.md) U0–U11. U0 reviews navigation and exact token/components; U1 reviews briefing/workspace/access; U2 resource inspector/source setup; U3 research objectives and execution plans; U4 budgets; U5/U6 reusable evidence inspector and review/taxonomy; U7/U8 shared customer/content journeys; U9 pinned package and effective client-grant previews; U10 destination/integration setup; U11 responsive/accessibility and full journey verification. Detailed designs use synthetic data only. No roadmap scope or milestone approval is changed by this addendum; Phase 7 remains awaiting approval. No new D-ID until the owner explicitly accepts a substantive additional choice.
+Use the supplemental concept as a design input within existing [ROADMAP.md](ROADMAP.md) U0–U11. U0 reviews navigation and exact token/components; U1 reviews briefing/workspace/access; U2 resource inspector/source setup; U3 research objectives and execution plans; U4 budgets; U5/U6 reusable evidence inspector and review/taxonomy; U7/U8 shared customer/content journeys; U9 pinned package and effective client-grant previews; U10 destination/integration setup; U11 responsive/accessibility and full journey verification. Detailed designs use synthetic data only. D-067 records Phase 7 approval and M00 authorization, including both references as inputs without extending roadmap scope. Exact detailed choices remain subject to review; no further D-ID until a substantive additional choice is approved.
