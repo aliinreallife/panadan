@@ -36,6 +36,7 @@ Evolve the existing read-only reporting product into a reusable organizational k
 | D-024 | Initial application priorities | Start with limited Customer Intelligence and Content Intelligence on shared reusable infrastructure; plan Market Intelligence as a subsequent extension, with its release scope and timing still open. |
 | D-025 | Customer intelligence granularity | Hybrid individual and aggregate analysis, with aggregate insights prioritized for the initial MVP; retain extensibility for authorized individual analysis. |
 | D-026 | Customer intelligence delivery | Hybrid delivery: evidence-backed insight feed, limited analytical dashboard and conversational access through authorized MCP initially; dedicated conversational UI later. |
+| D-027 | Content intelligence scope | Hybrid Content Intelligence: evidence-backed discovery and content briefs first, limited AI/MCP-assisted draft generation in MVP; content management and approved publishing integrations later. |
 
 Decision identifiers preserve the original negotiation numbering; gaps intentionally do not expose internal strategy.
 
@@ -61,6 +62,7 @@ This is a living decision register, not a one-time handoff. Every contributor, i
 | 2026-11-26 | D-024 | Owner selected initial application priorities during pilot discovery. |
 | 2026-11-26 | D-025 | Owner selected hybrid customer intelligence with aggregate-first delivery. |
 | 2026-11-26 | D-026 | Owner selected hybrid delivery for Customer Intelligence. |
+| 2026-11-26 | D-027 | Owner selected hybrid Content Intelligence with discovery and strategy prioritized. |
 
 Append dated entries for future accepted decisions and supersessions. Do not erase prior entries.
 
@@ -99,6 +101,18 @@ Append dated entries for future accepted decisions and supersessions. Do not era
 - Constraints and implications: Preserve aggregate-first scope under D-025. All surfaces must use consistent authorization, evidence, definitions and freshness; distinguish observations from validated knowledge, insufficient data and uncertainty. Do not disclose restricted evidence, infer unique customer counts from call counts, or permit unrestricted SQL. Existing MCP transport is reusable, but new knowledge retrieval and client compatibility require implementation, security verification and separate release approval; no existing access is broadened by this decision.
 - Supersedes: None; refines D-024 and D-025, consistent with D-015 and D-016.
 - Affected documents/components: Customer Intelligence feed/dashboard, shared knowledge retrieval and aggregation, API/MCP access, future scoped PRD and acceptance tests.
+
+### D-027 — Content intelligence scope
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner discussion during pilot discovery
+- Decision: Deliver hybrid Content Intelligence progressively: discover evidence-backed content opportunities, provide content strategy through briefs and outlines, and support limited AI/MCP-assisted draft generation. Reuse the same authorized Resources and Knowledge as Customer Intelligence rather than creating a separate extraction or knowledge silo.
+- Rationale: The primary value is identifying why content is useful, which audience it serves, and the supporting evidence; generation is complementary and should not turn the initial product into a CMS.
+- MVP scope: Content discovery and strategy, including supported topics, audience, objective, suggested format and outline where evidence permits; limited draft generation through governed AI execution and authorized MCP. Exact formats, prioritization metrics, workflows, data availability and acceptance criteria remain subject to discovery and scoped PRD.
+- Deferred / out of scope: Full editorial calendar, content management, approval workflow automation and publishing integrations are later capabilities, not initial deliverables. No automatic public content publication; any future publishing integration requires separate approval and human control.
+- Constraints and implications: Ground factual claims in authorized, current evidence; distinguish inferred audience demand and recommendations from verified facts; do not claim search demand, content gaps or market-wide demand without appropriate supporting sources. Generated drafts are not validated Knowledge by default and require human review before public use. Enforce source permissions, tenant isolation, privacy, provenance, provider policies and existing read-only source boundaries; avoid exposing sensitive customer evidence in public drafts. No new MCP access is implied until reviewed implementation and verification.
+- Supersedes: None; refines D-024, consistent with D-015, D-019, D-021, D-025 and D-026.
+- Affected documents/components: Content Intelligence discovery, briefs and draft generation, shared knowledge retrieval, AI Gateway and MCP access, future scoped PRD and acceptance tests.
 
 ### Template for future decision details
 
@@ -149,7 +163,7 @@ Keep current source database read-only; knowledge export is a distinct destinati
 
 ## MVP boundaries and acceptance
 
-Aim for one complete pilot flow: ingest selected sources (call center, selected online and/or manual inputs), view resources, configure objectives/pipelines, extract and validate contextual knowledge, manage units/packages, use authorized API/MCP and one-way sync, and deliver selected practical applications. D-024 selects limited Customer Intelligence and Content Intelligence as the initial applications on shared infrastructure. Market Intelligence is a subsequent desired extension; its release scope and timing remain open. D-025 prioritizes aggregate customer intelligence while preserving an extensible model for authorized individual analysis; individual profiling is not a required initial deliverable. D-026 selects a hybrid Customer Intelligence experience: evidence-backed insight feed, limited analytical dashboard and authorized MCP conversational access, with a dedicated conversational UI deferred. Detailed workflows, data availability and rights, output requirements, validation and acceptance targets are still pending pilot discovery. Other proposed applications are not commitments.
+Aim for one complete pilot flow: ingest selected sources (call center, selected online and/or manual inputs), view resources, configure objectives/pipelines, extract and validate contextual knowledge, manage units/packages, use authorized API/MCP and one-way sync, and deliver selected practical applications. D-024 selects limited Customer Intelligence and Content Intelligence as the initial applications on shared infrastructure. Market Intelligence is a subsequent desired extension; its release scope and timing remain open. D-025 prioritizes aggregate customer intelligence while preserving an extensible model for authorized individual analysis; individual profiling is not a required initial deliverable. D-026 selects a hybrid Customer Intelligence experience: evidence-backed insight feed, limited analytical dashboard and authorized MCP conversational access, with a dedicated conversational UI deferred. D-027 selects hybrid Content Intelligence: discovery and content briefs first, limited AI/MCP-assisted drafting, with full content management and publishing integrations deferred. Detailed workflows, data availability and rights, output requirements, validation and acceptance targets are still pending pilot discovery. Other proposed applications are not commitments.
 
 Measure ingestion reliability, evidence-backed quality, reuse of knowledge across applications, freshness, access isolation, export correctness, measurable customer benefit and ability to onboard a second customer without rewriting the core. Quantitative targets need pilot validation.
 
