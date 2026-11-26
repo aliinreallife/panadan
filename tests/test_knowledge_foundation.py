@@ -274,6 +274,12 @@ def test_owner_and_deny_by_default_acl(migrated):
         for privilege in ("SELECT","INSERT","UPDATE","DELETE","TRUNCATE"):
             assert not c.execute("SELECT has_table_privilege('panadan_knowledge_test_probe',%s,%s)",
                                  ("panadan_knowledge."+table,privilege)).fetchone()[0]
+    c.execute("SET LOCAL ROLE panadan_knowledge_test_probe")
+    _reject(c, errors.InsufficientPrivilege, "SELECT * FROM panadan_knowledge.workspaces")
+    c.execute("RESET ROLE")
     c.execute("SET LOCAL ROLE panadan_knowledge_owner")
     assert c.execute("SELECT count(*) FROM panadan_knowledge.memberships").fetchone() == (0,)
+    _reject(c, errors.InsufficientPrivilege,
+            "INSERT INTO panadan_knowledge.memberships(workspace_id,principal_id,state) VALUES (%s,%s,'active')",
+            (w, uuid4()))
     c.execute("RESET ROLE")
