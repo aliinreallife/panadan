@@ -154,6 +154,11 @@ class Store:
                 last_login INTEGER NOT NULL,
                 UNIQUE(issuer,subject)
             )""")
+            account_columns = {r['name'] for r in c.execute('PRAGMA table_info(authkit_accounts)')}
+            if 'requested_at' not in account_columns:
+                c.execute('ALTER TABLE authkit_accounts ADD COLUMN requested_at INTEGER')
+            if 'request_note' not in account_columns:
+                c.execute('ALTER TABLE authkit_accounts ADD COLUMN request_note TEXT')
             c.execute('''CREATE TABLE IF NOT EXISTS mcp_client_grants (
                 user_id INTEGER NOT NULL,
                 client_id TEXT NOT NULL,
@@ -418,6 +423,18 @@ class Store:
             c.execute('INSERT INTO oauth_identities(issuer,subject,user_id,created_at) VALUES(?,?,?,?)',(issuer,subject,uid,now))
             return uid
 
+    def request_native_access(self, uid: int, issuer: str, note: str) -> None:
+        note=note.strip()
+        if len(note)>500 or any(ord(ch)<32 and ch not in '\n\t' for ch in note):
+            raise ValueError('Invalid access request')
+        with self.db() as c:
+            cur=c.execute("""UPDATE authkit_accounts SET requested_at=?,request_note=?
+                WHERE user_id=? AND issuer=? AND EXISTS(
+                SELECT 1 FROM users u WHERE u.id=authkit_accounts.user_id AND u.is_active=1)""",
+                (int(time.time()),note,uid,issuer))
+            if cur.rowcount!=1:
+                raise ValueError('Account unavailable')
+
     def update_native_user(self, uid: int, issuer: str, *, actor_id: int,
                            active: bool, caps: list[str], fields: list[str], panels: list[str]) -> None:
         """Owner-only edit. Identity stays immutable; downstream grants are revoked."""
@@ -440,7 +457,7 @@ class Store:
                 raise ValueError('Account cannot be edited')
             c.execute("UPDATE users SET role='reader',grants=?,field_grants=?,is_active=? WHERE id=?",
                       (grants,json.dumps(selected),int(active),uid))
-            c.execute('UPDATE authkit_accounts SET panel_grants=? WHERE user_id=?',
+            c.execute('UPDATE authkit_accounts SET panel_grants=?,requested_at=NULL,request_note=NULL WHERE user_id=?',
                       (json.dumps(sorted(panels)),uid))
             c.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
             c.execute('DELETE FROM authkit_sessions WHERE user_id=?',(uid,))
