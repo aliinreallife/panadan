@@ -69,7 +69,7 @@
 <section class="panel"><div class="panel-head"><div><h2>تخصیص حساب‌ها</h2>
 <p class="muted small-text">فقط مدیر می‌تواند شناسهٔ قطعی یک کاربر را به حساب پانادان متصل کند.</p></div></div>
 {% if oauth.mode == 'oauth' %}
-<form action="/dashboard/oauth/link" method="post" class="token-form">
+{% if not native_multi_user %}<form action="/dashboard/oauth/link" method="post" class="token-form">
 <input type="hidden" name="csrf" value="{{csrf}}">
 <label>حساب پانادان
 <select name="user_id" data-searchable required>
@@ -81,14 +81,14 @@
 <input name="subject" required maxlength="256" autocomplete="off" placeholder="شناسهٔ دقیق از ارائه‌دهندهٔ هویت" dir="ltr"></label>
 <button class="primary" type="submit">اتصال حساب</button>
 </form>
-<p class="source-note">برای جلوگیری از اعطای دسترسی اشتباه، هیچ حسابی بر اساس ایمیل یا نام مشابه به‌طور خودکار متصل نمی‌شود. فقط کاربر فعال دارای مجوزهای MCP، تماس و آمار قابل اتصال است.</p>
+<p class="source-note">برای جلوگیری از اعطای دسترسی اشتباه، هیچ حسابی بر اساس ایمیل یا نام مشابه به‌طور خودکار متصل نمی‌شود. فقط کاربر فعال دارای مجوزهای MCP، تماس و آمار قابل اتصال است.</p>{% else %}<p>هویت کاربران از ورود تأییدشده WorkOS ثبت می‌شود. برای جلوگیری از اتصال اشتباه، تغییر دستی هویت غیرفعال است. دسترسی‌ها را از <a href="/dashboard/users">کاربران و دسترسی‌ها</a> مدیریت کنید.</p>{% endif %}
 <div class="table-scroller"><table><thead><tr><th>کاربر</th><th>شناسهٔ ارائه‌دهنده</th><th>وضعیت</th><th></th></tr></thead><tbody>
 {% for item in bindings %}<tr>
 <td>{{item.username}}</td><td><code dir="ltr">{{item.subject}}</code></td>
 <td>{{'فعال' if item.is_active else 'غیرفعال'}}</td>
-<td><form action="/dashboard/oauth/{{item.id}}/revoke" method="post" onsubmit="return confirm('اتصال این هویت لغو شود؟')">
+<td>{% if not native_multi_user %}<form action="/dashboard/oauth/{{item.id}}/revoke" method="post" onsubmit="return confirm('اتصال این هویت لغو شود؟')">
 <input type="hidden" name="csrf" value="{{csrf}}">
-<button type="submit" class="danger-outline">قطع اتصال</button></form></td></tr>
+<button type="submit" class="danger-outline">قطع اتصال</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="4" class="muted">هیچ هویتی متصل نشده است.</td></tr>{% endfor %}
 </tbody></table></div>
 {% else %}
