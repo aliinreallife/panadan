@@ -54,7 +54,7 @@
 {% endif %}
 </div></details>
 {% endfor %}
-{% if raw_transcript_available %}
+{% if raw_transcript_available and not is_new %}
 <details class="consent-category raw-consent-category"><summary><span class="consent-group-icon">{{glyph('calls:transcript:read')}}</span><span class="consent-group-title"><strong>متن اصلی مکالمه</strong><small>بدون حذف یا پوشاندن اطلاعات محرمانه</small></span><svg class="consent-chevron" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="consent-group-body"><div class="consent-field-row"><label><input type="checkbox" name="raw_transcript" value="true" {% if raw_selected %}checked{% endif %}><span><strong>اجازه ارسال متن خام به این برنامه</strong><small>متن ممکن است شامل شماره تلفن، نام، آدرس و اطلاعات محرمانه باشد. فقط در صورت نیاز تأیید کنید. گزارش تماس‌ها و شناسه تماس نیز لازم است.</small></span></label></div></div></details>
 {% endif %}
 <p class="consent-form-status" data-consent-status role="status" aria-live="polite"></p>
@@ -108,7 +108,7 @@
 <details class="mcp-client-card">
 {{client_header(app.client_id, 'تأییدشده')}}
 <div class="mcp-client-body">
-{{approval_form(app.client_id, app.capabilities, app.fields)}}
+{{approval_form(app.client_id, app.capabilities, app.fields, raw_selected=app.raw_transcript)}}
 <form method="post" action="/dashboard/mcp-apps/revoke" class="mcp-consent-revoke"
       onsubmit="return confirm('دسترسی این برنامه قطع شود؟')">
 <input type="hidden" name="csrf" value="{{csrf}}">
