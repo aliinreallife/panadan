@@ -5,6 +5,10 @@ Before planning, editing code, proposing architecture or changing product behavi
 2. [Existing decisions](docs/DECISIONS.md), [original reporting PRD](docs/PRD.md) and [status](docs/STATUS.md) — baseline and implementation history.
 3. [Security requirements](docs/SECURITY.md), [read-only rules](docs/READ_ONLY.md) and relevant operational documentation.
 
+## Mandatory decision updates
+
+The [decision maintenance protocol](docs/knowledge-platform/DECISIONS.md#decision-maintenance-protocol-mandatory) is binding for every task. When the owner approves a new or revised decision, update the canonical register immediately in the current task, even when no code changes are requested. Read the latest register, allocate a stable new ID, record the date/rationale/scope, preserve superseded history and update affected guidance. Never record unapproved proposals as decisions. Decision documentation is part of the definition of done; verify the diff and report the ID and files changed. If the repo cannot be updated, report the decision as not persisted and supply the draft entry. Do not publish confidential decisions in this public repo. Commit/push only within authorized scope.
+
 ## Working rules
 - This is an existing system, not a greenfield project. Inspect code and tests before planning; distinguish implemented, documented, proposed and production-verified behavior.
 - Work on `feature/knowledge-platform` or an explicitly authorized descendant branch. Preserve main and backup; do not merge, deploy, migrate production, or change live data without explicit authorization.
