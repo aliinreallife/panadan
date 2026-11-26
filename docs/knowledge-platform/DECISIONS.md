@@ -76,6 +76,7 @@ Evolve the existing read-only reporting product into a reusable organizational k
 | D-064 | Dual budget reservation and usage ledger (DM-08) | Atomically reserve against organization and run budgets, record immutable usage/adjustment ledger events, and retain uncertain reservations until reconciliation. |
 | D-065 | Versioned delivery and retention barriers (DM-09) | Use versioned destination projections/outbox and scoped local erasure records/restore barriers. |
 | D-066 | Preferred visual direction with required workflow additions (UI direction) | Adopt the owner-supplied visual reference direction: warm neutral surfaces, muted green/olive accents, restrained borders, editorial typography, compact readable Persian RTL knowledge workspace, responsive layouts. Complete all required PRD workflows in the same design language. |
+| D-067 | Approved implementation roadmap and incremental delivery | Approve ROADMAP.md M00–M13 and U0–U11, use both UI references within D-066, and authorize M00 baseline/harness only. Subsequent increments and live activation remain independently gated. |
 
 Decision identifiers preserve the original negotiation numbering; gaps intentionally do not expose internal strategy.
 
@@ -141,6 +142,7 @@ This is a living decision register, not a one-time handoff. Every contributor, i
 | 2026-11-26 | D-064 | Owner approved DM-08 — Dual budget reservation and usage ledger. |
 | 2026-11-26 | D-065 | Owner approved DM-09 — Versioned delivery and retention barriers. |
 | 2026-11-26 | D-066 | Owner approved UI direction — Preferred visual direction with required workflow additions. |
+| 2026-11-26 | D-067 | Owner approved Phase 7 roadmap, use of both UI references and start of Phase 8 M00. |
 
 Append dated entries for future accepted decisions and supersessions. Do not erase prior entries.
 
@@ -641,6 +643,17 @@ Append dated entries for future accepted decisions and supersessions. Do not era
 - Affected documents/components: [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md), PRD UI requirements, roadmap and frontend acceptance.
 - Authorization boundary: Design approval only; no implementation, live data, spending, migration, deployment or source write authorized by this entry.
 
+### D-067 — Approved implementation roadmap and incremental delivery
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Owner explicitly approved Phase 7 Implementation Roadmap, use of both UI references and commencement of Phase 8 milestone M00.
+- Decision: Follow the dependency-ordered M00–M13 implementation roadmap and U0–U11 UI track. Use both the approved visual reference and the supplemental interaction concept in UI design, within D-066 and existing MVP requirements. Start with M00 baseline, isolated test harness and implementation status evidence; proceed to later increments only after their prerequisites and separate authorization.
+- Rationale: Deliver reversible, independently testable vertical slices while preserving existing reporting, source immutability and operational safety.
+- MVP scope and constraints: Synthetic-first, default-off capabilities, evidence-based gates, approved feature branch only. Preserve main and backup. Exact design tokens, screen/navigation details, private data contracts, provider, budget and runtime approvals remain open. Supplemental UI reference does not add semantic/vector search, automatic package updates, raw transcript exposure, additional active connectors, audio processing or other deferred capabilities.
+- Supersedes: None; operationalizes D-017 and D-047–D-066.
+- Affected documents/components: [ROADMAP.md](ROADMAP.md), [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md), implementation status and test evidence.
+- Authorization boundary: M00 only. No M01 implementation, live queries, production migrations, paid provider calls, external disclosure, PR creation, merge, deployment or source changes authorized by this entry.
+
 ### Template for future decision details
 
 ```markdown
@@ -706,4 +719,4 @@ Defer broad connector catalogs, full visual builders, advanced knowledge graphs,
 4. Develop incrementally on the feature branch. Preserve existing interfaces, source read-only constraints, production behavior and rollback options.
 5. Verify a complete pilot flow with synthetic or explicitly approved data before deployment; do not deploy or change production without separate authorization.
 
-The initial audit and gap analysis are recorded in [CURRENT_STATE.md](CURRENT_STATE.md) and [GAP_ANALYSIS.md](GAP_ANALYSIS.md); pilot discovery and PRD have been approved, and Phase 5 architecture choices AP-01–AP-10 are accepted as D-047–D-056. Phase 6 data model and UI direction are approved as D-057–D-066. Phase 7 roadmap design is authorized; implementation and live activation remain separately gated. Do not infer implemented or deployed capabilities from these decisions. See [historical decisions](../DECISIONS.md), [original reporting MVP PRD](../PRD.md), [status](../STATUS.md), [security](../SECURITY.md) and [production operations](../PRODUCTION_OPERATIONS.md). Existing safety/operational rules remain in force until a reviewed migration explicitly supersedes them. Update this document when the product owner approves a changed decision; distinguish accepted decisions from proposals and implementation evidence.
+The initial audit and gap analysis are recorded in [CURRENT_STATE.md](CURRENT_STATE.md) and [GAP_ANALYSIS.md](GAP_ANALYSIS.md); pilot discovery and PRD have been approved, and Phase 5 architecture choices AP-01–AP-10 are accepted as D-047–D-056. Phase 6 data model and UI direction are approved as D-057–D-066. Phase 7 roadmap is approved as D-067. Phase 8 M00 baseline/harness is authorized; subsequent implementation increments and live activation remain separately gated. Do not infer implemented or deployed capabilities from these decisions. See [historical decisions](../DECISIONS.md), [original reporting MVP PRD](../PRD.md), [status](../STATUS.md), [security](../SECURITY.md) and [production operations](../PRODUCTION_OPERATIONS.md). Existing safety/operational rules remain in force until a reviewed migration explicitly supersedes them. Update this document when the product owner approves a changed decision; distinguish accepted decisions from proposals and implementation evidence.
