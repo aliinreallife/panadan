@@ -13,9 +13,9 @@
 <main class="login-card authkit-login-card">
   <img class="authkit-login-logo" src="/static/favicon.svg" width="56" height="56" alt="پانادان">
   <h1>ورود به پانادان</h1>
-  <p class="muted">برای دسترسی به داشبورد، با ایمیل خود وارد شوید.</p>
+  <p class="muted">با ایمیل خود وارد شوید. {% if native_multi_user %}فعال‌سازی دسترسی به گزارش‌ها توسط مدیر انجام می‌شود.{% endif %}</p>
   {% if request.query_params.get('error') %}
-  <p class="error" role="alert">ورود انجام نشد. با ایمیل مدیر سامانه دوباره تلاش کنید.</p>
+  <p class="error" role="alert">ورود انجام نشد. {% if native_multi_user %}با ایمیل تأییدشده خود دوباره تلاش کنید یا با مدیر تماس بگیرید.{% else %}با ایمیل مدیر سامانه دوباره تلاش کنید.{% endif %}</p>
   {% endif %}
   <form method="get" action="/auth/workos/start" class="stack">
     <button type="submit" class="primary authkit-login-button">
