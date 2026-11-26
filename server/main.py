@@ -544,6 +544,7 @@ def dashboard(request: Request):
         return templates.TemplateResponse(request,'account_access.html',{
             'session':session,'csrf':session['csrf'],
             'panels':panel_context(session),
+            'account':store.native_account(session['user_id'],oauth_config.issuer),
         },headers={'Cache-Control':'no-store'})
     return templates.TemplateResponse(request, 'dashboard.html', {
         'csrf':session['csrf'],'session':session,
@@ -934,6 +935,19 @@ def update_user(request: Request, uid: int, role: str = Form(...), csrf: str = F
                            fields=fields if fields_present else None)
     except ValueError as exc: raise HTTPException(400,str(exc)) from exc
     return RedirectResponse('/dashboard/users',status_code=303)
+
+
+@app.post('/dashboard/request-access', include_in_schema=False)
+def request_native_access(request: Request, csrf: str = Form(...), note: str = Form(''),
+                          session: dict = Depends(current_session)):
+    csrf_check(request,csrf,session)
+    if not authkit_login.multi_user or session['user_id']==authkit_login.admin_uid:
+        raise HTTPException(403,'Native member account required')
+    try:
+        store.request_native_access(session['user_id'],oauth_config.issuer,note)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc)) from exc
+    return RedirectResponse('/dashboard',status_code=303)
 
 
 @app.post('/dashboard/users/{uid}/native-access', include_in_schema=False)
