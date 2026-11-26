@@ -118,7 +118,7 @@
         </label>
         <label class="access-directory-filter">وضعیت
           <select id="access-user-status" aria-controls="access-users-list">
-            <option value="all">همه</option><option value="active">فعال</option><option value="inactive">غیرفعال</option>
+            <option value="all">همه</option>{% if native_multi_user %}<option value="pending">در انتظار دسترسی</option>{% endif %}<option value="active">فعال</option><option value="inactive">غیرفعال</option>
           </select>
         </label>
         <label class="access-directory-filter">نقش
@@ -132,7 +132,7 @@
       </div>
       <div class="users-list" id="access-users-list">
         {% for user in users %}
-        <details class="user-card access-user-card" data-user-name="{{(native_accounts[user.id].email if user.id in native_accounts else user.username)|lower}}" data-user-role="{{user.role}}" data-user-active="{{'true' if user.is_active else 'false'}}">
+        <details class="user-card access-user-card" data-user-name="{{(native_accounts[user.id].email if user.id in native_accounts else user.username)|lower}}" data-user-role="{{user.role}}" data-user-active="{{'true' if user.is_active else 'false'}}" data-user-pending="{{'true' if user.id in native_accounts and user.is_active and not user_caps[user.id] and not native_accounts[user.id].panel_grants else 'false'}}">
           <summary class="user-card-summary">
             <span class="user-card-name"><bdi dir="ltr">{{native_accounts[user.id].email if user.id in native_accounts else user.username}}</bdi>
               {% if user.id in native_accounts and user.is_active and not user_caps[user.id] and not native_accounts[user.id].panel_grants %}<span class="status-badge">در انتظار دسترسی</span>{% elif user.is_active %}<span class="status-badge" data-status="SoldOut">فعال</span>
@@ -161,7 +161,7 @@
             <input type="hidden" data-role-select value="reader">
             <label>الگوی دسترسی<select data-group-select><option value="custom" selected>سفارشی — انتخاب دستی</option>{% for group in permission_groups %}<option value="{{group.id}}">{{group.label}}</option>{% endfor %}</select></label>
             <label class="user-edit-active"><input type="checkbox" name="is_active" value="true" {% if user.is_active %}checked{% endif %}> اجازه ورود به حساب</label>
-            <p class="muted">ایمیل تأییدشده: <bdi dir="ltr">{{native_accounts[user.id].email}}</bdi></p>
+            <p class="muted">ایمیل تأییدشده: <bdi dir="ltr">{{native_accounts[user.id].email}}</bdi></p>{% if native_accounts[user.id].requested_at %}<div class="native-request-note"><strong>درخواست دسترسی ثبت شده است</strong><p>{{native_accounts[user.id].request_note or "بدون توضیح"}}</p></div>{% endif %}
             <fieldset class="access-editor-grants"><legend>۱. دسترسی به داده‌ها و MCP</legend>
               <span data-grant-count class="access-grant-count"></span>
               {{grant_picker(user_caps[user.id])}}
