@@ -38,6 +38,7 @@ Evolve the existing read-only reporting product into a reusable organizational k
 | D-026 | Customer intelligence delivery | Hybrid delivery: evidence-backed insight feed, limited analytical dashboard and conversational access through authorized MCP initially; dedicated conversational UI later. |
 | D-027 | Content intelligence scope | Hybrid Content Intelligence: evidence-backed discovery and content briefs first, limited AI/MCP-assisted draft generation in MVP; content management and approved publishing integrations later. |
 | D-028 | Progressive multi-source strategy | Start with the existing call-center integration, add manual resources and limited approved web resources in MVP, and extend to further connectors incrementally based on need and authorized availability. |
+| D-029 | Hybrid Knowledge Objectives | Provide reusable objective templates, editable instances and simple structured custom objectives in MVP; each objective defines purpose, authorized sources, output schema, context and validation, with execution scheduling configured through its pipeline. |
 
 Decision identifiers preserve the original negotiation numbering; gaps intentionally do not expose internal strategy.
 
@@ -65,6 +66,7 @@ This is a living decision register, not a one-time handoff. Every contributor, i
 | 2026-11-26 | D-026 | Owner selected hybrid delivery for Customer Intelligence. |
 | 2026-11-26 | D-027 | Owner selected hybrid Content Intelligence with discovery and strategy prioritized. |
 | 2026-11-26 | D-028 | Owner selected progressive multi-source MVP delivery. |
+| 2026-11-26 | D-029 | Owner selected hybrid Knowledge Objectives. |
 
 Append dated entries for future accepted decisions and supersessions. Do not erase prior entries.
 
@@ -128,6 +130,18 @@ Append dated entries for future accepted decisions and supersessions. Do not era
 - Supersedes: None; refines the selected-source scope under D-017, D-018 and D-024.
 - Affected documents/components: Resources, collection adapters, ingestion policies, workspace integration configuration, Knowledge Engine, future scoped PRD, architecture, data model and acceptance tests.
 
+### D-029 — Hybrid Knowledge Objectives
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner discussion during pilot discovery
+- Decision: Offer predefined reusable Knowledge Objective templates, organization-specific customization of templates, and simple structured custom objectives. An objective defines what to learn, its authorized source scope, expected output schema, contextual constraints and validation rules; associated pipeline configuration controls scheduling and execution.
+- Rationale: Templates provide predictable initial results and reduce setup effort, while structured custom objectives let different organizations and industries reuse the shared core without code forks. Natural-language instructions alone are insufficient for reliable, inspectable knowledge extraction.
+- MVP scope: A limited template catalog, editable organization-owned objective instances, simple custom objective configuration, selection of permitted sources, typed and validated output configuration, context and validation settings, and scheduled/manual execution via associated pipelines. Exact template contents, schema editing affordances, permission roles and validation rule primitives remain for scoped PRD and technical design. Assisted setup remains consistent with D-010.
+- Deferred / out of scope: Advanced schema or visual pipeline builders, automatic creation of objectives/pipelines and automatic objective recommendations are not initial deliverables. Bounded discovery of useful findings within approved scope remains allowed under D-008 and is distinct from creating new objectives.
+- Constraints and implications: Follow D-003, D-008, D-009, D-016, D-019, D-021, D-022 and D-023. Objective/pipeline settings cannot expand data access, weaken required validation or override provider and organization policies. Version objective definitions and output/validation configurations so runs and findings remain traceable; validate configurations before execution. Respect current source grants at execution and retrieval. Preserve evidence and uncertainty; an extracted candidate is not automatically validated Knowledge. No code or production change is authorized here.
+- Supersedes: None; refines D-008, D-009, D-022 and D-023.
+- Affected documents/components: Knowledge Objectives, template catalog, workspace configuration, Knowledge Pipelines, schema and validation configuration, future scoped PRD, architecture, data model and acceptance tests.
+
 ### Template for future decision details
 
 ```markdown
@@ -161,7 +175,7 @@ A source is authoritative only for appropriate subjects. Contradictions require 
 
 ### Collection and processing
 
-Support API/CRM/database integrations, approved external sources and manual ingestion progressively. Under D-028, prioritize the existing call-center integration, manual resources and limited approved web resources in MVP; add other dedicated connectors when justified. Knowledge objectives describe what the organization needs to learn; pipeline configuration selects input scope, schedule, model, validation policy and output. Scheduled/manual execution first; bounded discovery and event processing where useful. Track run status, errors and lineage; avoid reprocessing unchanged inputs when practical. Exact job semantics are pending technical design.
+Support API/CRM/database integrations, approved external sources and manual ingestion progressively. Under D-028, prioritize the existing call-center integration, manual resources and limited approved web resources in MVP; add other dedicated connectors when justified. Knowledge objectives describe what the organization needs to learn. Under D-029, provide reusable templates, customizable instances and simple structured custom objectives defining purpose, authorized sources, output schema, context and validation rules; associated pipeline configuration selects execution scope, schedule and model within those constraints. Scheduled/manual execution first; bounded discovery and event processing where useful. Track run status, errors and lineage; avoid reprocessing unchanged inputs when practical. Exact job semantics are pending technical design.
 
 ### Applications and AI
 
@@ -177,7 +191,7 @@ Keep current source database read-only; knowledge export is a distinct destinati
 
 ## MVP boundaries and acceptance
 
-Aim for one complete pilot flow: ingest selected sources (call center, selected online and/or manual inputs), view resources, configure objectives/pipelines, extract and validate contextual knowledge, manage units/packages, use authorized API/MCP and one-way sync, and deliver selected practical applications. D-024 selects limited Customer Intelligence and Content Intelligence as the initial applications on shared infrastructure. Market Intelligence is a subsequent desired extension; its release scope and timing remain open. D-025 prioritizes aggregate customer intelligence while preserving an extensible model for authorized individual analysis; individual profiling is not a required initial deliverable. D-026 selects a hybrid Customer Intelligence experience: evidence-backed insight feed, limited analytical dashboard and authorized MCP conversational access, with a dedicated conversational UI deferred. D-027 selects hybrid Content Intelligence: discovery and content briefs first, limited AI/MCP-assisted drafting, with full content management and publishing integrations deferred. D-028 selects progressive multi-source delivery: call-center data first, manual resources and limited approved web resources in MVP, further dedicated connectors later as justified. Detailed workflows, data availability and rights, output requirements, validation and acceptance targets are still pending pilot discovery. Other proposed applications are not commitments.
+Aim for one complete pilot flow: ingest selected sources (call center, selected online and/or manual inputs), view resources, configure objectives/pipelines, extract and validate contextual knowledge, manage units/packages, use authorized API/MCP and one-way sync, and deliver selected practical applications. D-024 selects limited Customer Intelligence and Content Intelligence as the initial applications on shared infrastructure. Market Intelligence is a subsequent desired extension; its release scope and timing remain open. D-025 prioritizes aggregate customer intelligence while preserving an extensible model for authorized individual analysis; individual profiling is not a required initial deliverable. D-026 selects a hybrid Customer Intelligence experience: evidence-backed insight feed, limited analytical dashboard and authorized MCP conversational access, with a dedicated conversational UI deferred. D-027 selects hybrid Content Intelligence: discovery and content briefs first, limited AI/MCP-assisted drafting, with full content management and publishing integrations deferred. D-028 selects progressive multi-source delivery: call-center data first, manual resources and limited approved web resources in MVP, further dedicated connectors later as justified. D-029 selects hybrid Knowledge Objectives, with reusable templates, customizable instances and simple structured custom objectives linked to governed pipelines. Detailed workflows, data availability and rights, output requirements, validation and acceptance targets are still pending pilot discovery. Other proposed applications are not commitments.
 
 Measure ingestion reliability, evidence-backed quality, reuse of knowledge across applications, freshness, access isolation, export correctness, measurable customer benefit and ability to onboard a second customer without rewriting the core. Quantitative targets need pilot validation.
 
