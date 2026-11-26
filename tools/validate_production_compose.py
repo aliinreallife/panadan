@@ -136,6 +136,9 @@ def validate_panadan(data: Mapping, *, auth_enabled: bool,
     bridge = env.get("PANADAN_WORKOS_STANDALONE_ENABLED", "false")
     web_mode = env.get("PANADAN_WEB_AUTH_MODE", "local")
     require(web_mode in ("local", "authkit"), "unsupported web authentication mode")
+    multi = env.get("PANADAN_AUTHKIT_MULTI_USER", "false")
+    require(multi in ("true", "false") and (multi == "false" or web_mode == "authkit"),
+            "multi-user mode requires explicit native AuthKit configuration")
     if allow_workos_oauth:
         require(mode == "oauth", "explicit WorkOS OAuth requires OAuth mode")
         require(bridge == ("false" if web_mode == "authkit" else "true"),
