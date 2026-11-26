@@ -26,6 +26,14 @@ ROLE_GRANTS = {
     'metrics': ('metrics:read',),
 }
 
+# Independently delegated browser administration; not REST/MCP data grants.
+NATIVE_PANEL_GRANTS = {
+    'system:read': ('وضعیت سیستم', 'مشاهده سلامت سامانه و وضعیت همگام‌سازی، بدون تغییر زیرساخت.'),
+    'activity:read': ('فعالیت کاربران', 'مشاهده فراداده فعالیت و رویدادهای همه کاربران؛ بدون متن مکالمه یا توکن.'),
+    'operators:manage': ('مدیریت کارشناسان', 'تغییر مقصد و تیم کارشناسان؛ نیازمند مجوز گزارش و ستون کارشناس.'),
+    'api:docs': ('مستندات API', 'مشاهده مستندات فنی API؛ به خودی خود مجوز داده نیست.'),
+    'connect:read': ('راهنمای اتصال', 'مشاهده راهنمای اتصال دستیارها؛ بدون اعطای مجوز MCP یا داده.'),
+}
 MCP_PREREQUISITES = frozenset(('calls:read', 'metrics:read'))
 
 
@@ -136,6 +144,16 @@ class Store:
                 existing = {r['name'] for r in c.execute(f'PRAGMA table_info({table})')}
                 if col not in existing:
                     c.execute(f'ALTER TABLE {table} ADD COLUMN {col} {definition}')
+            c.execute("""CREATE TABLE IF NOT EXISTS authkit_accounts (
+                user_id INTEGER PRIMARY KEY,
+                issuer TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                panel_grants TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                last_login INTEGER NOT NULL,
+                UNIQUE(issuer,subject)
+            )""")
             c.execute('''CREATE TABLE IF NOT EXISTS mcp_client_grants (
                 user_id INTEGER NOT NULL,
                 client_id TEXT NOT NULL,
@@ -313,7 +331,7 @@ class Store:
                 c.execute('DELETE FROM sessions WHERE token_hash=?', (digest(raw),))
                 c.execute('DELETE FROM authkit_sessions WHERE token_hash=?', (digest(raw),))
 
-    def prepare_authkit_admin(self, uid: int, issuer: str, subject: str) -> None:
+    def prepare_authkit_admin(self, uid: int, issuer: str, subject: str, *, multi_user: bool = False) -> None:
         """Cut over only the pinned local admin, preserving all historical rows.
 
         No password is accepted in native mode. Old users are disabled, not
@@ -331,13 +349,104 @@ class Store:
             if (old and old["subject"] not in (subject, f"panadan-user-{uid}")) or (
                     owner and owner["user_id"] != uid):
                 raise ValueError("Native OAuth identity requires administrator review")
-            c.execute("UPDATE users SET is_active=0 WHERE id<>?", (uid,))
+            if multi_user:
+                # Existing native accounts retain explicitly assigned status.
+                # Historical password-only accounts remain disabled.
+                c.execute("""UPDATE users SET is_active=0 WHERE id<>?
+                    AND (role='admin' OR id NOT IN
+                    (SELECT user_id FROM authkit_accounts WHERE issuer=?))""", (uid,issuer))
+            else:
+                c.execute("UPDATE users SET is_active=0 WHERE id<>?", (uid,))
             if not old or old["subject"] != subject:
                 c.execute("DELETE FROM oauth_identities WHERE issuer=? AND user_id=?", (issuer, uid))
                 c.execute("INSERT INTO oauth_identities(issuer,subject,user_id,created_at) VALUES(?,?,?,?)",
                           (issuer, subject, uid, int(time.time())))
                 c.execute("DELETE FROM mcp_client_grants WHERE user_id=?", (uid,))
                 c.execute("DELETE FROM mcp_client_requests WHERE user_id=?", (uid,))
+
+    def native_account(self, uid: int, issuer: str) -> dict | None:
+        with self.db() as c:
+            row = c.execute("""SELECT a.*,u.is_active FROM authkit_accounts a
+                JOIN users u ON u.id=a.user_id
+                JOIN oauth_identities i ON i.user_id=u.id AND i.issuer=a.issuer AND i.subject=a.subject
+                WHERE a.user_id=? AND a.issuer=? AND u.role<>'admin'""", (uid,issuer)).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        try:
+            parsed = json.loads(result['panel_grants'])
+            result['panel_grants'] = set(parsed) & set(NATIVE_PANEL_GRANTS) if isinstance(parsed,list) else set()
+        except (ValueError, TypeError):
+            result['panel_grants'] = set()
+        return result
+
+    def native_accounts(self, issuer: str) -> dict[int, dict]:
+        with self.db() as c:
+            ids = [r['user_id'] for r in c.execute(
+                'SELECT user_id FROM authkit_accounts WHERE issuer=?', (issuer,))]
+        return {uid: account for uid in ids if (account := self.native_account(uid,issuer)) is not None}
+
+    def provision_native_user(self, issuer: str, subject: str, email: str) -> int:
+        """Only call after a verified WorkOS code exchange. Never link by email."""
+        if (not issuer or not re.fullmatch(r'user_[A-Za-z0-9]{1,120}', subject)
+                or len(email)>254 or not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+',email)):
+            raise ValueError('Invalid verified identity')
+        email=email.lower()
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            existing = c.execute("""SELECT a.user_id,a.email,u.is_active,u.role
+                FROM authkit_accounts a JOIN users u ON u.id=a.user_id
+                JOIN oauth_identities i ON i.user_id=u.id AND i.issuer=a.issuer AND i.subject=a.subject
+                WHERE a.issuer=? AND a.subject=?""", (issuer,subject)).fetchone()
+            if existing:
+                if not existing['is_active'] or existing['role']=='admin' or existing['email']!=email:
+                    raise ValueError('Account disabled or identity changed')
+                uid=existing['user_id']
+                c.execute('UPDATE authkit_accounts SET last_login=? WHERE user_id=?',(int(time.time()),uid))
+                return uid
+            # A matching legacy subject or email never inherits an old account.
+            if c.execute('SELECT 1 FROM oauth_identities WHERE issuer=? AND subject=?',(issuer,subject)).fetchone():
+                raise ValueError('Existing identity requires review')
+            if c.execute('SELECT 1 FROM authkit_accounts WHERE email=?',(email,)).fetchone():
+                raise ValueError('Existing email requires review')
+            now=int(time.time())
+            cur=c.execute("""INSERT INTO users(username,password_hash,role,grants,field_grants,is_active)
+                VALUES(?,?,'reader','[]','[]',1)""",('workos_'+secrets.token_hex(16),password_hash(secrets.token_urlsafe(48))))
+            uid=cur.lastrowid
+            c.execute("""INSERT INTO authkit_accounts(user_id,issuer,subject,email,created_at,last_login)
+                VALUES(?,?,?,?,?,?)""",(uid,issuer,subject,email,now,now))
+            c.execute('INSERT INTO oauth_identities(issuer,subject,user_id,created_at) VALUES(?,?,?,?)',(issuer,subject,uid,now))
+            return uid
+
+    def update_native_user(self, uid: int, issuer: str, *, actor_id: int,
+                           active: bool, caps: list[str], fields: list[str], panels: list[str]) -> None:
+        """Owner-only edit. Identity stays immutable; downstream grants are revoked."""
+        if uid==actor_id or not set(panels)<=set(NATIVE_PANEL_GRANTS) or len(panels)!=len(set(panels)):
+            raise ValueError('Invalid administrative grants')
+        if len(caps)!=len(set(caps)):
+            raise ValueError('Duplicate capabilities')
+        validate_user_grants('reader',caps)
+        grants=json.dumps(sorted(caps))
+        selected=validate_fields(fields,permissions('reader',grants))
+        if 'operators:manage' in panels and ('calls:read' not in caps or 'vw_danix_base_info_users_name' not in selected):
+            raise ValueError('Operator management requires operator data access')
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            actor=c.execute("SELECT role,is_active FROM users WHERE id=?",(actor_id,)).fetchone()
+            target=c.execute("""SELECT u.role FROM users u JOIN authkit_accounts a ON a.user_id=u.id
+                JOIN oauth_identities i ON i.user_id=u.id AND i.issuer=a.issuer AND i.subject=a.subject
+                WHERE u.id=? AND a.issuer=?""",(uid,issuer)).fetchone()
+            if not actor or actor['role']!='admin' or not actor['is_active'] or not target or target['role']=='admin':
+                raise ValueError('Account cannot be edited')
+            c.execute("UPDATE users SET role='reader',grants=?,field_grants=?,is_active=? WHERE id=?",
+                      (grants,json.dumps(selected),int(active),uid))
+            c.execute('UPDATE authkit_accounts SET panel_grants=? WHERE user_id=?',
+                      (json.dumps(sorted(panels)),uid))
+            c.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
+            c.execute('DELETE FROM authkit_sessions WHERE user_id=?',(uid,))
+            c.execute('DELETE FROM access_tokens WHERE owner_id=?',(uid,))
+            c.execute('DELETE FROM mcp_client_grants WHERE user_id=?',(uid,))
+            c.execute('DELETE FROM mcp_client_requests WHERE user_id=?',(uid,))
 
     def attest_workos_email(self, user_id: int, email: str,
                             *, attested_by: int, evidence_ref: str) -> None:
