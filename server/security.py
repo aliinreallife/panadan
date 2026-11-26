@@ -159,6 +159,8 @@ class Store:
                 c.execute('ALTER TABLE authkit_accounts ADD COLUMN requested_at INTEGER')
             if 'request_note' not in account_columns:
                 c.execute('ALTER TABLE authkit_accounts ADD COLUMN request_note TEXT')
+            if 'raw_transcript' not in account_columns:
+                c.execute('ALTER TABLE authkit_accounts ADD COLUMN raw_transcript INTEGER NOT NULL DEFAULT 0')
             c.execute('''CREATE TABLE IF NOT EXISTS mcp_client_grants (
                 user_id INTEGER NOT NULL,
                 client_id TEXT NOT NULL,
@@ -167,6 +169,17 @@ class Store:
                 approved_at INTEGER NOT NULL,
                 PRIMARY KEY(user_id,client_id)
             )''')
+            client_columns = {r['name'] for r in c.execute('PRAGMA table_info(mcp_client_grants)')}
+            if 'raw_transcript' not in client_columns:
+                c.execute('ALTER TABLE mcp_client_grants ADD COLUMN raw_transcript INTEGER NOT NULL DEFAULT 0')
+            c.execute("""CREATE TABLE IF NOT EXISTS raw_transcript_access_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL, client_id TEXT,
+                surface TEXT NOT NULL CHECK(surface IN ('web','mcp')),
+                call_id INTEGER NOT NULL, char_limit INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            )""")
+            c.execute('CREATE INDEX IF NOT EXISTS raw_transcript_audit_user_time ON raw_transcript_access_audit(user_id,created_at)')
             # Optional WorkOS login handoff requires an explicitly attested
             # email for each Panadan user. This is contact metadata only;
             # Panadan retains all passwords, sessions, roles and permissions.
@@ -436,7 +449,8 @@ class Store:
                 raise ValueError('Account unavailable')
 
     def update_native_user(self, uid: int, issuer: str, *, actor_id: int,
-                           active: bool, caps: list[str], fields: list[str], panels: list[str]) -> None:
+                           active: bool, caps: list[str], fields: list[str], panels: list[str],
+                           raw_transcript: bool = False) -> None:
         """Owner-only edit. Identity stays immutable; downstream grants are revoked."""
         if uid==actor_id or not set(panels)<=set(NATIVE_PANEL_GRANTS) or len(panels)!=len(set(panels)):
             raise ValueError('Invalid administrative grants')
@@ -445,6 +459,8 @@ class Store:
         validate_user_grants('reader',caps)
         grants=json.dumps(sorted(caps))
         selected=validate_fields(fields,permissions('reader',grants))
+        if raw_transcript and ('calls:read' not in caps or 'id' not in selected):
+            raise ValueError('Raw transcript requires call reports and call ID')
         if 'operators:manage' in panels and ('calls:read' not in caps or 'vw_danix_base_info_users_name' not in selected):
             raise ValueError('Operator management requires operator data access')
         with self.db() as c:
@@ -457,8 +473,8 @@ class Store:
                 raise ValueError('Account cannot be edited')
             c.execute("UPDATE users SET role='reader',grants=?,field_grants=?,is_active=? WHERE id=?",
                       (grants,json.dumps(selected),int(active),uid))
-            c.execute('UPDATE authkit_accounts SET panel_grants=?,requested_at=NULL,request_note=NULL WHERE user_id=?',
-                      (json.dumps(sorted(panels)),uid))
+            c.execute('UPDATE authkit_accounts SET panel_grants=?,raw_transcript=?,requested_at=NULL,request_note=NULL WHERE user_id=?',
+                      (json.dumps(sorted(panels)),int(raw_transcript),uid))
             c.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
             c.execute('DELETE FROM authkit_sessions WHERE user_id=?',(uid,))
             c.execute('DELETE FROM access_tokens WHERE owner_id=?',(uid,))
@@ -758,8 +774,66 @@ class Store:
         except (TypeError, ValueError):
             return None
 
+    def _native_raw_allowed(self, c, uid: int, issuer: str, owner_uid: int) -> bool:
+        # Subject ownership is checked against the immutable native identity.
+        row = c.execute("""SELECT u.role,u.grants,u.field_grants,u.is_active,
+            a.raw_transcript,a.subject AS native_subject,i.subject AS bound_subject
+            FROM users u JOIN oauth_identities i ON i.user_id=u.id AND i.issuer=?
+            LEFT JOIN authkit_accounts a ON a.user_id=u.id AND a.issuer=i.issuer
+            WHERE u.id=?""",(issuer,uid)).fetchone()
+        if not row or not row['is_active']:
+            return False
+        caps=permissions(row['role'],row['grants'])
+        if 'calls:read' not in caps or 'id' not in effective_fields(caps,row['field_grants']):
+            return False
+        return bool((uid==owner_uid and row['role']=='admin') or
+                    (row['role']!='admin' and row['raw_transcript']==1 and
+                     row['native_subject']==row['bound_subject']))
+
+    def native_raw_allowed(self, uid: int, issuer: str, owner_uid: int) -> bool:
+        with self.db() as c:
+            return self._native_raw_allowed(c,uid,issuer,owner_uid)
+
+    def native_raw_client_allowed(self, uid: int, issuer: str, owner_uid: int,
+                                  client_id: str) -> bool:
+        with self.db() as c:
+            return self._native_raw_client_allowed(c,uid,issuer,owner_uid,client_id)
+
+    def _native_raw_client_allowed(self,c,uid,issuer,owner_uid,client_id) -> bool:
+        if not client_id or not self._native_raw_allowed(c,uid,issuer,owner_uid):
+            return False
+        user=c.execute('SELECT role,grants FROM users WHERE id=?',(uid,)).fetchone()
+        if 'mcp:use' not in permissions(user['role'],user['grants']):
+            return False
+        row=c.execute('SELECT capabilities,fields,raw_transcript FROM mcp_client_grants WHERE user_id=? AND client_id=?',
+                      (uid,client_id)).fetchone()
+        if not row or row['raw_transcript']!=1:
+            return False
+        try:
+            return {'mcp:use','calls:read'}<=set(json.loads(row['capabilities'])) and 'id' in json.loads(row['fields'])
+        except (ValueError,TypeError):
+            return False
+
+    def audit_raw_transcript_request(self, *, uid: int, issuer: str, owner_uid: int,
+                                     call_id: int, char_limit: int,
+                                     client_id: str | None = None) -> bool:
+        if type(call_id) is not int or call_id<1 or not 1<=char_limit<=6000:
+            return False
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            allowed=(self._native_raw_client_allowed(c,uid,issuer,owner_uid,client_id)
+                     if client_id is not None else self._native_raw_allowed(c,uid,issuer,owner_uid))
+            if not allowed:
+                return False
+            c.execute("""INSERT INTO raw_transcript_access_audit
+                (user_id,client_id,surface,call_id,char_limit,created_at) VALUES(?,?,?,?,?,?)""",
+                (uid,client_id,'mcp' if client_id is not None else 'web',call_id,char_limit,int(time.time())))
+            return True
+
     def approve_mcp_client(self, user_id: int, client_id: str,
-                           caps: list[str], fields: list[str]) -> None:
+                           caps: list[str], fields: list[str], *,
+                           raw_transcript: bool = False, native_issuer: str = "",
+                           native_owner_uid: int = 0) -> None:
         """Explicit logged-in user's approval for one trusted OAuth client ID."""
         if (type(client_id) is not str or not 1 <= len(client_id) <= 160 or
                 any(ord(ch) < 33 or ord(ch) > 126 for ch in client_id)):
@@ -782,13 +856,23 @@ class Store:
         if not set(selected) <= capability_fields(set(caps)):
             raise ValueError('Delegated fields require matching approved capability')
         with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            if raw_transcript:
+                if ('calls:read' not in caps or 'id' not in selected or not native_issuer or
+                    not self._native_raw_allowed(c,user_id,native_issuer,native_owner_uid)):
+                    raise ValueError('Raw transcript grant is unavailable')
+                observed=c.execute("""SELECT 1 FROM mcp_client_requests WHERE user_id=? AND client_id=?
+                    UNION SELECT 1 FROM mcp_client_grants WHERE user_id=? AND client_id=?""",
+                    (user_id,client_id,user_id,client_id)).fetchone()
+                if not observed:
+                    raise ValueError('Raw transcript requires an observed OAuth client')
             c.execute(
-                'INSERT INTO mcp_client_grants(user_id,client_id,capabilities,fields,approved_at) '
-                'VALUES(?,?,?,?,?) ON CONFLICT(user_id,client_id) DO UPDATE SET '
+                'INSERT INTO mcp_client_grants(user_id,client_id,capabilities,fields,approved_at,raw_transcript) '
+                'VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,client_id) DO UPDATE SET '
                 'capabilities=excluded.capabilities,fields=excluded.fields,'
-                'approved_at=excluded.approved_at',
+                'approved_at=excluded.approved_at,raw_transcript=excluded.raw_transcript',
                 (user_id, client_id, json.dumps(sorted(caps)),
-                 json.dumps(selected), int(time.time()))
+                 json.dumps(selected), int(time.time()),int(raw_transcript))
             )
 
     def revoke_mcp_client(self, user_id: int, client_id: str) -> None:
@@ -799,7 +883,7 @@ class Store:
     def list_mcp_clients(self, user_id: int) -> list[dict]:
         with self.db() as c:
             return [dict(row) for row in c.execute(
-                'SELECT client_id,capabilities,fields,approved_at '
+                'SELECT client_id,capabilities,fields,approved_at,raw_transcript '
                 'FROM mcp_client_grants WHERE user_id=? ORDER BY approved_at DESC',
                 (user_id,))]
 
