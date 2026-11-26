@@ -31,7 +31,7 @@ from .permission_catalog import (
 )
 from .ingress import allowed_hosts, external_base_url, read_public_origin, valid_form_origin
 from .reporting_retries import read_with_retry
-from .transcript_ai import transcript_for_ai, MAX_TRANSCRIPT_CHARS
+from .transcript_ai import transcript_for_ai, raw_transcript_page, MAX_TRANSCRIPT_CHARS
 from .mcp_tools import mcp
 from mcp.server.transport_security import TransportSecuritySettings
 from .oauth_mcp import OAuthConfig, OAuthVerifier
@@ -66,6 +66,9 @@ authkit_login = AuthKitConfig.from_env(
 )
 if authkit_login.enabled:
     COOKIE_NAME = '__Host-panadan_authkit_session'
+if authkit_login.multi_user:
+    from .mcp_tools import register_raw_transcript_tool
+    register_raw_transcript_tool()
 class AuthCallbackAccessLogFilter(logging.Filter):
     """Keep OAuth codes and state out of the Uvicorn access log."""
     def filter(self, record):
@@ -136,6 +139,8 @@ async def audit_http_activity(request: Request, call_next):
         action = path
     elif path.startswith('/dashboard/ai/transcript/'):
         action = '/dashboard/ai/transcript/{id}'
+    elif path.startswith('/dashboard/raw/transcript/'):
+        action = '/dashboard/raw/transcript/{id}'
     elif path.startswith('/dashboard/overview/'):
         action = '/dashboard/overview/{id}'
     elif path.startswith('/dashboard/data/'):
@@ -227,6 +232,10 @@ def panel_context(session: dict) -> dict:
 
 templates.env.globals['panel_allowed'] = panel_allowed
 templates.env.globals['has_capability'] = has_capability
+
+def native_raw_allowed(session: dict) -> bool:
+    return bool(authkit_login.multi_user and store.native_raw_allowed(
+        session['user_id'],oauth_config.issuer,authkit_login.admin_uid))
 
 def user_field_access(session: dict) -> frozenset[str]:
     access = store.user_access(session['user_id']) if hasattr(store, 'user_access') else None
@@ -550,6 +559,7 @@ def dashboard(request: Request):
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
         'transcript_available': {'id','transcription'} <= user_field_access(session),
+        'raw_transcript_available': native_raw_allowed(session),
         'selected_operator':None, 'operator_title':None, 'operator_meta':{},
     })
 
@@ -581,6 +591,7 @@ def operator_profile(request: Request, name: str = Query(...,min_length=1,max_le
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
         'transcript_available': {'id','transcription'} <= user_field_access(session),
+        'raw_transcript_available': native_raw_allowed(session),
         'selected_operator':name,'operator_title':operator_display(name),
         'operator_meta':store.operator_assignments().get(name,{'destination':'نامشخص','team':'نامشخص'}),
     },headers={'Cache-Control':'no-store'})
@@ -736,6 +747,22 @@ def browser_ai_transcript(call_id: int, offset: int = Query(0,ge=0,le=2147483646
     if not raw:
         raise HTTPException(404, 'Call not found')
     return JSONResponse(transcript_for_ai(raw, limit=limit, offset=offset), headers={'Cache-Control':'no-store'})
+
+
+@app.get('/dashboard/raw/transcript/{call_id}', include_in_schema=False)
+def browser_raw_transcript(call_id: int, offset: int = Query(0,ge=0,le=2147483646),
+                          limit: int = Query(6000,ge=1,le=6000),
+                          session: dict = Depends(current_session)):
+    if not authkit_login.multi_user or not store.audit_raw_transcript_request(
+            uid=session['user_id'],issuer=oauth_config.issuer,
+            owner_uid=authkit_login.admin_uid,call_id=call_id,char_limit=limit):
+        raise HTTPException(403,'Original transcript not authorized')
+    try: row=database.transcript_excerpt(call_id,limit,offset)
+    except Exception as e: json_failure(e)
+    if row is None:
+        raise HTTPException(404,'Call not found')
+    return JSONResponse(raw_transcript_page(row,limit=limit,offset=offset),
+                        headers={'Cache-Control':'no-store'})
 
 
 @app.get('/dashboard/overview/{call_id}', include_in_schema=False)
@@ -954,6 +981,7 @@ def request_native_access(request: Request, csrf: str = Form(...), note: str = F
 def update_native_access(request: Request, uid: int, csrf: str = Form(...),
                          is_active: bool = Form(False), grants: list[str] = Form([]),
                          fields: list[str] = Form([]), panels: list[str] = Form([]),
+                         raw_transcript: bool = Form(False),
                          session: dict = Depends(current_session)):
     csrf_check(request,csrf,session)
     admin_only(session)
@@ -961,7 +989,8 @@ def update_native_access(request: Request, uid: int, csrf: str = Form(...),
         raise HTTPException(403,'Native owner access required')
     try:
         store.update_native_user(uid,oauth_config.issuer,actor_id=session['user_id'],
-                                 active=is_active,caps=grants,fields=fields,panels=panels)
+                                 active=is_active,caps=grants,fields=fields,panels=panels,
+                                 raw_transcript=raw_transcript)
     except ValueError as exc:
         raise HTTPException(400,str(exc)) from exc
     audit_auth_event(session['user_id'],'Native user permissions updated',200)
@@ -986,7 +1015,8 @@ def my_connected_ai_apps(request: Request, review: str | None = None,
                 'client_id': record['client_id'],
                 'capabilities': set(json.loads(record['capabilities'])),
                 'fields': set(json.loads(record['fields'])),
-                'approved_at': record['approved_at']
+                'approved_at': record['approved_at'],
+                'raw_transcript': bool(record.get('raw_transcript',False))
             })
         except (TypeError, ValueError, KeyError):
             continue
@@ -1012,6 +1042,7 @@ def my_connected_ai_apps(request: Request, review: str | None = None,
         'client_grants': client_rows,
         'pending_clients': pending_clients,
         'review_client': review_client,
+        'raw_transcript_available': native_raw_allowed(session),
         'call_fields': capability_fields({'calls:read'}),
         'metric_fields': capability_fields({'metrics:read'}),
         'can_manage': 'users:manage' in access['capabilities'],
@@ -1024,13 +1055,20 @@ def approve_my_ai_app(request: Request, csrf: str = Form(...),
                       client_id: str = Form(...),
                       capabilities: list[str] = Form([]),
                       fields: list[str] = Form([]),
+                      raw_transcript: bool = Form(False),
                       session: dict = Depends(current_session)):
     csrf_check(request, csrf, session)
+    if raw_transcript and not native_raw_allowed(session):
+        raise HTTPException(403,'Original transcript not authorized')
     if not hasattr(store, 'approve_mcp_client'):
         raise HTTPException(503, 'Consent store unavailable')
     try:
-        store.approve_mcp_client(session['user_id'], client_id,
-                                 ['mcp:use', *capabilities], fields)
+        if authkit_login.multi_user:
+            store.approve_mcp_client(session['user_id'],client_id,['mcp:use',*capabilities],fields,
+                raw_transcript=raw_transcript,native_issuer=oauth_config.issuer,
+                native_owner_uid=authkit_login.admin_uid)
+        else:
+            store.approve_mcp_client(session['user_id'],client_id,['mcp:use',*capabilities],fields)
         store.record_activity(user_id=session['user_id'], surface='auth',
                               action='MCP client consent updated',
                               http_status=200, duration_ms=0)
