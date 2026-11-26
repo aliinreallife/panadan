@@ -239,8 +239,10 @@ def get_redacted_call_transcript(call_id: int, ctx: Context, offset: int = 0) ->
 
 
 def _native_raw_identity(ctx: Context):
-    from .main import store, oauth_config, oauth_verifier, authkit_login
-    if not authkit_login.multi_user or oauth_config.mode != "oauth":
+    from . import main
+    authkit_login = getattr(main, "authkit_login", None)
+    store, oauth_config, oauth_verifier = main.store, main.oauth_config, main.oauth_verifier
+    if not getattr(authkit_login, "multi_user", False) or oauth_config.mode != "oauth":
         return None
     auth=(ctx.headers or {}).get("authorization","")
     token=auth[7:] if auth.startswith("Bearer ") else ""
