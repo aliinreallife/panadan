@@ -132,7 +132,7 @@
       </div>
       <div class="users-list" id="access-users-list">
         {% for user in users %}
-        <details class="user-card access-user-card" data-user-name="{{(native_accounts[user.id].email if user.id in native_accounts else user.username)|lower}}" data-user-role="{{user.role}}" data-user-active="{{'true' if user.is_active else 'false'}}" data-user-pending="{{'true' if user.id in native_accounts and user.is_active and not user_caps[user.id] and not native_accounts[user.id].panel_grants else 'false'}}">
+        <details class="user-card access-user-card" data-user-name="{{(native_accounts[user.id].email if user.id in native_accounts else user.username)|lower}}" data-user-role="{{user.role}}" data-user-active="{{'true' if user.is_active else 'false'}}" data-user-pending="{{'true' if user.id in native_accounts and user.is_active and not user_caps[user.id] and not native_accounts[user.id].panel_grants and not native_accounts[user.id].raw_transcript else 'false'}}">
           <summary class="user-card-summary">
             <span class="user-card-name"><bdi dir="ltr">{{native_accounts[user.id].email if user.id in native_accounts else user.username}}</bdi>
               {% if user.id in native_accounts and user.is_active and not user_caps[user.id] and not native_accounts[user.id].panel_grants %}<span class="status-badge">در انتظار دسترسی</span>{% elif user.is_active %}<span class="status-badge" data-status="SoldOut">فعال</span>
@@ -166,6 +166,9 @@
               <span data-grant-count class="access-grant-count"></span>
               {{grant_picker(user_caps[user.id])}}
               {{field_picker(user_fields[user.id])}}
+              <fieldset class="access-editor-grants"><legend>دسترسی به متن اصلی مکالمه</legend>
+                <label class="access-permission-row"><input type="checkbox" name="raw_transcript" value="true" {% if native_accounts[user.id].raw_transcript %}checked{% endif %}><span class="access-permission-copy"><strong>متن خام مکالمه (بدون حذف اطلاعات)</strong><small>شامل متن اصلی مبدأ و احتمالاً اطلاعات شخصی مشتری است. نیازمند گزارش تماس‌ها و شناسه تماس. مجوز نسخه پانادان مستقل است؛ اتصال AI به تأیید جداگانه کاربر نیاز دارد.</small></span></label>
+              </fieldset>
               <p class="access-risk-note" data-risk-note hidden>دسترسی محرمانه را فقط در صورت نیاز کاری فعال کنید.</p>
             </fieldset>
             <fieldset class="access-editor-grants"><legend>۲. دسترسی به بخش‌های مدیریتی</legend><p class="access-category-help">این مجوزها مستقل از دسترسی داده هستند. مدیریت کاربران، توکن‌ها و هویت OAuth فقط در اختیار مدیر اصلی است.</p>
