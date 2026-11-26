@@ -1,5 +1,8 @@
 # Panadan – Product Requirements (MVP)
 
+> **Knowledge platform evolution:** This document records the original reporting product. For accepted new product direction and MVP constraints, read [Knowledge Platform Decisions](knowledge-platform/DECISIONS.md). Existing safety and operational constraints remain in force; the new direction is not evidence of implementation.
+
+
 ## Purpose
 Provide an easy read-only interface for call-report data in `odoo.public.vw_danix_call_info_report` via an isolated OpenVPN connection.
 
