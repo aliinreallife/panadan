@@ -35,6 +35,7 @@ Evolve the existing read-only reporting product into a reusable organizational k
 | D-023 | Organization architecture | Shared Core + Organization Workspace; configuration over custom code, isolated customer workspaces and reusable modules. |
 | D-024 | Initial application priorities | Start with limited Customer Intelligence and Content Intelligence on shared reusable infrastructure; plan Market Intelligence as a subsequent extension, with its release scope and timing still open. |
 | D-025 | Customer intelligence granularity | Hybrid individual and aggregate analysis, with aggregate insights prioritized for the initial MVP; retain extensibility for authorized individual analysis. |
+| D-026 | Customer intelligence delivery | Hybrid delivery: evidence-backed insight feed, limited analytical dashboard and conversational access through authorized MCP initially; dedicated conversational UI later. |
 
 Decision identifiers preserve the original negotiation numbering; gaps intentionally do not expose internal strategy.
 
@@ -59,6 +60,7 @@ This is a living decision register, not a one-time handoff. Every contributor, i
 | 2026-11-25 | — | Owner requested ongoing decision maintenance; mandatory documentation and agent handoff protocol introduced. |
 | 2026-11-26 | D-024 | Owner selected initial application priorities during pilot discovery. |
 | 2026-11-26 | D-025 | Owner selected hybrid customer intelligence with aggregate-first delivery. |
+| 2026-11-26 | D-026 | Owner selected hybrid delivery for Customer Intelligence. |
 
 Append dated entries for future accepted decisions and supersessions. Do not erase prior entries.
 
@@ -85,6 +87,18 @@ Append dated entries for future accepted decisions and supersessions. Do not era
 - Constraints and implications: Keep observations and inferred patterns distinct, retain provenance and authorized scope, distinguish call counts from unique customer counts where identity is not reliably established, avoid unsupported population-wide inference. Aggregation alone is not anonymization; protect small groups, sensitive fields and evidence drill-down under existing authorization and data policies. No unnecessary collection of individual identifiers.
 - Supersedes: None; refines D-024 and D-022.
 - Affected documents/components: Customer Intelligence, shared knowledge schema, validation and application configuration; future scoped PRD, data model and acceptance tests.
+
+### D-026 — Customer intelligence delivery
+- Date: 2026-11-26
+- Status: Accepted
+- Approval: Product owner discussion during pilot discovery
+- Decision: Combine an evidence-backed Knowledge & Insight Feed, a limited Analytical Dashboard, and Conversational Intelligence through authorized MCP access initially. Defer a dedicated first-party conversational interface.
+- Rationale: Make reusable, inspectable knowledge the primary value while providing complementary analytical and conversational ways to consume it. Reuse the existing web and MCP foundations instead of building a separate chatbot stack first.
+- MVP scope: Provide a feed of supported findings with context, provenance and permitted evidence inspection; a limited dashboard over the same scoped data and knowledge; and conversational access via reviewed, authorized MCP tools. Exact metrics, filters, presentation, insight refresh and MCP tool contracts remain pending discovery and scoped PRD.
+- Deferred / out of scope: Dedicated conversational UI, broad custom analytics builder and unrestricted natural-language querying are not required in the initial release.
+- Constraints and implications: Preserve aggregate-first scope under D-025. All surfaces must use consistent authorization, evidence, definitions and freshness; distinguish observations from validated knowledge, insufficient data and uncertainty. Do not disclose restricted evidence, infer unique customer counts from call counts, or permit unrestricted SQL. Existing MCP transport is reusable, but new knowledge retrieval and client compatibility require implementation, security verification and separate release approval; no existing access is broadened by this decision.
+- Supersedes: None; refines D-024 and D-025, consistent with D-015 and D-016.
+- Affected documents/components: Customer Intelligence feed/dashboard, shared knowledge retrieval and aggregation, API/MCP access, future scoped PRD and acceptance tests.
 
 ### Template for future decision details
 
@@ -135,7 +149,7 @@ Keep current source database read-only; knowledge export is a distinct destinati
 
 ## MVP boundaries and acceptance
 
-Aim for one complete pilot flow: ingest selected sources (call center, selected online and/or manual inputs), view resources, configure objectives/pipelines, extract and validate contextual knowledge, manage units/packages, use authorized API/MCP and one-way sync, and deliver selected practical applications. D-024 selects limited Customer Intelligence and Content Intelligence as the initial applications on shared infrastructure. Market Intelligence is a subsequent desired extension; its release scope and timing remain open. D-025 prioritizes aggregate customer intelligence while preserving an extensible model for authorized individual analysis; individual profiling is not a required initial deliverable. Detailed workflows, data availability and rights, output requirements, validation and acceptance targets are still pending pilot discovery. Other proposed applications are not commitments.
+Aim for one complete pilot flow: ingest selected sources (call center, selected online and/or manual inputs), view resources, configure objectives/pipelines, extract and validate contextual knowledge, manage units/packages, use authorized API/MCP and one-way sync, and deliver selected practical applications. D-024 selects limited Customer Intelligence and Content Intelligence as the initial applications on shared infrastructure. Market Intelligence is a subsequent desired extension; its release scope and timing remain open. D-025 prioritizes aggregate customer intelligence while preserving an extensible model for authorized individual analysis; individual profiling is not a required initial deliverable. D-026 selects a hybrid Customer Intelligence experience: evidence-backed insight feed, limited analytical dashboard and authorized MCP conversational access, with a dedicated conversational UI deferred. Detailed workflows, data availability and rights, output requirements, validation and acceptance targets are still pending pilot discovery. Other proposed applications are not commitments.
 
 Measure ingestion reliability, evidence-backed quality, reuse of knowledge across applications, freshness, access isolation, export correctness, measurable customer benefit and ability to onboard a second customer without rewriting the core. Quantitative targets need pilot validation.
 
