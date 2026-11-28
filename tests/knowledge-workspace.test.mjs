@@ -15,10 +15,12 @@ test('restored workspace presentation is cleared and revalidated, normal navigat
       addEventListener: (name, fn) => { handlers[name] = fn; },
       location: { reload: () => reloads++ },
     },
-    document: { querySelector: name => {
-      assert.equal(name, '.k-shell');
-      return { replaceChildren: () => clears++ };
-    }},
+    document: {
+      querySelector: name => name === '.k-shell'
+        ? { replaceChildren: () => clears++ }
+        : null,
+      getElementById: () => null,
+    },
   });
   handlers.pagehide({ persisted: false });
   handlers.pageshow({ persisted: false });

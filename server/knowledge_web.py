@@ -21,8 +21,10 @@ from .knowledge_identity import SQLiteIdentityBridge
 from .knowledge_scope import ScopedWorkspace
 from .security import Store, has_capability
 
+# Chromium sends Origin: null on form POST from a no-referrer document.
+# Keep same-origin forms usable without sending workspace URLs off-site.
 HEADERS = {"Cache-Control": "no-store, private", "Pragma": "no-cache",
-           "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
+           "Referrer-Policy": "same-origin", "X-Content-Type-Options": "nosniff",
            "Content-Security-Policy": "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"}
 PAGES = {"overview": "مرور کلی", "members": "اعضا", "roles": "نقش‌ها و دسترسی"}
 LABELS = {"workspace.read": "مشاهده فضای کاری", "members.manage": "مدیریت اعضا",

@@ -273,7 +273,9 @@ def root(request: Request):
 def login(request: Request):
     if logged_in(request): return RedirectResponse(LOGIN_DESTINATION, status_code=303)
     nonce = secrets.token_urlsafe(24)
-    response = templates.TemplateResponse(request, 'login.html', {'nonce':nonce, 'error':False})
+    response = templates.TemplateResponse(request, 'login.html', {
+        'nonce': nonce, 'knowledge_preview': KNOWLEDGE_PREVIEW_ENABLED,
+    })
     response.set_cookie('panadan_login_nonce', nonce, httponly=True, secure=COOKIE_SECURE,
                         samesite='lax', max_age=600)
     return response

@@ -127,10 +127,14 @@ def test_workspace_commands_csrf_delegation_and_revocation(web):
     path=_url(s,"a","command")
     csrf=_login(s,c,"admin")
     params={"operation":"add_member","target":str(s["n"]),"csrf":csrf}
+    page=c.get(_url(s,"a","members"))
+    assert page.headers["Referrer-Policy"]=="same-origin"
     assert c.post(path,data=params|{"csrf":"wrong"}).status_code==404
+    assert c.post(path,data=params,headers={"Origin":"null"}).status_code==404
     assert c.post(path,data=params,headers={"Origin":"https://foreign.invalid"}).status_code==404
     assert c.post(_url(s,"b","command"),data=params).status_code==404
-    assert c.post(path,data=params,follow_redirects=False).status_code==303
+    assert c.post(path,data=params,headers={"Origin":str(c.base_url).rstrip("/")},
+                  follow_redirects=False).status_code==303
     db=s["db"]
     member=db.execute("SELECT id FROM panadan_knowledge.memberships WHERE workspace_id=%s AND principal_id=%s",(s["a"],s["n"])).fetchone()[0]
     assert c.post(path,data={"operation":"create_role","csrf":csrf,"role_key":"web-reader",

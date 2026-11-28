@@ -23,8 +23,14 @@
 {% endmacro %}
 {% macro member_select() %}
 <label>عضو<select name="target" required><option value="">انتخاب عضو</option>
-{% for m in data.members if m.state=='active' and m.id!=data.membership_id %}<option value="{{m.id}}">{{m.name}} · {{m.id|string|truncate(12,true)}}</option>{% endfor %}
+{% for m in data.members if m.state=='active' and m.id!=data.membership_id %}<option value="{{m.id}}">{{m.name}}{% if m.name=='عضو' %} · {{(m.id|string)[:8]}}{% endif %}</option>{% endfor %}
 </select></label>
+{% endmacro %}
+{% macro reference(id) %}
+<details class="reference"><summary>نمایش شناسه</summary><bdi class="mono">{{id}}</bdi></details>
+{% endmacro %}
+{% macro named_reference(names,id,fallback) %}
+<bdi>{{names.get(id,fallback)}}</bdi>{% if id not in names or names[id]==fallback %}{{reference(id)}}{% endif %}
 {% endmacro %}
 {% macro expiry() %}
 <label>پایان اعتبار (اختیاری، UTC)<input name="valid_until" dir="ltr" placeholder="2027-01-01T12:00:00+00:00" maxlength="40"><small>خالی: بدون تاریخ پایان، در صورت مجاز بودن.</small></label>
@@ -32,16 +38,21 @@
 <a class="skip" href="#content">رفتن به محتوای اصلی</a>
 <div class="k-shell">
 <aside class="k-sidebar">
+<div class="sidebar-head">
 <a class="brand" href="/workspace" aria-label="panadan — فضاهای کاری"><span class="mark" aria-hidden="true"><i></i><i></i></span><span dir="ltr">panadan</span></a>
-<p class="brand-caption">از اطلاعات تا شناخت</p>
-{% if csrf %}
-<details class="switcher" {% if not data and choices %}open{% endif %}>
-<summary><span class="org-icon" aria-hidden="true">▥</span><span class="org-label"><strong>{{data.name if data else 'فضاهای کاری من'}}</strong><small>تغییر فضای کاری</small></span><span aria-hidden="true">⌄</span></summary>
+{% if csrf %}<button class="mobile-menu secondary" type="button" aria-controls="workspace-navigation" aria-expanded="false" hidden>منو</button>{% endif %}
+</div>
+{% if data and choices|length > 1 %}
+<details class="switcher">
+<summary><span class="org-icon" aria-hidden="true">▥</span><span class="org-label"><strong>{{data.name}}</strong><small>تغییر فضای کاری</small></span><span class="switch-chevron" aria-hidden="true">⌄</span></summary>
 <div class="switch-list">
-{% for w in choices %}<a href="/workspace/{{w.id}}/overview" {% if data and w.id==data.id %}aria-current="true"{% endif %}>{{w.name}}{% if data and w.id==data.id %}<span aria-hidden="true">✓</span>{% endif %}</a>{% else %}<span class="muted">فضای کاری مجازی در دسترس نیست.</span>{% endfor %}
+{% for w in choices %}<a href="/workspace/{{w.id}}/overview" {% if w.id==data.id %}aria-current="true"{% endif %}>{{w.name}}{% if w.id==data.id %}<span aria-hidden="true">✓</span>{% endif %}</a>{% endfor %}
 </div></details>
+{% elif data %}
+<div class="current-workspace"><span class="org-icon" aria-hidden="true">▥</span><strong>{{data.name}}</strong></div>
 {% endif %}
-<nav aria-label="ناوبری فضای کاری">
+<div class="sidebar-navigation" id="workspace-navigation">
+{% if data or legacy %}<nav aria-label="ناوبری فضای کاری">
 {% if data %}
 <span class="nav-caption">فضای کاری</span>
 <a href="/workspace/{{data.id}}/overview" {% if page=='overview' %}aria-current="page"{% endif %}><span aria-hidden="true">⌂</span> مرور کلی</a>
@@ -50,42 +61,44 @@
 {% if 'roles.manage' in data.capabilities %}<a href="/workspace/{{data.id}}/roles" {% if page=='roles' %}aria-current="page"{% endif %}><span aria-hidden="true">◇</span> نقش‌ها و دسترسی</a>{% endif %}
 {% endif %}
 {% if legacy %}<span class="nav-caption">گزارش‌گیری</span><a href="/dashboard"><span aria-hidden="true">▤</span> گزارش تماس‌ها <span class="arrow" aria-hidden="true">↗</span></a>{% endif %}
-</nav>
-<div class="side-bottom"><span class="preview-tag"><span aria-hidden="true">◉</span> محیط آزمایشی · داده ساختگی</span>
-{% if csrf %}<div class="account"><span class="avatar" aria-hidden="true">پ</span><bdi>{{username}}</bdi><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{csrf}}"><button class="plain">خروج</button></form></div>{% else %}<a href="/login">ورود به حساب</a>{% endif %}</div>
+</nav>{% endif %}
+{% if csrf %}<div class="account"><span class="avatar" aria-hidden="true">پ</span><bdi>{{username}}</bdi><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{csrf}}"><button class="plain">خروج</button></form></div>{% endif %}
+</div>
 </aside>
 <main id="content" class="k-main" tabindex="-1">
-<header class="top"><span>فضای کاری <span aria-hidden="true"> / </span> {{pages[page] if data else 'انتخاب سازمان'}}</span><span class="tag">نسخه توسعه</span></header>
 <div class="k-content">
+<p class="preview-tag">محیط آزمایشی <span aria-hidden="true">·</span> دادهٔ ساختگی</p>
 {% if error %}
 <section class="empty" role="alert"><span class="empty-icon" aria-hidden="true">◇</span><h1>دسترسی به فضای کاری</h1><p>{{message}}</p><a class="button" href="/workspace">بازگشت به فضاهای کاری</a><a class="plain" href="/login">ورود</a></section>
 {% elif not data %}
 <div class="page-head"><div><span class="eyebrow">فضای کاری سازمان</span><h1>فضاهای کاری من</h1><p>سازمانی را انتخاب کنید که مجوز دسترسی به آن دارید.</p></div></div>
-{% if choices %}<section class="panel"><div class="panel-head"><h2>سازمان‌ها</h2><span class="muted">دسترسی‌های فعلی</span></div>{% for w in choices %}<a class="workspace-row" href="/workspace/{{w.id}}/overview"><span class="org-icon">▥</span><strong>{{w.name}}</strong><bdi class="muted">{{w.slug}}</bdi><span class="arrow">←</span></a>{% endfor %}</section>
+{% if choices %}<section class="panel"><div class="panel-head"><h2>سازمان‌ها</h2></div>{% for w in choices %}<a class="workspace-row" href="/workspace/{{w.id}}/overview"><span class="org-icon" aria-hidden="true">▥</span><strong>{{w.name}}</strong><bdi class="muted">{{w.slug}}</bdi><span class="arrow" aria-hidden="true">←</span></a>{% endfor %}</section>
 {% else %}<section class="empty"><span class="empty-icon" aria-hidden="true">◇</span><h2>هنوز فضای کاری در دسترس نیست</h2><p>از مدیر سازمان بخواهید عضویت و دسترسی لازم را برای حساب شما فعال کند.</p></section>{% endif %}
 {% else %}
-<div class="page-head"><div><span class="eyebrow">{{data.name}}</span><h1>{{pages[page]}}</h1><p>{% if page=='overview' %}وضعیت فضای کاری و دسترسی‌های فعلی شما.{% elif page=='members' %}عضویت‌های این سازمان، مستقل از سازمان‌های دیگر.{% else %}نقش‌های نسخه‌بندی‌شده و مجوزهای صریح این سازمان.{% endif %}</p></div><a class="button secondary" href="/workspace/{{data.id}}/{{page}}">تازه‌سازی</a></div>
+<div class="page-head"><div><h1>{{pages[page]}}</h1><p>{% if page=='overview' %}وضعیت فضای کاری و دسترسی‌های فعلی شما.{% elif page=='members' %}افزودن اعضای ثبت‌شده و مدیریت عضویت آن‌ها.{% else %}نقش‌های نسخه‌بندی‌شده و مجوزهای صریح این سازمان.{% endif %}</p></div></div>
 {% if data.limited %}<p class="notice" role="status">حداکثر ۱۰۰ رکورد از هر بخش نمایش داده می‌شود؛ این فهرست کامل نیست.</p>{% endif %}
 {% if page=='overview' %}
-<section class="brief"><div><span class="eyebrow">شناخت سازمان</span><h2>به فضای کاری خود خوش آمدید.</h2><p>در این مرحله، مدیریت هویت و دسترسی آماده است. اطلاعات، دانش و برنامه‌های هوشمند در مراحل بعدی اضافه می‌شوند.</p></div><div class="leaf-art" aria-hidden="true"><i></i><i></i><i></i></div></section>
-<div class="overview-grid"><section class="panel"><div class="panel-head"><h2>هویت فضای کاری</h2><span class="tag active">فعال</span></div><dl class="facts"><dt>نام سازمان</dt><dd>{{data.name}}</dd><dt>شناسه</dt><dd><bdi>{{data.slug}}</bdi></dd><dt>منطقه زمانی</dt><dd><bdi>{{data.timezone or 'تنظیم نشده'}}</bdi></dd><dt>نسخه سیاست دسترسی</dt><dd>{{data.policy_epoch}}</dd></dl></section>
-<section class="panel"><div class="panel-head"><h2>دسترسی‌های من</h2></div><ul class="permissions">{% for cap in data.capabilities %}<li><span class="checkmark">✓</span>{{labels[cap]}}</li>{% endfor %}</ul><p class="note">دسترسی‌ها در سرور و برای همین سازمان بررسی می‌شوند.</p></section></div>
-<section class="panel next"><div class="panel-head"><h2>گام بعدی</h2></div>{% if 'members.manage' in data.capabilities %}<a href="/workspace/{{data.id}}/members">بررسی و مدیریت اعضا <span>←</span></a>{% endif %}{% if 'roles.manage' in data.capabilities %}<a href="/workspace/{{data.id}}/roles">تعریف نقش و مجوز <span>←</span></a>{% endif %}<p>هنوز منبع یا یافته‌ای در این مرحله برای نمایش وجود ندارد. این وضعیت به معنی صفر بودن داده‌های سازمان نیست.</p></section>
+<section class="brief"><div><h2>{{data.name}}</h2><p>هنوز منبع یا یافته‌ای برای نمایش در این فضای کاری وجود ندارد.</p></div><div class="leaf-art" aria-hidden="true"><i></i><i></i><i></i></div></section>
+<div class="overview-grid"><section class="panel"><div class="panel-head"><h2>مشخصات فضای کاری</h2><span class="tag active">فعال</span></div><dl class="facts"><dt>شناسهٔ سازمان</dt><dd><bdi>{{data.slug}}</bdi></dd><dt>منطقه زمانی</dt><dd><bdi>{{data.timezone or 'تنظیم نشده'}}</bdi></dd></dl></section>
+<section class="panel"><div class="panel-head"><h2>دسترسی‌های من</h2></div><ul class="permissions">{% for cap in data.capabilities %}<li><span class="checkmark" aria-hidden="true">✓</span>{{labels[cap]}}</li>{% endfor %}</ul></section></div>
+{% if 'members.manage' in data.capabilities or 'roles.manage' in data.capabilities %}
+<section class="panel next"><div class="panel-head"><h2>مدیریت فضای کاری</h2></div>{% if 'members.manage' in data.capabilities %}<a href="/workspace/{{data.id}}/members">بررسی و مدیریت اعضا <span aria-hidden="true">←</span></a>{% endif %}{% if 'roles.manage' in data.capabilities %}<a href="/workspace/{{data.id}}/roles">تعریف نقش و مجوز <span aria-hidden="true">←</span></a>{% endif %}</section>
+{% endif %}
 {% elif page=='members' %}
-<section class="panel"><div class="panel-head"><div><h2>اعضای سازمان</h2><p>شناسه عضویت، نه شناسه حساب احراز هویت.</p></div></div>
-<div class="table-wrap"><table><thead><tr><th>عضویت</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>
-{% for m in data.members %}<tr><td><strong><bdi>{{m.name}}</bdi></strong><small><bdi class="mono">{{m.id}}</bdi></small>{% if m.id==data.membership_id %}<small class="self">شما</small>{% endif %}</td><td><span class="tag {{'active' if m.state=='active' else 'inactive'}}">{{'فعال' if m.state=='active' else 'لغو شده'}}</span></td><td>{% if m.state=='active' and m.id!=data.membership_id %}{{revoke('revoke_membership',m.id,'لغو عضویت')}}{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="3">عضوی برای نمایش وجود ندارد.</td></tr>{% endfor %}</tbody></table></div></section>
-<section class="panel"><details class="editor"><summary>افزودن عضو موجود <span>＋</span></summary><p>شناسه شخصِ از قبل ثبت‌شده را وارد کنید. عضویت به‌تنهایی مجوز داده یا نقش ایجاد نمی‌کند.</p><form method="post" action="/workspace/{{data.id}}/command" class="form-grid">{{hidden('add_member')}}<label>شناسه شخص (UUID)<input name="target" required dir="ltr" maxlength="36"></label><button type="submit">افزودن عضویت</button></form></details></section>
+<section class="panel"><div class="panel-head"><h2 id="member-list">اعضای سازمان</h2></div>
+<details class="editor"><summary>افزودن عضو موجود <span aria-hidden="true">＋</span></summary><p>شناسهٔ شخص ثبت‌شده را وارد کنید. برای دسترسی، نقش و مجوز را جداگانه تعیین کنید.</p><form method="post" action="/workspace/{{data.id}}/command" class="form-grid">{{hidden('add_member')}}<label>شناسهٔ شخص (UUID)<input name="target" required dir="ltr" maxlength="36"></label><button type="submit">افزودن عضویت</button></form></details>
+<div class="table-wrap" role="region" aria-labelledby="member-list" tabindex="0"><table class="members-table"><thead><tr><th>عضویت</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>
+{% for m in data.members %}<tr><td><strong><bdi>{{m.name}}</bdi></strong>{% if m.id==data.membership_id %}<small class="self">شما</small>{% endif %}{{reference(m.id)}}</td><td><span class="tag {{'active' if m.state=='active' else 'inactive'}}">{{'فعال' if m.state=='active' else 'لغو شده'}}</span></td><td>{% if m.state=='active' and m.id!=data.membership_id %}{{revoke('revoke_membership',m.id,'لغو عضویت')}}{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="3">عضوی برای نمایش وجود ندارد.</td></tr>{% endfor %}</tbody></table></div></section>
 {% elif page=='roles' %}
-<section class="panel"><div class="panel-head"><div><h2>نقش‌ها</h2><p>نسخه‌های فعال و بازنشسته؛ تغییر تعریف، نسخه جدید می‌سازد.</p></div></div>
-<div class="table-wrap"><table><thead><tr><th>نقش</th><th>نسخه</th><th>مجوزهای نقش</th><th>وضعیت و عملیات</th></tr></thead><tbody>
-{% for r in data.roles %}<tr><td><strong>{{r.name}}</strong><small><bdi>{{r.role_key}}</bdi></small></td><td>{{r.rev}}</td><td>{% if r.invalid %}<span class="tag inactive">تعریف نامعتبر</span>{% else %}{% for cap in r.capability_set if cap in labels %}<small>{{labels[cap]}}</small>{% endfor %}{% endif %}</td><td><span class="tag">{{{'active':'فعال','draft':'پیش‌نویس','retired':'بازنشسته'}.get(r.state,'نامشخص')}}</span>{% if r.state=='active' %}{{revoke('retire_role',r.id,'بازنشسته کردن')}}{% endif %}</td></tr>{% else %}<tr><td colspan="4">نقشی برای نمایش وجود ندارد.</td></tr>{% endfor %}</tbody></table></div>
-<details class="editor"><summary>انتشار نسخه نقش <span>＋</span></summary><form method="post" action="/workspace/{{data.id}}/command" class="form-grid">{{hidden('create_role')}}<label>کلید نقش<input name="role_key" required dir="ltr" pattern="[a-z][a-z0-9_.-]{0,79}" maxlength="80"></label><label>نام نقش<input name="name" required maxlength="160"></label><fieldset><legend>مجوزها (حداکثر دسترسی فعلی شما)</legend>{% for cap in data.capabilities %}<label class="check"><input type="checkbox" name="capabilities" value="{{cap}}">{{labels[cap]}}</label>{% endfor %}</fieldset><button type="submit">انتشار نسخه</button></form></details></section>
-<section class="panel"><div class="panel-head"><div><h2>انتساب نقش</h2><p>انتساب به نسخه دقیق نقش؛ مجوز صریح نیز لازم است.</p></div></div><div class="table-wrap"><table><thead><tr><th>عضویت</th><th>نسخه نقش</th><th>اعتبار زمانی</th><th>عملیات</th></tr></thead><tbody>{% for a in data.assignments %}<tr><td><bdi>{{data.member_names.get(a.membership_id,'عضو')}}</bdi><small><bdi class="mono">{{a.membership_id}}</bdi></small></td><td><bdi>{{data.role_names.get(a.role_version_id,'نسخه نقش')}}</bdi><small><bdi class="mono">{{a.role_version_id}}</bdi></small></td><td>{{'معتبر از نظر زمان' if a.current else 'غیرفعال'}}{% if a.valid_until %}<small><bdi>{{a.valid_until.isoformat()}}</bdi></small>{% endif %}</td><td>{% if not a.revoked_at and a.membership_id!=data.membership_id %}{{revoke('revoke_role',a.id,'لغو انتساب')}}{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="4">انتسابی وجود ندارد.</td></tr>{% endfor %}</tbody></table></div>
-<details class="editor"><summary>انتساب نسخه نقش <span>＋</span></summary><form class="form-grid" method="post" action="/workspace/{{data.id}}/command">{{hidden('assign_role')}}{{member_select()}}<label>نسخه نقش<select name="role" required><option value="">انتخاب نقش</option>{% for r in data.roles if r.state=='active' and not r.invalid %}<option value="{{r.id}}">{{r.name}} · {{r.rev}}</option>{% endfor %}</select></label>{{expiry()}}<button type="submit">انتساب نقش</button></form></details></section>
-<section class="panel"><div class="panel-head"><div><h2>مجوزهای صریح</h2><p>فقط محدوده عملیاتی همین سازمان؛ اعتبار زمانی به معنی دسترسی مؤثر نیست.</p></div></div><div class="table-wrap"><table><thead><tr><th>عضویت</th><th>مجوز</th><th>اعتبار زمانی</th><th>عملیات</th></tr></thead><tbody>{% for g in data.grants %}<tr><td><bdi>{{data.member_names.get(g.membership_id,'عضو')}}</bdi><small><bdi class="mono">{{g.membership_id}}</bdi></small></td><td>{{labels.get(g.capability,'نامعتبر')}}</td><td>{{'معتبر از نظر زمان' if g.current else 'غیرفعال'}}{% if g.valid_until %}<small><bdi>{{g.valid_until.isoformat()}}</bdi></small>{% endif %}</td><td>{% if not g.revoked_at and g.membership_id!=data.membership_id %}{{revoke('revoke_scope',g.id,'لغو مجوز')}}{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="4">مجوزی وجود ندارد.</td></tr>{% endfor %}</tbody></table></div>
-<details class="editor"><summary>اعطای مجوز <span>＋</span></summary><form class="form-grid" method="post" action="/workspace/{{data.id}}/command">{{hidden('grant_scope')}}{{member_select()}}<label>مجوز<select name="capability" required><option value="">انتخاب مجوز</option>{% for cap in data.capabilities %}<option value="{{cap}}">{{labels[cap]}}</option>{% endfor %}</select></label>{{expiry()}}<button type="submit">اعطای مجوز</button></form></details></section>
+<p class="table-scroll-note">برای دیدن همهٔ ستون‌ها، جدول را افقی پیمایش کنید. از کلیدهای جهت‌نما هم می‌توانید استفاده کنید.</p>
+<section class="panel"><div class="panel-head"><div><h2 id="role-list">نقش‌ها</h2><p>نسخه‌های فعال و بازنشسته؛ تغییر تعریف، نسخه جدید می‌سازد.</p></div></div>
+<details class="editor"><summary>انتشار نسخه نقش <span aria-hidden="true">＋</span></summary><form method="post" action="/workspace/{{data.id}}/command" class="form-grid">{{hidden('create_role')}}<label>کلید نقش<input name="role_key" required dir="ltr" pattern="[a-z][a-z0-9_.\-]{0,79}" maxlength="80"></label><label>نام نقش<input name="name" required maxlength="160"></label><fieldset><legend>مجوزها (حداکثر دسترسی فعلی شما)</legend>{% for cap in data.capabilities %}<label class="check"><input type="checkbox" name="capabilities" value="{{cap}}">{{labels[cap]}}</label>{% endfor %}</fieldset><button type="submit">انتشار نسخه</button></form></details>
+<div class="table-wrap" role="region" aria-labelledby="role-list" tabindex="0"><table><thead><tr><th>نقش</th><th>نسخه</th><th>مجوزهای نقش</th><th>وضعیت و عملیات</th></tr></thead><tbody>
+{% for r in data.roles %}<tr><td><strong>{{r.name}}</strong><small><bdi>{{r.role_key}}</bdi></small></td><td>{{r.rev}}</td><td>{% if r.invalid %}<span class="tag inactive">تعریف نامعتبر</span>{% else %}{% for cap in r.capability_set if cap in labels %}<small>{{labels[cap]}}</small>{% endfor %}{% endif %}</td><td><span class="tag">{{{'active':'فعال','draft':'پیش‌نویس','retired':'بازنشسته'}.get(r.state,'نامشخص')}}</span>{% if r.state=='active' %}{{revoke('retire_role',r.id,'بازنشسته کردن')}}{% endif %}</td></tr>{% else %}<tr><td colspan="4">نقشی برای نمایش وجود ندارد.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="panel"><div class="panel-head"><div><h2 id="assignment-list">انتساب نقش</h2><p>انتساب به نسخه دقیق نقش؛ مجوز صریح نیز لازم است.</p></div></div><details class="editor"><summary>انتساب نسخه نقش <span aria-hidden="true">＋</span></summary><form class="form-grid" method="post" action="/workspace/{{data.id}}/command">{{hidden('assign_role')}}{{member_select()}}<label>نسخه نقش<select name="role" required><option value="">انتخاب نقش</option>{% for r in data.roles if r.state=='active' and not r.invalid %}<option value="{{r.id}}">{{r.name}} · {{r.rev}}</option>{% endfor %}</select></label>{{expiry()}}<button type="submit">انتساب نقش</button></form></details>
+<div class="table-wrap" role="region" aria-labelledby="assignment-list" tabindex="0"><table><thead><tr><th>عضویت</th><th>نسخه نقش</th><th>اعتبار زمانی</th><th>عملیات</th></tr></thead><tbody>{% for a in data.assignments %}<tr><td>{{named_reference(data.member_names,a.membership_id,'عضو')}}</td><td>{{named_reference(data.role_names,a.role_version_id,'نسخه نقش')}}</td><td>{{'معتبر از نظر زمان' if a.current else 'غیرفعال'}}{% if a.valid_until %}<small><bdi>{{a.valid_until.isoformat()}}</bdi></small>{% endif %}</td><td>{% if not a.revoked_at and a.membership_id!=data.membership_id %}{{revoke('revoke_role',a.id,'لغو انتساب')}}{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="4">انتسابی وجود ندارد.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="panel"><div class="panel-head"><div><h2 id="grant-list">مجوزهای صریح</h2><p>فقط محدوده عملیاتی همین سازمان؛ اعتبار زمانی به معنی دسترسی مؤثر نیست.</p></div></div><details class="editor"><summary>اعطای مجوز <span aria-hidden="true">＋</span></summary><form class="form-grid" method="post" action="/workspace/{{data.id}}/command">{{hidden('grant_scope')}}{{member_select()}}<label>مجوز<select name="capability" required><option value="">انتخاب مجوز</option>{% for cap in data.capabilities %}<option value="{{cap}}">{{labels[cap]}}</option>{% endfor %}</select></label>{{expiry()}}<button type="submit">اعطای مجوز</button></form></details>
+<div class="table-wrap" role="region" aria-labelledby="grant-list" tabindex="0"><table><thead><tr><th>عضویت</th><th>مجوز</th><th>اعتبار زمانی</th><th>عملیات</th></tr></thead><tbody>{% for g in data.grants %}<tr><td>{{named_reference(data.member_names,g.membership_id,'عضو')}}</td><td>{{labels.get(g.capability,'نامعتبر')}}</td><td>{{'معتبر از نظر زمان' if g.current else 'غیرفعال'}}{% if g.valid_until %}<small><bdi>{{g.valid_until.isoformat()}}</bdi></small>{% endif %}</td><td>{% if not g.revoked_at and g.membership_id!=data.membership_id %}{{revoke('revoke_scope',g.id,'لغو مجوز')}}{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="4">مجوزی وجود ندارد.</td></tr>{% endfor %}</tbody></table></div></section>
 {% endif %}
 {% endif %}
-<footer>panadan · پیش‌نمایش ساختگی و ایزوله</footer>
 </div></main></div></body></html>
