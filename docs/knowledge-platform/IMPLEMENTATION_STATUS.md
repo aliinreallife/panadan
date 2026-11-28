@@ -1,10 +1,10 @@
 # Panadan Knowledge Platform — Implementation Status
 
 Date: 2026-11-27 (last updated)
-Authorization: D-067 roadmap; M00, M01.1 and M01.2 verified; owner explicitly authorized M01.3 on 2026-11-27. D-068 approves all three UI references for frontend increments only. [Roadmap](ROADMAP.md) approved.
+Authorization: D-067 roadmap; M00 and M01.1–M01.3 verified; owner explicitly authorized M01.4 on 2026-11-27. D-068 approves all three UI references for frontend increments only. [Roadmap](ROADMAP.md) approved.
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G0 passed; M01.1–M01.3 complete and verified on owner-provided synthetic evidence; M01.4 awaits separate authorization. G1 remains pending.**
+Current gate: **G0 passed; M01.1–M01.3 verified; M01.4 implemented, awaiting synthetic regression, HTTP integration and visual review. G1 remains pending.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -187,12 +187,44 @@ echo "M01.3 verification PASSED"
 
 Expected 539 offline Python passes, 60 offline environment-dependent skips, 65 Node passes, 105 disposable PG integration passes, syntax/assets and compileall. Owner-reported first full run at d011e3eb25c38f1e7ad59dbd0ae0d755bf02ef4f: 539 offline passes, 60 skips (46.37s), 65 Node passes, JS/shell syntax and asset build passed. PG18 integration reported one failed test and ten setup errors; the pasted summary was truncated. The ten M01.3 runtime cases failed before their assertions because the synthetic fixture inserted administrator and reader definitions with the same (workspace_id,role_key,rev) in workspace A. The uniqueness constraint correctly rejected that setup. The previously verified M01.2 delegation test also intermittently denied the initial administrator's members.manage permission, before reaching its expiry scenario. The negative npm elapsed time in the supplied run and the use of transaction_timestamp defaults versus clock_timestamp comparisons suggest possible wall-clock regression, not a proven cause. Commit 27363fa5d3e9a036f969b13abea9a3c42e17946c seeds distinct administrator and reader role keys, preserves intentionally overlapping membership IDs and reader role keys between tenants, and sets synthetic bootstrap grant activation one day before database clock. Commits 2ac40ad31e8a2520fb8bd8fff3f154f0fbdd7e7f and 580017247c24fc9f4371e5ba3113465794cff31d do the same for the earlier synthetic owner bootstrap and add explicit positive capability preconditions and credential-free grant timestamp diagnostics before/after delegation expiry setup. These changes model preexisting active grants; no service-issued grant is backdated, no production code, permission check, uniqueness constraint, or migration changed. Final owner-reported WSL rerun at 843ee56ae4cc0cf56238599b9ab62b350fff2c1d: 105 PostgreSQL integration tests passed in 43.18s, zero reported failures/errors/skips. All 12 new scoped-runtime cases ran successfully, including actual restricted-role connections, RLS isolation, dirty-connection rejection, audit rollback, connection reuse, concurrent revocation, concurrent role publication and final session revocation checks. The earlier delegation regression also passed. The disposable PG18.6 runner completed its legacy ingestion initialization/restart/persistence and custom-format backup/restore smoke; the fail-fast M01.3 verification PASSED marker establishes successful Python compileall. The earlier 539 offline passes, 60 environment-dependent skips, 65 Node passes and syntax/asset results remain applicable because intervening changes were test fixtures and documentation only. The 60 offline skips reconcile to 48 prior plus 12 new PG-dependent cases. Combined successful final-suite executions: 709, not necessarily distinct tests. No assistant runtime tests independently executed. The successful rerun supports the fixture corrections but does not establish the suspected clock regression as root cause. If timing denial recurs, preserve diagnostics and inspect system/database clocks and grant validity rather than weakening authorization. M01.3 acceptance satisfied on reviewed synthetic evidence, not production security certification. Legacy restart/restore smoke remains legacy-only. M01.4 scoped UI and all live activation require separate authorization. G1 remains pending.
 
-## 7. Milestone ledger
+## 7. M01.4 — Persian workspace shell and access management (implemented, unverified)
+
+Owner explicitly approved M01.3 completion and M01.4 on 2026-11-27. Implemented U0/U1 within D-066/D-067/D-068; all three original visual/text/prototype references were reopened, and section 8 of UI_DESIGN_REVIEW.md records the candidate tokens/layout and design rationale. No new accepted product decision or final logo approval.
+
+### Implementation
+
+- Existing FastAPI/Jinja/SQLite authority retained, with separate templates/knowledge_workspace.html, static/knowledge.css and static/knowledge.js; no framework or dependency change. Persian-first RTL, self-hosted font, warm neutral/forest candidate palette, provisional CSS leaf motif, desktop sidebar, native workspace switcher/disclosure forms, responsive layout, focus/skip/reduced-motion support, non-color statuses. Overview displays only actual workspace identity and effective operational capabilities, not invented business KPIs. Members and role/version/grant management views with explicit separate assignment and scope operations. No future feature presented as active.
+- server/knowledge_web.py mounts /workspace, /workspace/{workspace_id}/{page} and the fixed POST command route only under explicit synthetic preview configuration. Existing main imports and mounts this router only with PANADAN_KNOWLEDGE_PREVIEW=YES; default login destination and all legacy routes unchanged. In isolated preview mode only, login/root redirect to workspace chooser and legacy dashboard links back. Legacy reporting link is derived from existing reporting capabilities, never granted by knowledge membership. No live source connection configured.
+- PreviewConfig requires explicit isolated SQLite mode, no public origin, local non-secure cookie setting and no inherited PG variables, valid loopback database port, installation UUID and at most 16 configured candidate workspaces. Uses fixed synthetic restricted login/PG18 panadan_ci, fresh autocommit connection per request, and M01.3 privilege/context checks. No general DSN, arbitrary SQL, global registry listing, automatic workspace enrollment, account creation or automatic migration on HTTP startup. Candidate list is never authorization: each option is individually reauthorized, and selected workspace view/command checks current session, membership, role and grant under locked transaction. Permission-specific navigation does not substitute for backend checks. Unauthorized/unknown workspace/page returns same generic 404; unavailable dependency generic 503, empty authorized list separate. Cache-Control no-store/private, CSP/referrer policy, autoescaped HTML, CSRF token and origin check, explicit destructive confirmation and POST/redirect/GET. Browser restored pages clear their content and reload for fresh authorization; cannot revoke already disclosed information.
+- ScopedWorkspace.ui_view and ui_command use fixed allowlisted paths through existing role/transaction boundary. Overview requires workspace.read; members requires it plus members.manage; roles requires it plus roles.manage. Bounded member/role/assignment/grant projections (100 each, detect truncation), current policy/identity rechecks and no raw authority identity or audit/policy payload returned. Member display names resolved from bounded same-installation SQLite profile references only after permission checks; unknown labels do not confer rights. Role definition invalidity distinguished and time validity not represented as effective access. Commands enforce existing M01.2 delegation/expiry/no-self-target rules and audited epoch updates. Existing migrations 004–006 and permission catalog unchanged. No actual connection-pool integration; existing per-transaction isolation is reused.
+- tools/preview-knowledge.sh + tools/knowledge_preview.py create fresh disposable loopback PG18.6 with pinned image and fresh temporary SQLite, explicitly apply 004–006 only on synthetic target, seed two organizations and restricted login, launch original app on localhost:8765 with scrubbed environment, and remove created container and temporary auth on exit. Existing login is used. Admin can access both workspaces, reader only A, other only B, newmember none; terminal prints synthetic password and provisioned member principal. No production files/secrets imported; no live source credentials. README includes launch instructions. Preview is synthetic-only and not a production bootstrap.
+- tests/test_knowledge_web.py: 3 offline cases (default off, explicit isolated configuration, unavailable template state), 3 PG-dependent HTTP cases (no access/direct route denial and tenant isolation, authorized switching with different permissions per tenant, CSRF/origin/role/grant/enrollment/revocation and HTML escaping). Uses actual restricted login and existing committed disposable fixture, not simulated policy responses. Existing test_app checks default app has no workspace route; local verification regression checks preview flag scrub. tests/knowledge-workspace.test.mjs adds 2 browser-state/static RTL contracts; runner and CI include new HTTP suite. No new dependencies or migrations.
+
+### Verification boundary
+
+Static connector review only. Original design assets were locally inspected but implementation has not been rendered or executed in a browser. Direct Git probe failed DNS, Docker/psql and psycopg unavailable locally; no locked repository tests executed by assistant. Need actual synthetic regression and integration evidence plus desktop/mobile review (UI density, RTL, keyboard focus, permission/empty/error states and contrast). Run:
+
+```bash
+bash -c '
+set -euo pipefail
+cd "$HOME/panadan-m00"
+git pull --ff-only
+git rev-parse HEAD
+git status --short
+./panadan.sh verify --docker --assets
+uv run --locked python -m compileall -q server tests tools
+echo "M01.4 verification PASSED"
+'
+```
+
+Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node passes, 111 disposable integration passes (105 prior + 6 new HTTP/config/template cases), syntax/assets and compileall. Counts are projections, not results. Preview separately using bash tools/preview-knowledge.sh; open http://127.0.0.1:8765/login and review desktop/mobile, switching, role-dependent navigation, mutations and logout with synthetic accounts. No live activation, production deployment, source access or production recovery verification. G1 remains pending until M01.4 evidence and review accepted.
+
+## 8. Milestone ledger
 
 | Milestone | Status | Gate |
 | --- | --- | --- |
 | M00 Baseline/harness | Complete — verified synthetic baseline (owner-reported) and reviewed harness | G0 passed |
-| M01 Workspace security | M01.1–M01.3 verified synthetic (owner-reported); M01.4 not started | G1 pending |
+| M01 Workspace security | M01.1–M01.3 verified synthetic; M01.4 implemented unverified | G1 pending |
 | M02 Resources/privacy | Not started | G1 |
 | M03 Objectives/runs | Not started | G2 |
 | M04 AI gateway/budgets | Not started | G3 |
@@ -206,4 +238,4 @@ Expected 539 offline Python passes, 60 offline environment-dependent skips, 65 N
 | M12 Real-data E1–E3 | Not started / unauthorized | G11 + private approvals |
 | M13 Release/E4 | Not started / unauthorized | Reviewed pilot + release approval |
 
-Next action: obtain explicit authorization for M01.4 scoped UI only: Persian RTL responsive workspace shell, authorized workspace switch/overview, member/access views, route guards and state/access tests for two synthetic workspaces, using the three approved UI references and preserving existing reporting routes. G1 requires M01.4 completion and relevant acceptance evidence. Real activation remains separately gated. No automatic account mapping or runtime activation. Migration, service and test code committed only on authorized branch; no live migration, login/session mutation, runtime app wiring, source records, external connections, paid requests or production changes. Protected refs must be rechecked after commit.
+Next action: review actual M01.4 verification output and synthetic desktop/mobile preview; resolve any issues, close G1 only after evidence, then obtain explicit authorization for M02.1. Real activation remains separately gated. No automatic account mapping or production activation. UI/service/test code committed only on authorized branch; no live migration, login/session mutation, source records, external connections, paid requests or production changes. Protected refs must be rechecked after commit.
