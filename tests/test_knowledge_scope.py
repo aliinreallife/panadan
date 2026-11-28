@@ -344,12 +344,16 @@ def test_legacy_schemas_remain_inaccessible_to_new_roles(db):
     _apply(db)
     db.execute(M005.read_text())
     db.execute(M006.read_text())
+    # Resolve relation OIDs as the fixture administrator so the privilege
+    # checks do not themselves need USAGE on the legacy schemas.
+    oids=[db.execute("SELECT %s::regclass::oid",(table,)).fetchone()[0]
+          for table in ("panadan_ingest.sources","panadan_auth.users")]
     for role in ("panadan_knowledge_authorizer","panadan_knowledge_reader"):
         # Fixed internal role names, never request input.
         db.execute("SET LOCAL ROLE "+role)
-        for table in ("panadan_ingest.sources","panadan_auth.users"):
-            assert db.execute("SELECT has_table_privilege(current_user,%s,'SELECT')",(table,)).fetchone()==(False,)
-            assert db.execute("SELECT has_table_privilege(current_user,%s,'INSERT')",(table,)).fetchone()==(False,)
+        for oid in oids:
+            assert db.execute("SELECT has_table_privilege(current_user,%s::oid,'SELECT')",(oid,)).fetchone()==(False,)
+            assert db.execute("SELECT has_table_privilege(current_user,%s::oid,'INSERT')",(oid,)).fetchone()==(False,)
         db.execute("RESET ROLE")
 
 
