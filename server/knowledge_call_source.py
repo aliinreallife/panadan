@@ -1,5 +1,6 @@
 """Synthetic-only read-only source adapter. Raw text leaves only as transient input."""
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import os
@@ -57,6 +58,13 @@ def _valid_id(value):
     return type(value) is int and 1 <= value <= MAX_ID
 
 
+def _window(event_start, event_end):
+    start, end = map(_utc, (event_start, event_end))
+    if not timedelta(0) < end - start <= MAX_SCOPE_WINDOW:
+        raise ValueError("The source event window must be positive and at most 30 days")
+    return start, end
+
+
 def _verify_source(db):
     profile = db.execute("""SELECT current_database(),session_user,
         current_setting('server_version_num')::int / 10000,
@@ -96,6 +104,7 @@ _PAGE_SQL = """SELECT call_id,operator_key,event_at,changed_at,revision_no,is_de
     coalesce(NOT is_deleted AND octet_length(transcript)>%s,false)
   FROM panadan_synthetic_source.calls
   WHERE operator_key=%s AND event_at>=%s AND event_at<%s AND changed_at<%s
+    AND (%s::timestamptz IS NULL OR changed_at>=%s)
     AND (%s::timestamptz IS NULL OR (changed_at,call_id)>(%s,%s))
   ORDER BY changed_at,call_id
   LIMIT %s"""
@@ -114,19 +123,8 @@ class SyntheticCallReader:
         self._port = port
         self._operator_key = operator_key
 
-    def read_page(self, *, event_start, event_end, changed_before, after=None, limit=MAX_PAGE_SIZE):
-        start, end, cutoff = map(_utc, (event_start, event_end, changed_before))
-        if not timedelta(0) < end - start <= MAX_SCOPE_WINDOW:
-            raise ValueError("The source event window must be positive and at most 30 days")
-        if type(limit) is not int or not 1 <= limit <= MAX_PAGE_SIZE:
-            raise ValueError("Invalid synthetic source page limit")
-        if after is not None:
-            if type(after) is not CallCursor or not _valid_id(after.call_id):
-                raise ValueError("Invalid synthetic source cursor")
-            after = CallCursor(_utc(after.changed_at), after.call_id)
-            if after.changed_at >= cutoff:
-                raise ValueError("The source cursor must precede the change cutoff")
-        after_time, after_id = (after.changed_at, after.call_id) if after else (None, None)
+    @contextmanager
+    def _connect(self):
         if any(value for name, value in os.environ.items() if name.startswith("PG")):
             raise CallSourceUnavailable("Inherited database configuration is not allowed")
         try:
@@ -135,12 +133,31 @@ class SyntheticCallReader:
                     options="-c search_path=pg_catalog -c statement_timeout=3000 -c lock_timeout=1000") as db:
                 db.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                 _verify_source(db)
-                rows = db.execute(_PAGE_SQL, (
-                    MAX_TRANSCRIPT_BYTES, MAX_TRANSCRIPT_BYTES, self._operator_key,
-                    start, end, cutoff, after_time, after_time, after_id, limit,
-                )).fetchall()
+                yield db
         except psycopg.Error:
             raise CallSourceUnavailable("Synthetic call source read failed") from None
+
+    def read_page(self, *, event_start, event_end, changed_before, changed_since=None, after=None, limit=MAX_PAGE_SIZE):
+        start, end = _window(event_start, event_end)
+        cutoff = _utc(changed_before)
+        if type(limit) is not int or not 1 <= limit <= MAX_PAGE_SIZE:
+            raise ValueError("Invalid synthetic source page limit")
+        if changed_since is not None:
+            changed_since = _utc(changed_since)
+            if changed_since >= cutoff:
+                raise ValueError("The change cutoff must follow the lower bound")
+        if after is not None:
+            if type(after) is not CallCursor or not _valid_id(after.call_id):
+                raise ValueError("Invalid synthetic source cursor")
+            after = CallCursor(_utc(after.changed_at), after.call_id)
+            if after.changed_at >= cutoff:
+                raise ValueError("The source cursor must precede the change cutoff")
+        after_time, after_id = (after.changed_at, after.call_id) if after else (None, None)
+        with self._connect() as db:
+            rows = db.execute(_PAGE_SQL, (
+                MAX_TRANSCRIPT_BYTES, MAX_TRANSCRIPT_BYTES, self._operator_key,
+                start, end, cutoff, changed_since, changed_since, after_time, after_time, after_id, limit,
+            )).fetchall()
 
         calls = []
         for call_id, operator, event_at, changed_at, revision, deleted, duration, text, oversize in rows:
@@ -148,8 +165,23 @@ class SyntheticCallReader:
             cursor = CallCursor(_utc(changed_at), call_id)
             if (operator != self._operator_key or not _valid_id(call_id) or not _valid_id(revision)
                     or not start <= event_at < end or cursor.changed_at >= cutoff
+                    or (changed_since is not None and cursor.changed_at < changed_since)
                     or (after is not None and cursor <= after)):
                 raise CallSourceUnavailable("Synthetic call source returned an ambiguous row")
             calls.append(SourceCall(cursor, operator, event_at, revision, deleted, duration, text, oversize))
             after = cursor
         return tuple(calls)
+
+    def check_scope(self, *, known_ids, event_start, event_end):
+        """Check already-collected identities without projecting any source content."""
+        start, end = _window(event_start, event_end)
+        if (type(known_ids) is not tuple or len(known_ids) > MAX_PAGE_SIZE
+                or not all(_valid_id(value) for value in known_ids)):
+            raise ValueError("Invalid collection reconciliation scope")
+        if not known_ids:
+            return {}
+        with self._connect() as db:
+            rows = db.execute("""SELECT call_id,operator_key=%s AND event_at>=%s AND event_at<%s AND NOT is_deleted
+                FROM panadan_synthetic_source.calls WHERE call_id=ANY(%s)""",
+                (self._operator_key, start, end, list(known_ids))).fetchall()
+        return dict(rows)

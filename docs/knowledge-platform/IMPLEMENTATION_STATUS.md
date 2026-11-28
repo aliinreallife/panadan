@@ -4,7 +4,7 @@ Date: 2026-11-28 (last updated)
 Authorization: D-067 roadmap and D-069 owner authorization to complete synthetic implementation through M11 as prerequisite gates pass. D-068 records the three UI references. See the approved [Roadmap](ROADMAP.md).
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G1 passed. M02.1–M02.3 are verified synthetic. G2 is pending.**
+Current gate: **G1 passed. M02.1–M02.4 are verified synthetic. G2 is pending Resource Explorer acceptance.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -234,7 +234,7 @@ Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node pass
 | --- | --- | --- |
 | M00 Baseline/harness | Complete — verified synthetic baseline (owner-reported) and reviewed harness | G0 passed |
 | M01 Workspace security | M01.1–M01.3 verified synthetic; M01.4 accepted with independent browser and regression evidence | G1 passed |
-| M02 Resources/privacy | M02.1–M02.3 verified synthetic; persistence and explorer pending | G1 passed; G2 pending |
+| M02 Resources/privacy | M02.1–M02.4 verified synthetic; Resource Explorer pending | G1 passed; G2 pending |
 | M03 Objectives/runs | Not started | G2 |
 | M04 AI gateway/budgets | Not started | G3 |
 | M05 Observations/aggregation | Not started | G4 |
@@ -266,4 +266,12 @@ Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node pass
 - `call-redaction-v1` processes transient source text in memory. It detects configured contact and identifier forms across Persian, Arabic and Latin digits, common separators, and invisible format characters. It emits typed placeholders, an exact filtered UTF-8 digest, and Unicode code point offsets against the filtered representation. It keeps eligible call duration separate, and returns metadata-only outcomes for absent, oversized, invalid, ambiguous email-like or tombstone input. Raw and filtered text are omitted from their respective object reprs.
 - The existing paginated transcript mask keeps its original offset contract. The new filter uses its own offsets after detection and replacement. Spoken names, addresses, unsupported identifiers and context can remain sensitive. The rule set is limited to synthetic processing, and live retention/disclosure still requires reviewed privacy decisions.
 - 38 selected tests passed, including a real PostgreSQL 18.6 source-to-filter canary and unchanged source content, mixed-script contact and ID fixtures, preserved ordinary prices and dates, evidence spans, rejection outcomes, and existing transcript regressions. Python compilation passed.
-- Next increment is M02.4. Integrate the filtered output with transactional checkpoints, immutable revisions, durable work intent and bounded synthetic collection authorization. Durable no-raw-payload and replay evidence belongs to M02.4. The Resource Explorer remains pending M02.5.
+- At the M02.3 checkpoint, the locked Ubuntu verification rerun passed 570 Python tests with 71 environment-dependent skips, and all 67 Node tests. The same run passed syntax, asset build and Python compilation.
+
+## 12. M02.4 — Transactional collection and checkpoints (verified synthetic)
+
+- Migration 008 adds pre-provisioned bounded checkpoint windows, metadata-only runs and exclusions, and durable revision/scope-change intents. The scoped collector uses a dedicated test-only login. Its owner/authority privileges are fenced by RLS, exact role memberships and lock-only authority policies. There is no collector login in the migration.
+- Collection resolves active service principal, workspace, source contract, operator and versioned policies before opening the separate read-only source connection. It releases owned database locks during the source read and filtering, then locks and rechecks authority and checkpoint before one transactional page commit. Only prepared metadata and filtered text reach the owned database. Current pointers, work intent, outcome and compare-and-set cursor advance together.
+- Overlapping runs can replay prior source keys. Lower markers do not resurrect old state. Equal markers with conflicting filtered content roll the page back and keep the cursor resumable. Tombstones come from explicit source flags. Bounded reconciliation checks the scope of known IDs without fetching text. Signals of reassignment restrict the local resource; missing rows mark it stale.
+- All 130 selected tests passed with disposable PostgreSQL 18.6, including concurrent compare-and-set, expired or withdrawn authority boundaries, read-only credentials, no raw durable canary values, source failures, overlap/tombstone/reconciliation, and the legacy selected suites. Python compilation and shell syntax passed. The migration and service remain synthetic-only. A scheduled reconciliation loop and live source-policy agreements remain future work.
+- Next increment is M02.5 Resource Explorer and Integrations UI, including actual browser acceptance and source/representation authorization tests before G2.
