@@ -118,6 +118,28 @@ class SQLiteIdentityBridge:
         self._store = store
         self._namespace = _namespace(installation)
 
+    def _display_names(self, subjects):
+        """Resolve only a bounded, authorized same-installation member list.
+        
+        Presentation only: labels never grant access. Missing labels stay
+        unknown rather than resolving users by name or another authority.
+        """
+        subjects = tuple(dict.fromkeys(s for s in subjects
+                         if isinstance(s, str) and PROFILE.fullmatch(s)))
+        if not subjects or len(subjects)>100:
+            return {}
+        placeholders = ",".join("?" for _ in subjects)
+        try:
+            with closing(self._store.db()) as db:
+                rows=db.execute(
+                    "SELECT u.profile_id,u.username FROM users u "
+                    "JOIN knowledge_identity_installation i ON i.singleton=1 "
+                    "WHERE i.namespace=? AND u.profile_id IN ("+placeholders+")",
+                    (self._namespace,*subjects)).fetchall()
+                return {row[0]:row[1] for row in rows}
+        except sqlite3.Error:
+            return {}
+
     def resolve_session(self, raw: str | None) -> VerifiedIdentity | None:
         if not isinstance(raw, str) or not 1 <= len(raw) <= 256:
             return None
