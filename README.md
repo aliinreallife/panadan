@@ -338,6 +338,18 @@ customer data before approving retention and recovery practices.
 See [PostgreSQL 18 platform guide](docs/POSTGRESQL_18_PLATFORM.md)
 for setup, security and restore validation.
 
+## Local knowledge workspace preview (synthetic only)
+
+After M01.4 implementation, the separate knowledge workspace can be reviewed locally. This is not a production setup or migration command. Start it in the development checkout, with Docker, uv and npm available:
+
+```bash
+bash tools/preview-knowledge.sh
+```
+
+The launcher builds locked frontend assets, creates a fresh loopback-only disposable PostgreSQL 18.6 container and temporary SQLite authority, applies migrations 004–006 only there, seeds two synthetic workspaces and binds the existing web app to `127.0.0.1:8765`. It launches with a scrubbed environment (no source credentials, production OAuth or private env files). Open http://127.0.0.1:8765/login. The synthetic password and fixture account names are printed in the terminal; sign in with the existing login flow. Admin can switch between both organizations; reader and other have independent read-only scope, and newmember has no workspace permission until explicitly enrolled and granted access. Stop with Ctrl+C to discard the container and temporary auth store. Preview state is not persistent.
+
+The default app remains unchanged: no knowledge routes or preview login redirect without explicit isolated opt-in. Do not enable preview flags, use the fixture password, apply these migrations or run this launcher against production. The preview intentionally uses a fixed, small candidate workspace set, bounded lists and fresh restricted connections. Existing reporting access remains separately authorized; the preview has no source connection. Automated verification and visual review are required before claiming M01.4/G1 completion.
+
 ## Local verification without GitHub Actions minutes
 
 For a clean, **read-only-from-Odoo** quality gate, including detached Git
