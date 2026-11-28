@@ -77,6 +77,7 @@ Evolve the existing read-only reporting product into a reusable organizational k
 | D-065 | Versioned delivery and retention barriers (DM-09) | Use versioned destination projections/outbox and scoped local erasure records/restore barriers. |
 | D-066 | Preferred visual direction with required workflow additions (UI direction) | Adopt the owner-supplied visual reference direction: warm neutral surfaces, muted green/olive accents, restrained borders, editorial typography, compact readable Persian RTL knowledge workspace, responsive layouts. Complete all required PRD workflows in the same design language. |
 | D-067 | Approved implementation roadmap and incremental delivery | Approve ROADMAP.md M00–M13 and U0–U11, use both UI references within D-066, and authorize M00 baseline/harness only. Subsequent increments and live activation remain independently gated. |
+| D-068 | Three complementary UI references | Use the approved visual direction, supplemental interaction concept and owner-supplied interactive prototype as frontend design inputs; do not adopt the prototype backend or expand MVP scope. |
 
 Decision identifiers preserve the original negotiation numbering; gaps intentionally do not expose internal strategy.
 
@@ -143,6 +144,7 @@ This is a living decision register, not a one-time handoff. Every contributor, i
 | 2026-11-26 | D-065 | Owner approved DM-09 — Versioned delivery and retention barriers. |
 | 2026-11-26 | D-066 | Owner approved UI direction — Preferred visual direction with required workflow additions. |
 | 2026-11-26 | D-067 | Owner approved Phase 7 roadmap, use of both UI references and start of Phase 8 M00. |
+| 2026-11-27 | D-068 | Owner approved all three UI references for frontend implementation. |
 
 Append dated entries for future accepted decisions and supersessions. Do not erase prior entries.
 
@@ -654,6 +656,17 @@ Append dated entries for future accepted decisions and supersessions. Do not era
 - Affected documents/components: [ROADMAP.md](ROADMAP.md), [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md), implementation status and test evidence.
 - Authorization boundary: M00 only. No M01 implementation, live queries, production migrations, paid provider calls, external disclosure, PR creation, merge, deployment or source changes authorized by this entry.
 
+### D-068 — Three complementary UI references
+- Date: 2026-11-27
+- Status: Accepted
+- Approval: Owner explicitly requested use of all three UI references when frontend implementation begins.
+- Decision: Use the original approved visual direction, supplemental interaction concept and interactive prototype reviewed in UI_DESIGN_REVIEW.md sections 6–7 as complementary frontend design inputs.
+- Rationale: Reuse concrete interaction patterns without reopening the visual discovery phase.
+- Constraints: D-066 visual direction and approved PRD, architecture, security and data model govern. No prototype backend, duplicate identity, JSONB workspace replacement, unreviewed frontend dependency or new MVP capability. Exact tokens, logo, navigation and detailed screens remain reviewable. No republishing the private archive or example data.
+- Supersedes: None; extends D-066/D-067.
+- Affected documents/components: [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md), frontend milestones U0–U11.
+- Authorization: M01.2 separately authorized by owner; this UI decision does not authorize M01.3, frontend implementation, live data, deployment or migration.
+
 ### Template for future decision details
 
 ```markdown
@@ -719,4 +732,4 @@ Defer broad connector catalogs, full visual builders, advanced knowledge graphs,
 4. Develop incrementally on the feature branch. Preserve existing interfaces, source read-only constraints, production behavior and rollback options.
 5. Verify a complete pilot flow with synthetic or explicitly approved data before deployment; do not deploy or change production without separate authorization.
 
-The initial audit and gap analysis are recorded in [CURRENT_STATE.md](CURRENT_STATE.md) and [GAP_ANALYSIS.md](GAP_ANALYSIS.md); pilot discovery and PRD have been approved, and Phase 5 architecture choices AP-01–AP-10 are accepted as D-047–D-056. Phase 6 data model and UI direction are approved as D-057–D-066. Phase 7 roadmap is approved as D-067. Phase 8 M00 baseline/harness is authorized; subsequent implementation increments and live activation remain separately gated. Do not infer implemented or deployed capabilities from these decisions. See [historical decisions](../DECISIONS.md), [original reporting MVP PRD](../PRD.md), [status](../STATUS.md), [security](../SECURITY.md) and [production operations](../PRODUCTION_OPERATIONS.md). Existing safety/operational rules remain in force until a reviewed migration explicitly supersedes them. Update this document when the product owner approves a changed decision; distinguish accepted decisions from proposals and implementation evidence.
+The initial audit and gap analysis are recorded in [CURRENT_STATE.md](CURRENT_STATE.md) and [GAP_ANALYSIS.md](GAP_ANALYSIS.md); pilot discovery and PRD have been approved, and Phase 5 architecture choices AP-01–AP-10 are accepted as D-047–D-056. Phase 6 data model and UI direction are approved as D-057–D-066. Phase 7 roadmap is approved as D-067. Phase 8 M00 and M01.1 are verified on synthetic evidence; M01.2 is authorized. D-068 adds the third UI reference as a design input. Subsequent increments and live activation remain separately gated. Do not infer implemented or deployed capabilities from these decisions. See [historical decisions](../DECISIONS.md), [original reporting MVP PRD](../PRD.md), [status](../STATUS.md), [security](../SECURITY.md) and [production operations](../PRODUCTION_OPERATIONS.md). Existing safety/operational rules remain in force until a reviewed migration explicitly supersedes them. Update this document when the product owner approves a changed decision; distinguish accepted decisions from proposals and implementation evidence.
