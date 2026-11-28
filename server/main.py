@@ -374,6 +374,7 @@ def dashboard(request: Request):
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
         'selected_operator':None, 'operator_title':None, 'operator_meta':{},
+        'knowledge_preview':os.getenv("PANADAN_KNOWLEDGE_PREVIEW") == "YES",
     })
 
 
@@ -1108,3 +1109,10 @@ if oauth_config.mode == 'oauth':
         _mcp_authenticated, _mcp_transport, oauth_verifier.verify_details
     )
 app.mount('/mcp', _mcp_authenticated)
+
+# Disabled by default; only explicit isolated synthetic preview is supported.
+# The existing reporting and login routes remain unchanged.
+if os.getenv("PANADAN_KNOWLEDGE_PREVIEW") == "YES":
+    from .knowledge_web import PreviewConfig, build_router
+    preview_config = PreviewConfig.from_env(os.environ)
+    app.include_router(build_router(store, templates, preview_config, cookie_name=COOKIE_NAME))
