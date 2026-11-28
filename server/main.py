@@ -51,6 +51,8 @@ oauth_config = OAuthConfig.from_env()
 oauth_verifier = OAuthVerifier(oauth_config) if oauth_config.mode == 'oauth' else None
 COOKIE_SECURE = os.getenv('PANADAN_COOKIE_SECURE', 'true').lower() == 'true'
 COOKIE_NAME = 'panadan_session'
+KNOWLEDGE_PREVIEW_ENABLED = os.getenv('PANADAN_KNOWLEDGE_PREVIEW') == 'YES'
+LOGIN_DESTINATION = '/workspace' if KNOWLEDGE_PREVIEW_ENABLED else '/dashboard'
 PUBLIC_ORIGIN = read_public_origin(cookie_secure=COOKIE_SECURE)
 templates = Jinja2Templates(directory='templates')
 templates.env.filters['date_time'] = lambda value: datetime.fromtimestamp(value, timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if value else '—'
@@ -264,12 +266,12 @@ def healthz(): return {'status':'ok'}
 
 @app.get('/', include_in_schema=False)
 def root(request: Request):
-    return RedirectResponse('/dashboard' if logged_in(request) else '/login', status_code=303)
+    return RedirectResponse(LOGIN_DESTINATION if logged_in(request) else '/login', status_code=303)
 
 
 @app.get('/login', response_class=HTMLResponse, include_in_schema=False)
 def login(request: Request):
-    if logged_in(request): return RedirectResponse('/dashboard', status_code=303)
+    if logged_in(request): return RedirectResponse(LOGIN_DESTINATION, status_code=303)
     nonce = secrets.token_urlsafe(24)
     response = templates.TemplateResponse(request, 'login.html', {'nonce':nonce, 'error':False})
     response.set_cookie('panadan_login_nonce', nonce, httponly=True, secure=COOKIE_SECURE,
@@ -299,7 +301,7 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     store.clear_login_failures(username)
     raw, _ = store.create_session(uid)
     audit_auth_event(uid,'POST /login:success',200)
-    response = RedirectResponse('/dashboard', status_code=303)
+    response = RedirectResponse(LOGIN_DESTINATION, status_code=303)
     response.set_cookie(COOKIE_NAME, raw, max_age=SESSION_SECONDS, httponly=True,
                         secure=COOKIE_SECURE, samesite='lax')
     response.delete_cookie('panadan_login_nonce')
@@ -374,7 +376,7 @@ def dashboard(request: Request):
         'csrf':session['csrf'],'session':session,
         'abilities':{cap:has_capability(session,cap) for cap in CAPABILITIES},
         'selected_operator':None, 'operator_title':None, 'operator_meta':{},
-        'knowledge_preview':os.getenv("PANADAN_KNOWLEDGE_PREVIEW") == "YES",
+        'knowledge_preview':KNOWLEDGE_PREVIEW_ENABLED,
     })
 
 
@@ -1112,7 +1114,7 @@ app.mount('/mcp', _mcp_authenticated)
 
 # Disabled by default; only explicit isolated synthetic preview is supported.
 # The existing reporting and login routes remain unchanged.
-if os.getenv("PANADAN_KNOWLEDGE_PREVIEW") == "YES":
+if KNOWLEDGE_PREVIEW_ENABLED:
     from .knowledge_web import PreviewConfig, build_router
     preview_config = PreviewConfig.from_env(os.environ)
     app.include_router(build_router(store, templates, preview_config, cookie_name=COOKIE_NAME))
