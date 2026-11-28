@@ -56,6 +56,10 @@
 {% if data %}
 <span class="nav-caption">فضای کاری</span>
 <a href="/workspace/{{data.id}}/overview" {% if page=='overview' %}aria-current="page"{% endif %}><span aria-hidden="true">⌂</span> مرور کلی</a>
+{% if 'resource.list' in (data.resource_capabilities or []) %}
+<a href="/workspace/{{data.id}}/resources" {% if page in ('resources','resource') %}aria-current="page"{% endif %}><span aria-hidden="true">▤</span> منابع</a>
+<a href="/workspace/{{data.id}}/integrations" {% if page=='integrations' %}aria-current="page"{% endif %}><span aria-hidden="true">↔</span> اتصال‌ها</a>
+{% endif %}
 {% if 'members.manage' in data.capabilities or 'roles.manage' in data.capabilities %}<span class="nav-caption">سازمان و دسترسی</span>{% endif %}
 {% if 'members.manage' in data.capabilities %}<a href="/workspace/{{data.id}}/members" {% if page=='members' %}aria-current="page"{% endif %}><span aria-hidden="true">♙</span> اعضا</a>{% endif %}
 {% if 'roles.manage' in data.capabilities %}<a href="/workspace/{{data.id}}/roles" {% if page=='roles' %}aria-current="page"{% endif %}><span aria-hidden="true">◇</span> نقش‌ها و دسترسی</a>{% endif %}
@@ -75,10 +79,17 @@
 {% if choices %}<section class="panel"><div class="panel-head"><h2>سازمان‌ها</h2></div>{% for w in choices %}<a class="workspace-row" href="/workspace/{{w.id}}/overview"><span class="org-icon" aria-hidden="true">▥</span><strong>{{w.name}}</strong><bdi class="muted">{{w.slug}}</bdi><span class="arrow" aria-hidden="true">←</span></a>{% endfor %}</section>
 {% else %}<section class="empty"><span class="empty-icon" aria-hidden="true">◇</span><h2>هنوز فضای کاری در دسترس نیست</h2><p>از مدیر سازمان بخواهید عضویت و دسترسی لازم را برای حساب شما فعال کند.</p></section>{% endif %}
 {% else %}
-<div class="page-head"><div><h1>{{pages[page]}}</h1><p>{% if page=='overview' %}وضعیت فضای کاری و دسترسی‌های فعلی شما.{% elif page=='members' %}افزودن اعضای ثبت‌شده و مدیریت عضویت آن‌ها.{% else %}نقش‌های نسخه‌بندی‌شده و مجوزهای صریح این سازمان.{% endif %}</p></div></div>
+<div class="page-head"><div><h1>{{pages[page]}}</h1>
+{% if page=='overview' %}<p>وضعیت فضای کاری و دسترسی‌های فعلی شما.</p>
+{% elif page=='members' %}<p>افزودن اعضای ثبت‌شده و مدیریت عضویت آن‌ها.</p>
+{% elif page=='roles' %}<p>نقش‌های نسخه‌بندی‌شده و مجوزهای صریح این سازمان.</p>
+{% elif page=='resources' %}<p>تماس‌های گردآوری‌شده در محدودهٔ دسترسی شما.</p>
+{% elif page=='integrations' %}<p>وضعیت منابع، قراردادها و محدودهٔ گردآوری تماس‌ها.</p>
+{% endif %}
+</div></div>
 {% if data.limited %}<p class="notice" role="status">حداکثر ۱۰۰ رکورد از هر بخش نمایش داده می‌شود؛ این فهرست کامل نیست.</p>{% endif %}
 {% if page=='overview' %}
-<section class="brief"><div><h2>{{data.name}}</h2><p>هنوز منبع یا یافته‌ای برای نمایش در این فضای کاری وجود ندارد.</p></div><div class="leaf-art" aria-hidden="true"><i></i><i></i><i></i></div></section>
+<section class="brief"><div><h2>{{data.name}}</h2>{% if 'resource.list' in (data.resource_capabilities or []) %}<a class="button secondary" href="/workspace/{{data.id}}/resources">مشاهده منابع</a>{% else %}<p>منبعی برای نمایش با دسترسی فعلی شما در دسترس نیست.</p>{% endif %}</div><div class="leaf-art" aria-hidden="true"><i></i><i></i><i></i></div></section>
 <div class="overview-grid"><section class="panel"><div class="panel-head"><h2>مشخصات فضای کاری</h2><span class="tag active">فعال</span></div><dl class="facts"><dt>شناسهٔ سازمان</dt><dd><bdi>{{data.slug}}</bdi></dd><dt>منطقه زمانی</dt><dd><bdi>{{data.timezone or 'تنظیم نشده'}}</bdi></dd></dl></section>
 <section class="panel"><div class="panel-head"><h2>دسترسی‌های من</h2></div><ul class="permissions">{% for cap in data.capabilities %}<li><span class="checkmark" aria-hidden="true">✓</span>{{labels[cap]}}</li>{% endfor %}</ul></section></div>
 {% if 'members.manage' in data.capabilities or 'roles.manage' in data.capabilities %}
@@ -89,6 +100,8 @@
 <details class="editor"><summary>افزودن عضو موجود <span aria-hidden="true">＋</span></summary><p>شناسهٔ شخص ثبت‌شده را وارد کنید. برای دسترسی، نقش و مجوز را جداگانه تعیین کنید.</p><form method="post" action="/workspace/{{data.id}}/command" class="form-grid">{{hidden('add_member')}}<label>شناسهٔ شخص (UUID)<input name="target" required dir="ltr" maxlength="36"></label><button type="submit">افزودن عضویت</button></form></details>
 <div class="table-wrap" role="region" aria-labelledby="member-list" tabindex="0"><table class="members-table"><thead><tr><th>عضویت</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>
 {% for m in data.members %}<tr><td><strong><bdi>{{m.name}}</bdi></strong>{% if m.id==data.membership_id %}<small class="self">شما</small>{% endif %}{{reference(m.id)}}</td><td><span class="tag {{'active' if m.state=='active' else 'inactive'}}">{{'فعال' if m.state=='active' else 'لغو شده'}}</span></td><td>{% if m.state=='active' and m.id!=data.membership_id %}{{revoke('revoke_membership',m.id,'لغو عضویت')}}{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="3">عضوی برای نمایش وجود ندارد.</td></tr>{% endfor %}</tbody></table></div></section>
+{% elif page in ('resources','resource','integrations') %}
+{% include "knowledge_call_resources.html" %}
 {% elif page=='roles' %}
 <p class="table-scroll-note">برای دیدن همهٔ ستون‌ها، جدول را افقی پیمایش کنید. از کلیدهای جهت‌نما هم می‌توانید استفاده کنید.</p>
 <section class="panel"><div class="panel-head"><div><h2 id="role-list">نقش‌ها</h2><p>نسخه‌های فعال و بازنشسته؛ تغییر تعریف، نسخه جدید می‌سازد.</p></div></div>

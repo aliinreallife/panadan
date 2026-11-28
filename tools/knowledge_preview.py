@@ -13,6 +13,7 @@ from psycopg.types.json import Jsonb
 from server.security import Store
 from server.knowledge_identity import SQLiteIdentityBridge, install_profile_identity
 from server.knowledge_authorization import CAPABILITIES
+from tools.knowledge_preview_resources import collect_preview_resources, seed_preview_resource_scope
 
 PASSWORD = "synthetic-preview-password"
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,11 +39,13 @@ def main():
             raise SystemExit("Refusing non-disposable or initialized database")
         if db.execute("""SELECT count(*) FROM pg_roles WHERE rolname IN
             ('panadan_knowledge_owner','panadan_knowledge_authorizer','panadan_knowledge_reader',
-             'panadan_knowledge_test_login')""").fetchone()!=(0,):
+             'panadan_knowledge_test_login','panadan_knowledge_collector','panadan_knowledge_collector_ci',
+             'panadan_call_source_reader_ci')""").fetchone()!=(0,):
             raise SystemExit("Refusing existing role names")
         db.execute("SELECT set_config('panadan.knowledge_migration_target','panadan_ci',true)")
-        for migration in ("004_knowledge_foundation.sql","005_knowledge_authorization.sql","006_knowledge_rls.sql"):
-            db.execute((ROOT/"database/migrations"/migration).read_text())
+        for migration in ("004_knowledge_foundation.sql","005_knowledge_authorization.sql","006_knowledge_rls.sql",
+                          "007_knowledge_call_resources.sql","008_knowledge_call_collection.sql","009_knowledge_resource_explorer.sql"):
+            db.execute((ROOT/"database/migrations"/migration).read_text(encoding="utf-8"))
         db.execute("CREATE ROLE panadan_knowledge_test_login LOGIN NOINHERIT PASSWORD 'synthetic_knowledge_test_only'")
         db.execute("GRANT CONNECT ON DATABASE panadan_ci TO panadan_knowledge_test_login")
         db.execute("GRANT panadan_knowledge_authorizer,panadan_knowledge_reader TO panadan_knowledge_test_login WITH INHERIT FALSE, SET TRUE")
@@ -64,14 +67,17 @@ def main():
                 VALUES (%s,%s,'human','active') RETURNING id""",(identity.namespace,identity.subject)).fetchone()[0]
         a,r,o,n=[register(uid) for uid in (admin,reader,other,new)]
         workspaces=[]
+        collection_scopes=[]
         for slug,name,person in (("synthetic-a","سازمان نمونه الف",r),("synthetic-b","سازمان نمونه ب",o)):
             w=db.execute("""INSERT INTO panadan_knowledge.workspaces(slug,name,state,timezone)
                 VALUES (%s,%s,'active','Asia/Tehran') RETURNING id""",(slug,name)).fetchone()[0]
             workspaces.append(w)
+            memberships=[]
             for principal,key,label,caps in ((a,"administrator","مدیر فضای کاری",CAPABILITIES),
                                               (person,"reader","مشاهده‌گر",{"workspace.read"})):
                 m=db.execute("""INSERT INTO panadan_knowledge.memberships(workspace_id,principal_id,state)
                     VALUES (%s,%s,'active') RETURNING id""",(w,principal)).fetchone()[0]
+                memberships.append(m)
                 role=db.execute("""INSERT INTO panadan_knowledge.role_versions
                     (workspace_id,role_key,rev,name,capability_set,state)
                     VALUES (%s,%s,1,%s,%s,'active') RETURNING id""",
@@ -82,9 +88,13 @@ def main():
                     db.execute("""INSERT INTO panadan_knowledge.scope_grants
                         (workspace_id,membership_id,capability,grantor,valid_from)
                         VALUES (%s,%s,%s,%s,clock_timestamp()-interval '1 day')""",(w,m,cap,m))
+            collection_scopes.append(seed_preview_resource_scope(
+                db, w, "operator-a" if slug == "synthetic-a" else "operator-b", *memberships,
+                reader_transcript=slug == "synthetic-b"))
+    collect_preview_resources(port, collection_scopes)
     os.environ.update(PANADAN_AUTH_DB=str(path),PANADAN_AUTH_BACKEND="sqlite",
         PANADAN_ADMIN_USER="admin",PANADAN_ADMIN_PASSWORD=PASSWORD,PANADAN_COOKIE_SECURE="false",
-        PANADAN_KNOWLEDGE_PREVIEW="YES",PANADAN_KNOWLEDGE_PREVIEW_ISOLATED="YES",
+        PANADAN_KNOWLEDGE_PREVIEW="YES",PANADAN_KNOWLEDGE_PREVIEW_ISOLATED="YES",PANADAN_KNOWLEDGE_PREVIEW_RESOURCES="YES",
         PANADAN_KNOWLEDGE_PREVIEW_PORT=str(port),PANADAN_KNOWLEDGE_PREVIEW_INSTALLATION=str(installation),
         PANADAN_KNOWLEDGE_PREVIEW_WORKSPACES=",".join(map(str,workspaces)))
     print("Synthetic preview only: http://127.0.0.1:8765/login",flush=True)

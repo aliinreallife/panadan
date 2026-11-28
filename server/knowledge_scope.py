@@ -12,6 +12,7 @@ from psycopg.rows import tuple_row
 
 from .knowledge_authorization import AccessDenied, WorkspaceAuthorization, _uuid
 from .knowledge_identity import SQLiteIdentityBridge
+from .knowledge_resource_views import PAGES as RESOURCE_PAGES, ResourceFilters, resource_view
 
 AUTHOR = "panadan_knowledge_authorizer"
 READER = "panadan_knowledge_reader"
@@ -19,6 +20,7 @@ _SETTINGS = (
     "panadan.workspace_id", "panadan.authority_namespace", "panadan.authority_subject",
     "panadan.target_principal", "panadan.read_authorized", "panadan.policy_epoch",
 )
+_RESOURCE_SETTINGS = ("panadan.resource_member", "panadan.resource_capabilities")
 _COMMANDS = frozenset({
     "create_role", "add_member", "assign_role", "grant_scope", "revoke_membership",
     "revoke_role", "revoke_scope", "retire_role",
@@ -33,11 +35,12 @@ class ScopedWorkspace:
     Only this internal boundary may establish scope. No client can choose
     a DB role, principal, epoch, context value or command implementation.
     """
-    def __init__(self, connection, identity: SQLiteIdentityBridge, *, enabled=False):
+    def __init__(self, connection, identity: SQLiteIdentityBridge, *, enabled=False, resources=False):
         if enabled is not True or type(identity) is not SQLiteIdentityBridge:
             raise AccessDenied("Access denied")
         self._conn = connection
         self._identity = identity
+        self._resources = resources is True
 
     def _clean(self):
         c = self._conn
@@ -77,7 +80,7 @@ class ScopedWorkspace:
                 c.close()
                 raise AccessDenied("Access denied")
             if any(cur.execute("SELECT current_setting(%s,true)",(key,)).fetchone()[0]
-                   not in (None,"") for key in _SETTINGS):
+                   not in (None,"") for key in _SETTINGS + _RESOURCE_SETTINGS):
                 # Never reuse a connection carrying session-level identity.
                 c.close()
                 raise AccessDenied("Access denied")
@@ -113,7 +116,7 @@ class ScopedWorkspace:
                 if operation in ("read_workspace","ui_view"):
                     access = service.authorize(raw,workspace,"workspace.read")
                     page = args[0] if operation == "ui_view" else "overview"
-                    required = {"overview":"workspace.read","members":"members.manage","roles":"roles.manage"}[page]
+                    required = {"members":"members.manage","roles":"roles.manage"}.get(page, "workspace.read")
                     if required != "workspace.read":
                         service.authorize(raw,workspace,required)
                     cur.execute("SELECT set_config('panadan.policy_epoch',%s,true)",(str(access.policy_epoch),))
@@ -144,7 +147,7 @@ class ScopedWorkspace:
                                 result["members"] = view.execute("""SELECT m.id,m.state,m.created_at,m.revoked_at,
                                     CASE WHEN p.authority_namespace=%s THEN p.authority_subject ELSE NULL END AS label_ref
                                     FROM panadan_knowledge.memberships m JOIN panadan_knowledge.principals p ON p.id=m.principal_id
-                                    WHERE m.workspace_id=%s ORDER BY m.created_at,m.id LIMIT 101""",
+                                    WHERE m.workspace_id=%s AND p.kind='human' ORDER BY m.created_at,m.id LIMIT 101""",
                                     (identity.namespace,workspace)).fetchall()
                             if page == "roles":
                                 result["roles"] = view.execute("""SELECT id,role_key,rev,name,state,capability_set
@@ -179,6 +182,26 @@ class ScopedWorkspace:
                             except AccessDenied:
                                 role["capability_set"]=[]
                                 role["invalid"]=True
+                        if self._resources:
+                            source_access = service.authorize_resource_capabilities(raw, workspace)
+                            resource_access, resource_capabilities, _ = source_access
+                            if resource_access != access:
+                                raise AccessDenied("Access denied")
+                            result["resource_capabilities"] = sorted(resource_capabilities)
+                            if page in RESOURCE_PAGES:
+                                required_resource = "resource.read" if page == "resource" else "resource.list"
+                                if required_resource not in resource_capabilities:
+                                    raise AccessDenied("Access denied")
+                                settings = (str(access.membership_id), ",".join(sorted(resource_capabilities)))
+                                for key, value in zip(_RESOURCE_SETTINGS, settings, strict=True):
+                                    cur.execute("SELECT set_config(%s,%s,true)", (key, value))
+                                cur.execute("SET LOCAL TIME ZONE 'UTC'")
+                                cur.execute("SET LOCAL ROLE panadan_knowledge_reader")
+                                with c.cursor(row_factory=dict_row) as view:
+                                    result.update(resource_view(view, workspace, page, args[1], args[2]))
+                                cur.execute("SET LOCAL ROLE panadan_knowledge_authorizer")
+                                if service.authorize_resource_capabilities(raw, workspace) != source_access:
+                                    raise AccessDenied("Access denied")
                         if service.authorize(raw,workspace,required) != access:
                             raise AccessDenied("Access denied")
                         if service.authorize(raw,workspace,"workspace.read") != access:
@@ -211,10 +234,15 @@ class ScopedWorkspace:
     def read_workspace(self, raw, workspace):
         return self._invoke(raw,workspace,"read_workspace",(),{})
 
-    def ui_view(self, raw, workspace, page):
-        if page not in ("overview","members","roles"):
+    def ui_view(self, raw, workspace, page, *, resource_id=None, filters=None):
+        allowed = page in ("overview","members","roles") or (self._resources and page in RESOURCE_PAGES)
+        if not allowed or (page == "resource" and resource_id is None):
             raise AccessDenied("Access denied")
-        return self._invoke(raw,workspace,"ui_view",(page,),{})
+        if resource_id is not None:
+            _uuid(resource_id)
+        if filters is not None and type(filters) is not ResourceFilters:
+            raise AccessDenied("Access denied")
+        return self._invoke(raw,workspace,"ui_view",(page,resource_id,filters or ResourceFilters()),{})
 
     def ui_command(self, raw, workspace, operation, *args, **kwargs):
         if type(operation) is not str or operation not in _COMMANDS:

@@ -1,0 +1,111 @@
+{% set availability = {'active':'در دسترس','restricted':'محدود شده','stale':'نیازمند بازبینی','deleted':'حذف در مبدأ','unknown':'نامشخص'} %}
+{% set root = '/workspace/' ~ data.id %}
+{% macro timestamp(value) %}
+{% if value %}<time datetime="{{value.isoformat()}}"><bdi>{{value.strftime('%Y-%m-%d %H:%M')}} UTC</bdi></time>{% else %}—{% endif %}
+{% endmacro %}
+{% macro status(value) %}
+<span class="tag {{'active' if value == 'active' else 'inactive' if value in ('restricted','deleted') else ''}}">{{availability.get(value,'نامشخص')}}</span>
+{% endmacro %}
+
+{% if page == 'resources' %}
+<form method="get" action="{{root}}/resources" class="resource-filters form-grid" aria-label="فیلتر منابع">
+  <label>شناسهٔ تماس<input type="search" name="call" inputmode="numeric" dir="ltr" maxlength="19" value="{{data.filters.call}}"></label>
+  <label>منبع<select name="source"><option value="">همهٔ منابع مجاز</option>{% for source in data.sources %}<option value="{{source.id}}" {% if source.id == data.filters.source %}selected{% endif %}>{{source.label}}</option>{% endfor %}</select></label>
+  <label>وضعیت<select name="state"><option value="">همهٔ وضعیت‌ها</option>{% for key, label in availability.items() %}<option value="{{key}}" {% if key == data.filters.state %}selected{% endif %}>{{label}}</option>{% endfor %}</select></label>
+  <button type="submit">جست‌وجو</button>
+  {% if data.filters.source or data.filters.call or data.filters.state %}<a class="button secondary" href="{{root}}/resources">پاک کردن فیلترها</a>{% endif %}
+</form>
+{% if data.resources %}
+<section class="panel" aria-labelledby="resource-list">
+  <div class="panel-head"><h2 id="resource-list">تماس‌ها</h2></div>
+  <ul class="resource-list">
+  {% for resource in data.resources %}
+    <li class="resource-row">
+      <div><strong>تماس <bdi>{{resource.external_id}}</bdi></strong><span>{{resource.label}}</span></div>
+      <div>{{timestamp(resource.event_at)}}{{status(resource.availability)}}</div>
+      {% if resource.openable %}<a class="button secondary" aria-label="جزئیات تماس {{resource.external_id}}" href="{{root}}/resources/{{resource.id}}{% if data.query %}?{{data.query}}{% endif %}">جزئیات</a>{% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+  {% if data.next_page or data.filters.after %}
+  <div class="resource-pagination">
+    {% if data.next_page %}<a class="button secondary" href="{{root}}/resources?{{data.next_page}}">صفحهٔ بعد</a>{% endif %}
+    {% if data.filters.after %}<a class="plain" href="{{root}}/resources{% if data.filters.query() %}?{{data.filters.query()}}{% endif %}">ابتدای فهرست</a>{% endif %}
+  </div>
+  {% endif %}
+</section>
+{% else %}
+<section class="empty"><h2>تماسی برای نمایش پیدا نشد</h2><p>محدودهٔ دسترسی و فیلترهای فعلی را بررسی کنید.</p></section>
+{% endif %}
+
+{% elif page == 'resource' %}
+{% set resource = data.resource %}
+{% if 'resource.list' in data.resource_capabilities %}
+<a class="button secondary resource-back" href="{{root}}/resources{% if data.query %}?{{data.query}}{% endif %}">بازگشت به منابع</a>
+{% else %}<a class="button secondary resource-back" href="{{root}}/overview">بازگشت به فضای کاری</a>{% endif %}
+<section class="panel">
+  <div class="panel-head"><h2>تماس <bdi>{{resource.external_id}}</bdi></h2>{{status(resource.availability)}}</div>
+  <dl class="facts">
+    <dt>منبع</dt><dd>{{resource.label}}</dd>
+    <dt>زمان تماس</dt><dd>{{timestamp(resource.event_at)}}</dd>
+    <dt>مدت تماس</dt><dd>{% if resource.duration is not none %}{{resource.duration}} ثانیه{% else %}نامشخص{% endif %}</dd>
+    <dt>نسخهٔ کنونی</dt><dd>{{resource.rev}}</dd>
+  </dl>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>متن پالایش‌شده</h2></div>
+  {% if data.transcript %}
+  <div class="resource-transcript" dir="auto">{{data.transcript.text_payload}}</div>
+  {% else %}
+  <p class="resource-message">{% if resource.transcript_outcome == 'transcript_missing' %}متنی برای این تماس دریافت نشده است.
+     {% elif resource.availability == 'restricted' %}متن این تماس محدود شده است.
+     {% elif resource.availability == 'stale' %}برای نمایش متن، محدودهٔ تماس باید دوباره تأیید شود.
+     {% else %}متن برای نمایش در دسترس نیست.{% endif %}</p>
+  {% endif %}
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>تاریخچهٔ نسخه‌ها</h2></div>
+  <ul class="resource-list">
+    {% for revision in data.versions %}
+    <li class="resource-row history-row"><strong>نسخهٔ {{revision.rev}}</strong><span>{{'حذف در مبدأ' if revision.operation == 'tombstone' else 'نسخهٔ گردآوری‌شده'}}</span>{{timestamp(revision.observed_at)}}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+{% else %}
+<section class="panel">
+  <div class="panel-head"><h2>منابع ثبت‌شده</h2></div>
+  <ul class="resource-list">
+    {% for source in data.sources %}
+    <li class="resource-row">
+      <div><strong>{{source.label}}</strong><span>{% if source.rev %}قرارداد نسخهٔ {{source.rev}} · {{'تأیید شده برای دادهٔ ساختگی' if source.contract_state == 'synthetic' else 'آمادهٔ اجرا نیست'}}{% else %}قراردادی ثبت نشده است{% endif %}</span></div>
+      <span class="tag {{'active' if source.state == 'active' else ''}}">{{{'active':'فعال','disabled':'غیرفعال','retired':'بازنشسته'}.get(source.state,'نامشخص')}}</span>
+      <a class="button secondary" href="{{root}}/resources?source={{source.id}}">تماس‌ها</a>
+    </li>
+    {% else %}<li class="resource-message">منبع مجازی برای نمایش وجود ندارد.</li>
+    {% endfor %}
+  </ul>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>محدوده و وضعیت گردآوری</h2></div>
+  {% for scope in data.sync_scopes %}
+  <article class="sync-scope">
+    <h3>{{scope.source_label}} <span class="muted">· {{scope.operator_label}}</span></h3>
+    <dl class="facts">
+      <dt>از</dt><dd>{{timestamp(scope.event_start)}}</dd>
+      <dt>تا (انحصاری)</dt><dd>{{timestamp(scope.event_end)}}</dd>
+      <dt>وضعیت</dt><dd>{{'متوقف شده' if scope.state == 'blocked' else 'کامل' if scope.finished else 'در انتظار ادامه'}}</dd>
+      {% if scope.created_at %}
+      <dt>آخرین دسته</dt><dd>{{timestamp(scope.created_at)}}</dd>
+      {% if scope.state == 'succeeded' %}
+      <dt>نتیجهٔ آخرین دسته</dt><dd>{{scope.examined}} بررسی، {{scope.accepted}} ثبت، {{scope.unchanged}} بدون تغییر، {{scope.excluded}} کنار گذاشته</dd>
+      {% else %}
+      <dt>علت توقف</dt><dd>{{{'source_read_failed':'اختلال در خواندن منبع','revision_conflict':'ناسازگاری نسخهٔ منبع','source_scope_changed':'تغییر محدودهٔ منبع'}.get(scope.reason_code,'نامشخص')}}</dd>
+      {% endif %}
+      {% endif %}
+    </dl>
+  </article>
+  {% else %}<p class="resource-message">گردآوری در محدودهٔ مجاز شما ثبت نشده است.</p>
+  {% endfor %}
+</section>
+{% endif %}

@@ -2,8 +2,8 @@
 
 Uses a caller-managed owned PG transaction/connection. M01.3 must provide
 the narrow trusted role/context; no runtime grants or production DSN here.
-Only operational workspace administration via current SQLite browser session
-is supported. Data, source, API/MCP and service grants remain denied.
+The current SQLite browser session gates workspace administration and
+synthetic source reads. External clients and service principals are separate.
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from psycopg.types.json import Jsonb
 from .knowledge_identity import SQLiteIdentityBridge
 
 CAPABILITIES = frozenset({"workspace.read", "members.manage", "roles.manage"})
+RESOURCE_CAPABILITIES = frozenset({"resource.list", "resource.read", "representation.read"})
 ROLE_TEMPLATES = {
     "workspace_reader": ("workspace.read",),
     "workspace_administrator": ("workspace.read", "members.manage", "roles.manage"),
@@ -30,7 +31,7 @@ class AccessDenied(Exception):
 
 
 def _caps(value) -> frozenset[str]:
-    if (not isinstance(value, list) or any(type(x) is not str or x not in CAPABILITIES for x in value)
+    if (not isinstance(value, list) or any(type(x) is not str or x not in CAPABILITIES | RESOURCE_CAPABILITIES for x in value)
             or len(set(value)) != len(value)):
         raise AccessDenied("Access denied")
     return frozenset(value)
@@ -113,7 +114,7 @@ class WorkspaceAuthorization:
         effective = {g["capability"]: _earliest(ceiling[g["capability"]],g["valid_until"])
                      for g in grants if g["capability"] in ceiling}
         access = WorkspaceAccess(workspace,m["principal_id"],m["id"],w["policy_epoch"],frozenset(effective))
-        return access,effective,now
+        return access,effective,now,ceiling
 
     def authorize(self, raw, workspace: UUID, capability: str, *,
                   channel: str = "web", purpose: str = PURPOSE,
@@ -124,13 +125,40 @@ class WorkspaceAuthorization:
             raise AccessDenied("Access denied")
         identity = self._current(raw)
         with self._conn.transaction(), self._conn.cursor(row_factory=dict_row) as cur:
-            access,effective,_ = self._load(cur,workspace,identity)
+            access,effective,_,_ = self._load(cur,workspace,identity)
             if capability not in access.capabilities or self._current(raw) != identity:
                 raise AccessDenied("Access denied")
             now = cur.execute("SELECT clock_timestamp() AS t").fetchone()["t"]
             if effective[capability] is not None and effective[capability] <= now:
                 raise AccessDenied("Access denied")
             return access
+
+    def authorize_resource_capabilities(self, raw, workspace):
+        """Resolve and lock the current member's resource grants for this read."""
+        identity = self._current(raw)
+        with self._conn.transaction(), self._conn.cursor(row_factory=dict_row) as cur:
+            access, effective, now, ceiling = self._load(cur, workspace, identity)
+            if "workspace.read" not in effective:
+                raise AccessDenied("Access denied")
+            grants = cur.execute("""SELECT id,capability,valid_until FROM panadan_knowledge.source_scope_grants
+                WHERE workspace_id=%s AND membership_id=%s AND capability=ANY(%s)
+                  AND revoked_at IS NULL AND valid_from<=%s AND (valid_until IS NULL OR valid_until>%s)
+                ORDER BY id FOR SHARE""",
+                (workspace, access.membership_id, sorted(RESOURCE_CAPABILITIES), now, now)).fetchall()
+            checked_at = cur.execute("SELECT clock_timestamp() AS t").fetchone()["t"]
+            if self._current(raw) != identity or (effective["workspace.read"] is not None
+                    and effective["workspace.read"] <= checked_at):
+                raise AccessDenied("Access denied")
+            capabilities = set()
+            grant_ids = []
+            for grant in grants:
+                capability = grant["capability"]
+                if capability in ceiling:
+                    deadline = _earliest(ceiling[capability], grant["valid_until"])
+                    if deadline is None or deadline > checked_at:
+                        capabilities.add(capability)
+                        grant_ids.append(grant["id"])
+            return access, frozenset(capabilities), tuple(grant_ids)
 
     @staticmethod
     def _delegate(effective, required, capabilities, until, now):
@@ -158,7 +186,7 @@ class WorkspaceAuthorization:
     def _change(self, raw, workspace, required, action, target_kind, operation):
         identity = self._current(raw)
         with self._conn.transaction(), self._conn.cursor(row_factory=dict_row) as cur:
-            access,effective,now = self._load(cur,workspace,identity)
+            access,effective,now,_ = self._load(cur,workspace,identity)
             if required not in effective:
                 raise AccessDenied("Access denied")
             target = operation(cur,access,effective,now)

@@ -18,6 +18,7 @@ from fastapi.responses import RedirectResponse
 from .ingress import valid_form_origin
 from .knowledge_authorization import AccessDenied, CAPABILITIES
 from .knowledge_identity import SQLiteIdentityBridge
+from .knowledge_resource_views import PAGES as RESOURCE_PAGES, ResourceFilters, parse_uuid
 from .knowledge_scope import ScopedWorkspace
 from .security import Store, has_capability
 
@@ -26,9 +27,11 @@ from .security import Store, has_capability
 HEADERS = {"Cache-Control": "no-store, private", "Pragma": "no-cache",
            "Referrer-Policy": "same-origin", "X-Content-Type-Options": "nosniff",
            "Content-Security-Policy": "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"}
-PAGES = {"overview": "مرور کلی", "members": "اعضا", "roles": "نقش‌ها و دسترسی"}
+PAGES = {"overview": "مرور کلی", "members": "اعضا", "roles": "نقش‌ها و دسترسی",
+         "resources": "منابع", "resource": "جزئیات تماس", "integrations": "اتصال‌ها"}
 LABELS = {"workspace.read": "مشاهده فضای کاری", "members.manage": "مدیریت اعضا",
-          "roles.manage": "مدیریت نقش‌ها و دسترسی"}
+          "roles.manage": "مدیریت نقش‌ها و دسترسی", "resource.list": "فهرست منابع",
+          "resource.read": "مشاهده منبع", "representation.read": "مشاهده متن پالایش‌شده"}
 ACTIONS = {"add_member": "members", "revoke_membership": "members",
            "create_role": "roles", "assign_role": "roles", "grant_scope": "roles",
            "revoke_scope": "roles", "revoke_role": "roles", "retire_role": "roles"}
@@ -39,6 +42,7 @@ class PreviewConfig:
     port: int
     installation: UUID
     candidates: tuple[UUID, ...]
+    resources: bool = False
 
     @classmethod
     def from_env(cls, env):
@@ -60,7 +64,7 @@ class PreviewConfig:
                 raise ValueError()
         except (KeyError,ValueError):
             raise ValueError("Explicit synthetic installation and workspace candidates required") from None
-        return cls(int(raw_port),installation,candidates)
+        return cls(int(raw_port),installation,candidates,env.get("PANADAN_KNOWLEDGE_PREVIEW_RESOURCES") == "YES")
 
 
 def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name="panadan_session"):
@@ -78,7 +82,7 @@ def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name=
         with psycopg.connect(host="127.0.0.1",port=config.port,dbname="panadan_ci",
                 user="panadan_knowledge_test_login",password="synthetic_knowledge_test_only",
                 connect_timeout=3,autocommit=True,sslmode="disable") as conn:
-            yield ScopedWorkspace(conn,bridge,enabled=True)
+            yield ScopedWorkspace(conn,bridge,enabled=True,resources=config.resources)
 
     def render(request, **context):
         status=context.pop("status_code",200)
@@ -126,19 +130,19 @@ def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name=
         except (AccessDenied,psycopg.Error):
             return unavailable(request)
 
-    @router.get("/{workspace_id}/{page}")
-    def page(request: Request, workspace_id: str, page: str):
+    def workspace_page(request, workspace_id, page, resource_id=None, filters=None):
         raw,session=auth(request)
         try:
             workspace=UUID(workspace_id)
         except ValueError:
             return denied(request)
-        if not session or workspace not in config.candidates or page not in PAGES:
+        if (not session or workspace not in config.candidates or page not in PAGES
+                or (page in RESOURCE_PAGES and not config.resources)):
             return denied(request)
         try:
             with scoped() as svc:
                 choices=choices_for(svc,raw)
-                data=svc.ui_view(raw,workspace,page)
+                data=svc.ui_view(raw,workspace,page,resource_id=resource_id,filters=filters)
                 if bridge.resolve_session(raw) is None:
                     return denied(request)
                 return render(request,choices=choices,data=data,page=page,**base_context(session))
@@ -146,6 +150,25 @@ def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name=
             return denied(request)
         except psycopg.Error:
             return unavailable(request)
+
+    @router.get("/{workspace_id}/resources/{resource_id}")
+    def resource_detail(request: Request, workspace_id: str, resource_id: str,
+                        source: str="", call: str="", state: str="", after: str=""):
+        try:
+            filters = ResourceFilters.parse(source, call, state, after)
+            key = parse_uuid(resource_id)
+        except AccessDenied:
+            return denied(request)
+        return workspace_page(request,workspace_id,"resource",resource_id=key,filters=filters)
+
+    @router.get("/{workspace_id}/{page}")
+    def page(request: Request, workspace_id: str, page: str,
+             source: str="", call: str="", state: str="", after: str=""):
+        try:
+            filters = ResourceFilters.parse(source, call, state, after) if page == "resources" else None
+        except AccessDenied:
+            return denied(request)
+        return workspace_page(request,workspace_id,page,filters=filters)
 
     @router.post("/{workspace_id}/command")
     def command(request: Request, workspace_id: str, operation: str=Form(...),

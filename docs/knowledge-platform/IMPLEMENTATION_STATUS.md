@@ -4,7 +4,7 @@ Date: 2026-11-28 (last updated)
 Authorization: D-067 roadmap and D-069 owner authorization to complete synthetic implementation through M11 as prerequisite gates pass. D-068 records the three UI references. See the approved [Roadmap](ROADMAP.md).
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G1 passed. M02.1–M02.4 are verified synthetic. G2 is pending Resource Explorer acceptance.**
+Current gate: **G2 passed on synthetic call collection, privacy and Resource Explorer evidence. M03 is authorized under D-069.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -234,8 +234,8 @@ Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node pass
 | --- | --- | --- |
 | M00 Baseline/harness | Complete — verified synthetic baseline (owner-reported) and reviewed harness | G0 passed |
 | M01 Workspace security | M01.1–M01.3 verified synthetic; M01.4 accepted with independent browser and regression evidence | G1 passed |
-| M02 Resources/privacy | M02.1–M02.4 verified synthetic; Resource Explorer pending | G1 passed; G2 pending |
-| M03 Objectives/runs | Not started | G2 |
+| M02 Resources/privacy | M02.1–M02.5 accepted synthetic | G2 passed |
+| M03 Objectives/runs | Ready for M03.1 | G2 passed |
 | M04 AI gateway/budgets | Not started | G3 |
 | M05 Observations/aggregation | Not started | G4 |
 | M06 Knowledge/review/taxonomy | Not started | G5 |
@@ -274,4 +274,11 @@ Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node pass
 - Collection resolves active service principal, workspace, source contract, operator and versioned policies before opening the separate read-only source connection. It releases owned database locks during the source read and filtering, then locks and rechecks authority and checkpoint before one transactional page commit. Only prepared metadata and filtered text reach the owned database. Current pointers, work intent, outcome and compare-and-set cursor advance together.
 - Overlapping runs can replay prior source keys. Lower markers do not resurrect old state. Equal markers with conflicting filtered content roll the page back and keep the cursor resumable. Tombstones come from explicit source flags. Bounded reconciliation checks the scope of known IDs without fetching text. Signals of reassignment restrict the local resource; missing rows mark it stale.
 - All 130 selected tests passed with disposable PostgreSQL 18.6, including concurrent compare-and-set, expired or withdrawn authority boundaries, read-only credentials, no raw durable canary values, source failures, overlap/tombstone/reconciliation, and the legacy selected suites. Python compilation and shell syntax passed. The migration and service remain synthetic-only. A scheduled reconciliation loop and live source-policy agreements remain future work.
-- Next increment is M02.5 Resource Explorer and Integrations UI, including actual browser acceptance and source/representation authorization tests before G2.
+## 13. M02.5 — Resource Explorer and Integrations (accepted synthetic)
+
+- Migration 009 adds narrowly scoped browser projections. Active workspace membership, role ceiling and explicit current source or operator grants intersect. General workspace access cannot expose resources. Metadata and transcript rights are separate. Current revision, source/operator eligibility, resource availability and representation expiry are checked before any filtered text is returned. Historical revisions expose lineage metadata only. The default app retains its separate isolated-preview flag boundary.
+- The Persian RTL UI browses bounded pages of calls, filters by authorized source, call ID and availability, and returns to the filter from details. Details show source/time/duration, current eligible filtered transcript and visible version lineage. Integrations shows registered sources, current contract revision, scoped windows and the latest recorded batch within each displayed window. Source controls are read-only.
+- The standard preview now bootstraps two isolated workspaces and a separate temporary synthetic call source with its own read-only login. It runs the collector and reconciliation before starting the browser app. Fixture accounts exercise full filtered access, metadata-only access, and unauthorized direct links. No production, customer records or external service is involved.
+- Chromium/Playwright exercised the actual collector-backed preview at 1440, 390 and 320 CSS pixels. Nine sampled states passed the configured axe WCAG 2.0/2.1 A/AA checks and RTL/overflow checks. It verified mixed Persian/Arabic-digit search, scoped navigation, filter restoration, cross-workspace denial, missing/deleted/restricted text and metadata-only access. Screenshots were captured and inspected. The M01.4 signed-in account management, revocation, keyboard and logout workflows also passed again on this preview.
+- 134 selected PostgreSQL 18.6 tests passed, including same-workspace operator isolation, exact direct-ID denial, role and explicit grant intersection, expiry, pagination, and the earlier collector and workspace tests. Locked offline verification reported 571 Python passes and 81 environment-dependent skips, 67 Node passes, valid syntax, assets and Python compilation. A native PostgreSQL custom-format dump of the disposable owned knowledge schema was examined. The raw synthetic phone canary remained in the separate source and was absent from the owned dump and PostgreSQL log, while the filtered marker was present in the dump.
+- G2 is accepted for the synthetic call subset of AT-02/03 and DM-T02/03/04. Live source contracts, retention/erasure operations, manual/web fixtures, external access and deployment remain separately gated. M03.1 is next under D-069.
