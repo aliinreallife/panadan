@@ -59,6 +59,21 @@ class ScopedWorkspace:
             if row != ("panadan_ci",18,True,True,True,True,False):
                 c.close()
                 raise AccessDenied("Access denied")
+            memberships = cur.execute("""SELECT parent.rolname,m.admin_option,m.inherit_option,m.set_option
+                FROM pg_catalog.pg_auth_members m
+                JOIN pg_catalog.pg_roles parent ON parent.oid=m.roleid
+                JOIN pg_catalog.pg_roles child ON child.oid=m.member
+                WHERE child.rolname=session_user""").fetchall()
+            if (set(memberships) != {(AUTHOR,False,False,True),(READER,False,False,True)}
+                    or cur.execute("SELECT has_schema_privilege(session_user,'panadan_knowledge','USAGE')").fetchone()[0]):
+                c.close()
+                raise AccessDenied("Access denied")
+            if cur.execute("""SELECT count(*) FROM pg_catalog.pg_roles
+                WHERE rolname IN ('panadan_knowledge_authorizer','panadan_knowledge_reader')
+                AND NOT (rolcanlogin OR rolinherit OR rolsuper OR rolcreatedb OR rolcreaterole
+                         OR rolreplication OR rolbypassrls)""").fetchone() != (2,):
+                c.close()
+                raise AccessDenied("Access denied")
             if any(cur.execute("SELECT current_setting(%s,true)",(key,)).fetchone()[0]
                    not in (None,"") for key in _SETTINGS):
                 # Never reuse a connection carrying session-level identity.
@@ -70,8 +85,16 @@ class ScopedWorkspace:
         identity = self._identity.resolve_session(raw)
         if identity is None:
             raise AccessDenied("Access denied")
-        self._clean()
         c = self._conn
+        # An active caller-owned transaction is rejected without committing
+        # or rolling it back. Invalid idle connections are discarded.
+        if c.closed or not c.autocommit or c.info.transaction_status != TransactionStatus.IDLE:
+            raise AccessDenied("Access denied")
+        try:
+            self._clean()
+        except BaseException:
+            c.close()
+            raise
         try:
             with c.transaction(), c.cursor(row_factory=tuple_row) as cur:
                 cur.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
