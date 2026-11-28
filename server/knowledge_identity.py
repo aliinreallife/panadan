@@ -56,7 +56,8 @@ def install_profile_identity(store: Store, installation: UUID, *, confirmed: boo
                 "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='users'"
             )}
             required = {"knowledge_profile_insert_guard", "knowledge_profile_allocate",
-                        "knowledge_profile_immutable", "knowledge_account_no_delete"}
+                        "knowledge_profile_immutable", "knowledge_account_no_delete",
+                        "knowledge_username_replace_guard"}
             if (not row or row[0] != namespace or not required <= triggers
                     or any(not isinstance(r[0], str) or not PROFILE.fullmatch(r[0])
                            for r in db.execute("SELECT profile_id FROM users"))):
@@ -87,6 +88,9 @@ def install_profile_identity(store: Store, installation: UUID, *, confirmed: boo
             WHEN NEW.id IS NOT OLD.id OR
                  (OLD.profile_id IS NOT NULL AND NEW.profile_id IS NOT OLD.profile_id)
             BEGIN SELECT RAISE(ABORT,'Knowledge account identity is immutable'); END""")
+        db.execute("""CREATE TRIGGER knowledge_username_replace_guard BEFORE UPDATE OF username ON users
+            WHEN EXISTS(SELECT 1 FROM users WHERE username=NEW.username AND id<>OLD.id)
+            BEGIN SELECT RAISE(ABORT,'Replacement identity forbidden'); END""")
         db.execute("""CREATE TRIGGER knowledge_account_no_delete BEFORE DELETE ON users
             BEGIN SELECT RAISE(ABORT,'Deactivate the account instead of deleting it'); END""")
 
