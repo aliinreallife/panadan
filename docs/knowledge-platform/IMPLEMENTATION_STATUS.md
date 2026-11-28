@@ -4,7 +4,7 @@ Date: 2026-11-27 (last updated)
 Authorization: D-067 roadmap; M00 and M01.1 verified; owner explicitly authorized M01.2 on 2026-11-27. D-068 approves all three UI references for frontend increments only. [Roadmap](ROADMAP.md) approved.
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G0 passed; M01.1 verified; M01.2 implemented but unverified pending local synthetic test execution. G1 remains pending.**
+Current gate: **G0 passed; M01.1 verified; M01.2 first offline run had two test setup failures, corrected; full rerun pending. G1 remains pending.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -152,14 +152,14 @@ echo "M01.2 verification PASSED"
 '
 ```
 
-Expected 5 extra offline test cases and 12 extra PG integration cases relative to M01.1; actual results must be reviewed. Do not call profile installation or apply migrations on any real auth or owned database. No production bootstrap or restore guarantee yet. M01.2 remains unverified; M01.3 requires test evidence and explicit authorization. Existing legacy app behavior remains unchanged because no new entrypoints are wired.
+Owner-reported first local verification: 537 passed, 48 skipped and two failed in 47.11s in the offline suite. Both failures are in test_knowledge_identity.py: the stable-profile test created a fresh session before asserting pre-installation session invalidation; the logout/disable/expiry test tried to use the invalidated pre-installation session. Actual observations were consistent with the intended one-time session invalidation. Commit e29867a7c278cc5373ceafdd234e055d23955860 fixes both test setups, explicitly verifies fresh login and leaves identity/authorization implementation and migrations unchanged. The offline gate stopped before Node, syntax, assets and PostgreSQL tests; no M01.2 integration result yet. Rerun the full verification command above. Expected 539 offline passes, 48 offline database-dependent skips, 65 Node passes, and 93 disposable PG integration passes; do not mark verified until actual results are reviewed. Do not call profile installation or apply migrations on any real auth or owned database. No production bootstrap or restore guarantee yet. M01.2 remains unverified; M01.3 requires test evidence and explicit authorization. Existing legacy app behavior remains unchanged because no new entrypoints are wired.
 
 ## 6. Milestone ledger
 
 | Milestone | Status | Gate |
 | --- | --- | --- |
 | M00 Baseline/harness | Complete — verified synthetic baseline (owner-reported) and reviewed harness | G0 passed |
-| M01 Workspace security | M01.1 verified synthetic; M01.2 implemented unverified; M01.3–M01.4 not started | G1 pending |
+| M01 Workspace security | M01.1 verified synthetic; M01.2 test setup corrected, full rerun pending; M01.3–M01.4 not started | G1 pending |
 | M02 Resources/privacy | Not started | G1 |
 | M03 Objectives/runs | Not started | G2 |
 | M04 AI gateway/budgets | Not started | G3 |
