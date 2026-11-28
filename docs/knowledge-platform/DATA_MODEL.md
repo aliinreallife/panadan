@@ -78,6 +78,8 @@ erDiagram
 
 ### Odoo source field mapping (pending contract)
 
+Migration 007 implements the initial synthetic call subset of the resource model. `operator_scopes` keeps stable source-local IDs, and `contract_operator_scopes` pins which operators belong to each contract version. `source_scope_grants` is separate from operational workspace grants and requires an explicit source or operator target. The synthetic v1 contract uses a positive numeric call ID, an explicit UTC event timestamp and a monotonic revision number. The schema currently accepts integer call duration and filtered transcripts with a payload digest. Future attributes, source kinds and live contracts require reviewed migrations and runtime checks.
+
 | Source field | Proposed representation | Rule |
 | --- | --- | --- |
 | id | external_id | Verify stable uniqueness across joins/time; duplicate IDs cannot silently collapse calls |
