@@ -6,16 +6,22 @@ from .knowledge_authorization import AccessDenied
 PAGES = {"objectives":"objective.configure", "pipelines":"pipeline.configure", "runs":"pipeline.run"}
 
 
-def studio_view(db, workspace, page):
+def studio_view(db, workspace, page, *, objective_authoring=False):
     if page == "objectives":
-        objectives = db.execute("""SELECT v.label,v.purpose,v.rev,v.input_kind,v.state,t.label AS template
+        objectives = db.execute("""SELECT o.objective_key,v.label,v.purpose,v.rev,v.input_kind,v.state,t.label AS template
             FROM panadan_knowledge.objectives o JOIN panadan_knowledge.objective_versions v
               ON v.workspace_id=o.workspace_id AND v.id=o.current_version_id
             LEFT JOIN panadan_knowledge.objective_templates t ON t.id=v.template_id
             WHERE o.workspace_id=%s ORDER BY v.label,o.id LIMIT 30""",(workspace,)).fetchall()
-        templates = db.execute("""SELECT label,input_kind FROM panadan_knowledge.objective_templates
+        templates = db.execute("""SELECT template_key,label,input_kind FROM panadan_knowledge.objective_templates
             WHERE state='active' ORDER BY template_key,rev DESC LIMIT 30""").fetchall()
-        return {"objectives":objectives,"objective_templates":templates}
+        policies = []
+        if objective_authoring:
+            policies = db.execute("""SELECT id,policy_key,rev FROM panadan_knowledge.policy_versions
+                WHERE workspace_id=%s AND kind='validation' AND state='approved' ORDER BY policy_key,rev DESC LIMIT 30""",
+                (workspace,)).fetchall()
+        return {"objectives":objectives,"objective_templates":templates,
+                "objective_authoring":objective_authoring,"validation_policies":policies}
     if page == "pipelines":
         pipelines = db.execute("""SELECT v.id,v.label,v.rev,v.processor,v.max_resources,v.event_start,v.event_end,p.enabled,
                 s.label AS source,coalesce(o.label,o.external_operator_key) AS operator

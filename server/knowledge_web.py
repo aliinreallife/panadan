@@ -17,7 +17,9 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 from .ingress import valid_form_origin
 from .knowledge_authorization import AccessDenied, WORKSPACE_CAPABILITIES
+from .knowledge_configuration import ConfigurationChanged
 from .knowledge_identity import SQLiteIdentityBridge
+from .knowledge_objectives import OutputField
 from .knowledge_resource_views import PAGES as RESOURCE_PAGES, ResourceFilters, parse_uuid
 from .knowledge_scope import ScopedWorkspace
 from .knowledge_studio_views import PAGES as STUDIO_PAGES
@@ -48,6 +50,7 @@ class PreviewConfig:
     candidates: tuple[UUID, ...]
     resources: bool = False
     studio: bool = False
+    objective_authoring: bool = False
 
     @classmethod
     def from_env(cls, env):
@@ -71,9 +74,10 @@ class PreviewConfig:
             raise ValueError("Explicit synthetic installation and workspace candidates required") from None
         resources = env.get("PANADAN_KNOWLEDGE_PREVIEW_RESOURCES") == "YES"
         studio = env.get("PANADAN_KNOWLEDGE_PREVIEW_STUDIO") == "YES"
-        if studio and not resources:
+        authoring = env.get("PANADAN_KNOWLEDGE_PREVIEW_OBJECTIVE_AUTHORING") == "YES"
+        if (studio and not resources) or (authoring and not studio):
             raise ValueError("Studio requires the isolated resource preview")
-        return cls(int(raw_port),installation,candidates,resources,studio)
+        return cls(int(raw_port),installation,candidates,resources,studio,authoring)
 
 
 def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name="panadan_session"):
@@ -91,7 +95,8 @@ def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name=
         with psycopg.connect(host="127.0.0.1",port=config.port,dbname="panadan_ci",
                 user="panadan_knowledge_test_login",password="synthetic_knowledge_test_only",
                 connect_timeout=3,autocommit=True,sslmode="disable") as conn:
-            yield ScopedWorkspace(conn,bridge,enabled=True,resources=config.resources,studio=config.studio)
+            yield ScopedWorkspace(conn,bridge,enabled=True,resources=config.resources,studio=config.studio,
+                                  objective_authoring=config.objective_authoring)
 
     def render(request, **context):
         status=context.pop("status_code",200)
@@ -178,6 +183,38 @@ def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name=
         except AccessDenied:
             return denied(request)
         return workspace_page(request,workspace_id,page,filters=filters)
+
+    @router.post("/{workspace_id}/objective")
+    def objective(request: Request, workspace_id: str, csrf: str=Form(...), key: str=Form(...),
+                  label: str=Form(...), purpose: str=Form(...), expected_revision: int=Form(...),
+                  policy: str=Form(""), template: str=Form(""), field: str=Form(""), kind: str=Form("text")):
+        raw,session=auth(request)
+        if (not config.objective_authoring or not session
+                or not hmac.compare_digest(csrf.encode("utf-8"),session["csrf"].encode("utf-8"))
+                or not valid_form_origin(request,None)):
+            return denied(request)
+        try:
+            workspace=parse_uuid(workspace_id)
+            if workspace not in config.candidates:
+                return denied(request)
+            options={}
+            if expected_revision == 0:
+                if bool(template) == bool(field):
+                    raise ValueError("Choose a template or a custom field")
+                options=dict(validation_policy=parse_uuid(policy),template_key=template or None,
+                             fields=(OutputField(field,kind,True),) if field else None)
+            with scoped() as svc:
+                svc.objective_command(raw,workspace,key=key,label=label,purpose=purpose,
+                                      expected_revision=expected_revision,**options)
+            return RedirectResponse(f"/workspace/{workspace}/objectives",303,headers=HEADERS)
+        except ConfigurationChanged:
+            return render(request,status_code=409,error=True,message="نسخهٔ هدف تغییر کرده است. صفحه را تازه کنید.")
+        except ValueError:
+            return render(request,status_code=400,error=True,message="اطلاعات هدف کامل یا معتبر نیست.")
+        except (AccessDenied,psycopg.IntegrityError):
+            return denied(request)
+        except psycopg.Error:
+            return unavailable(request)
 
     @router.post("/{workspace_id}/command")
     def command(request: Request, workspace_id: str, operation: str=Form(...),

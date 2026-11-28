@@ -133,6 +133,10 @@ td bdi{overflow-wrap:anywhere}
 .sync-scope{border-bottom:1px solid var(--border)}
 .sync-scope:last-child{border:0}
 .sync-scope h3{font-size:15px;margin:0;padding:14px 22px 0}
+.objective-record:not(:last-child){border-bottom:1px solid var(--border)}
+.objective-record .resource-row{border:0}
+.objective-editor{padding-top:0}
+.objective-editor summary{font-size:13px}
 @media(max-width:820px){
   .resource-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
 }

@@ -4,7 +4,7 @@ Date: 2026-11-28 (last updated)
 Authorization: D-067 roadmap and D-069 owner authorization to complete synthetic implementation through M11 as prerequisite gates pass. D-068 records the three UI references. See the approved [Roadmap](ROADMAP.md).
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G2 passed. M03.1–M03.3 are verified synthetic. The M03.4 read-only Studio preview is verified. G3 remains open.**
+Current gate: **G2 passed. M03.1–M03.3 are verified synthetic. M03.4 Studio inspection and objective authoring are verified synthetic. G3 remains open.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -308,4 +308,12 @@ Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node pass
 - Browser login uses the existing restricted reader, current workspace role and explicit grants. Pipeline and run views also require access to the bound source/operator. Private run manifests and text are excluded from the reader columns. Direct denied URLs, current scope revocation, and the read-only boundary were tested.
 - Chromium/Playwright inspected eight sampled desktop and mobile states at 1440, 390 and 320 CSS pixels. The configured axe WCAG checks found zero violations, and RTL/mixed timestamp layouts, navigation, workspace scope, measured counts and unknown denominator passed. Screenshots were captured from the running PostgreSQL-backed preview.
 - All 154 selected PostgreSQL 18.6 tests passed, including 3 Studio cases. The locked offline suite passed 574 Python tests with 98 environment-dependent skips and all 67 Node tests. Asset build, syntax and Python compilation passed.
-- G3 remains open. Continue M03.4 with scoped objective and pipeline authoring, schedule/manual run controls and independently scoped worker execution. M04–M11 remain dependent on G3.
+- The Studio read-side checkpoint was published in `c572c08`.
+
+## 18. M03.4 — Studio objective authoring (verified synthetic)
+
+- Migration 014 adds a separate, explicitly enabled objective-author role. An authenticated workspace member with current `objective.configure` can publish a template-based objective or define a custom objective with one typed field. Members can publish a revised label and purpose while preserving the existing schema and validation policy. The previous version remains pinned for existing pipelines.
+- Origin and CSRF checks protect submissions. The write transaction rechecks workspace permission, rejects a stale revision and atomically adds a metadata-only `objective.publish` or `objective.revise` audit event. The author role has no pipeline or transcript rights. PostgreSQL tests cover revoked roles, cross-workspace access, the disabled flag, stale submissions and audit records.
+- Chromium/Playwright exercised desktop template creation and revision and 320 CSS pixel mobile custom creation, including direct-URL denial and cross-workspace checks. Four sampled states passed the configured axe checks and were captured from the running synthetic preview.
+- All 156 selected PostgreSQL 18.6 tests passed. The locked offline suite passed 574 Python tests with 100 environment-dependent skips and all 67 Node tests. Asset build, syntax and Python compilation passed.
+- G3 remains open. Continue M03.4 with scoped pipeline authoring, browser schedule and manual-run controls, and independently scoped scheduler and worker execution. M04–M11 remain dependent on G3.

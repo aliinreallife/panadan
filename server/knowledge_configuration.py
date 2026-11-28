@@ -117,41 +117,74 @@ def _pipeline_authority(db, workspace, member, source, operator):
 
 def save_objective(conn, *, workspace, member, key, label, purpose, validation_policy, expected_revision,
                    template_key=None, fields=None, context=None, enabled=False):
-    key = checked_key(key)
-    label = checked_text(label,limit=160)
-    purpose = checked_text(purpose,limit=1200)
-    _identifier(validation_policy)
-    input_kind, output, context_schema = resolve_objective(template_key=template_key,fields=fields,context=context)
     with conn.transaction(), conn.cursor(row_factory=dict_row) as db:
         _require_setup(conn, enabled)
         _require_member(db, workspace, member)
-        policy = db.execute("""SELECT 1 FROM panadan_knowledge.policy_versions
-            WHERE workspace_id=%s AND id=%s AND kind='validation' AND state='approved' FOR SHARE""",
-            (workspace,validation_policy)).fetchone()
-        if policy is None:
-            raise AccessDenied("Synthetic validation policy unavailable")
-        template_id = None
-        if template_key:
-            template = db.execute("""SELECT id FROM panadan_knowledge.objective_templates
-                WHERE template_key=%s AND rev=%s AND input_kind=%s AND state='active' FOR SHARE""",
-                (template_key,CATALOG_REVISION,input_kind)).fetchone()
-            if template is None:
-                raise AccessDenied("Objective template unavailable")
-            template_id = template["id"]
-        objective, rev = _parent(db, workspace, key, expected_revision, pipeline=False)
-        schema_ids = []
-        for prefix, schema in (("output",output),("context",context_schema)):
-            row = db.execute("""INSERT INTO panadan_knowledge.attribute_schema_versions
-                (workspace_id,schema_key,rev,json_schema,state) VALUES (%s,%s,%s,%s,'approved') RETURNING id""",
-                (workspace,f"{prefix}.{key}",rev,Jsonb(schema))).fetchone()
-            schema_ids.append(row["id"])
-        version = db.execute("""INSERT INTO panadan_knowledge.objective_versions
-            (workspace_id,objective_id,template_id,rev,label,purpose,input_kind,output_schema_id,context_schema_id,validation_policy_id)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-            (workspace,objective,template_id,rev,label,purpose,input_kind,*schema_ids,validation_policy)).fetchone()["id"]
-        db.execute("UPDATE panadan_knowledge.objectives SET current_version_id=%s WHERE workspace_id=%s AND id=%s",
-                   (version,workspace,objective))
-        return DefinitionVersion(objective,version,rev)
+        return _publish_objective(db,workspace,key,label,purpose,validation_policy,expected_revision,
+                                  template_key=template_key,fields=fields,context=context)
+
+
+def _approved_validation(db, workspace, policy):
+    _identifier(policy)
+    allowed = db.execute("""SELECT 1 FROM panadan_knowledge.policy_versions
+        WHERE workspace_id=%s AND id=%s AND kind='validation' AND state='approved' FOR SHARE""",
+        (workspace,policy)).fetchone()
+    if allowed is None:
+        raise AccessDenied("Synthetic validation policy unavailable")
+
+
+def _write_objective(db, workspace, objective, rev, label, purpose, input_kind, template, schemas, validation):
+    version = db.execute("""INSERT INTO panadan_knowledge.objective_versions
+        (workspace_id,objective_id,template_id,rev,label,purpose,input_kind,output_schema_id,context_schema_id,validation_policy_id)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (workspace,objective,template,rev,label,purpose,input_kind,*schemas,validation)).fetchone()["id"]
+    db.execute("UPDATE panadan_knowledge.objectives SET current_version_id=%s WHERE workspace_id=%s AND id=%s",
+               (version,workspace,objective))
+    return DefinitionVersion(objective,version,rev)
+
+
+def _publish_objective(db, workspace, key, label, purpose, validation_policy, expected_revision,
+                       *, template_key=None, fields=None, context=None):
+    key = checked_key(key)
+    label = checked_text(label,limit=160)
+    purpose = checked_text(purpose,limit=1200)
+    input_kind, output, context_schema = resolve_objective(template_key=template_key,fields=fields,context=context)
+    _approved_validation(db,workspace,validation_policy)
+    template_id = None
+    if template_key:
+        template = db.execute("""SELECT id FROM panadan_knowledge.objective_templates
+            WHERE template_key=%s AND rev=%s AND input_kind=%s AND state='active' FOR SHARE""",
+            (template_key,CATALOG_REVISION,input_kind)).fetchone()
+        if template is None:
+            raise AccessDenied("Objective template unavailable")
+        template_id = template["id"]
+    objective, rev = _parent(db,workspace,key,expected_revision,pipeline=False)
+    schema_ids = []
+    for prefix, schema in (("output",output),("context",context_schema)):
+        row = db.execute("""INSERT INTO panadan_knowledge.attribute_schema_versions
+            (workspace_id,schema_key,rev,json_schema,state) VALUES (%s,%s,%s,%s,'approved') RETURNING id""",
+            (workspace,f"{prefix}.{key}",rev,Jsonb(schema))).fetchone()
+        schema_ids.append(row["id"])
+    return _write_objective(db,workspace,objective,rev,label,purpose,input_kind,template_id,schema_ids,validation_policy)
+
+
+def _revise_objective(db, workspace, key, label, purpose, expected_revision):
+    key = checked_key(key)
+    label = checked_text(label,limit=160)
+    purpose = checked_text(purpose,limit=1200)
+    if type(expected_revision) is not int or expected_revision<1:
+        raise ValueError("Objective revision required")
+    objective, rev = _parent(db,workspace,key,expected_revision,pipeline=False)
+    previous = db.execute("""SELECT template_id,input_kind,output_schema_id,context_schema_id,validation_policy_id
+        FROM panadan_knowledge.objective_versions WHERE workspace_id=%s AND objective_id=%s AND rev=%s AND state='active'""",
+        (workspace,objective,expected_revision)).fetchone()
+    if previous is None:
+        raise AccessDenied("Objective version unavailable")
+    validation = previous["validation_policy_id"]
+    _approved_validation(db,workspace,validation)
+    schemas = (previous["output_schema_id"],previous["context_schema_id"])
+    return _write_objective(db,workspace,objective,rev,label,purpose,previous["input_kind"],
+                            previous["template_id"],schemas,validation)
 
 
 def save_pipeline(conn, *, workspace, member, key, label, objectives, source, contract, operator,

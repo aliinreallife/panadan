@@ -7,22 +7,27 @@ two NOLOGIN knowledge roles. Do not share a connection concurrently.
 """
 from __future__ import annotations
 
+from uuid import uuid4
+
 from psycopg.pq import TransactionStatus
 from psycopg.rows import tuple_row
 
 from .knowledge_authorization import AccessDenied, STUDIO_CAPABILITIES, WorkspaceAuthorization, _uuid
+from .knowledge_configuration import _publish_objective, _revise_objective
 from .knowledge_identity import SQLiteIdentityBridge
 from .knowledge_resource_views import PAGES as RESOURCE_PAGES, ResourceFilters, resource_view
 from .knowledge_studio_views import PAGES as STUDIO_PAGES, studio_view
 
 AUTHOR = "panadan_knowledge_authorizer"
 READER = "panadan_knowledge_reader"
+OBJECTIVE_AUTHOR = "panadan_knowledge_objective_author"
 _SETTINGS = (
     "panadan.workspace_id", "panadan.authority_namespace", "panadan.authority_subject",
     "panadan.target_principal", "panadan.read_authorized", "panadan.policy_epoch",
 )
 _RESOURCE_SETTINGS = ("panadan.resource_member", "panadan.resource_capabilities")
 _STUDIO_SETTING = "panadan.studio_capabilities"
+_OBJECTIVE_SETTING = "panadan.objective_authorized"
 _COMMANDS = frozenset({
     "create_role", "add_member", "assign_role", "grant_scope", "revoke_membership",
     "revoke_role", "revoke_scope", "retire_role",
@@ -37,13 +42,15 @@ class ScopedWorkspace:
     Only this internal boundary may establish scope. No client can choose
     a DB role, principal, epoch, context value or command implementation.
     """
-    def __init__(self, connection, identity: SQLiteIdentityBridge, *, enabled=False, resources=False, studio=False):
+    def __init__(self, connection, identity: SQLiteIdentityBridge, *, enabled=False, resources=False, studio=False,
+                 objective_authoring=False):
         if enabled is not True or type(identity) is not SQLiteIdentityBridge:
             raise AccessDenied("Access denied")
         self._conn = connection
         self._identity = identity
         self._resources = resources is True
         self._studio = studio is True and self._resources
+        self._objective_authoring = objective_authoring is True and self._studio
 
     def _clean(self):
         c = self._conn
@@ -70,20 +77,21 @@ class ScopedWorkspace:
                 JOIN pg_catalog.pg_roles parent ON parent.oid=m.roleid
                 JOIN pg_catalog.pg_roles child ON child.oid=m.member
                 WHERE child.rolname=session_user""").fetchall()
-            if (set(memberships) != {(AUTHOR,False,False,True),(READER,False,False,True)}
+            roles = [AUTHOR, READER] + ([OBJECTIVE_AUTHOR] if self._objective_authoring else [])
+            if (set(memberships) != {(role,False,False,True) for role in roles}
                     or cur.execute("SELECT has_schema_privilege(session_user,'panadan_knowledge','USAGE')").fetchone()[0]):
                 c.close()
                 raise AccessDenied("Access denied")
             if cur.execute("""SELECT count(*) FROM pg_catalog.pg_roles
-                WHERE rolname IN ('panadan_knowledge_authorizer','panadan_knowledge_reader')
+                WHERE rolname=ANY(%s)
                 AND NOT (rolcanlogin OR rolinherit OR rolsuper OR rolcreatedb OR rolcreaterole
-                         OR rolreplication OR rolbypassrls)""").fetchone() != (2,) or cur.execute("""SELECT EXISTS (
+                         OR rolreplication OR rolbypassrls)""",(roles,)).fetchone() != (len(roles),) or cur.execute("""SELECT EXISTS (
                     SELECT 1 FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles r ON r.oid=m.member
-                    WHERE r.rolname IN ('panadan_knowledge_authorizer','panadan_knowledge_reader'))""").fetchone()[0]:
+                    WHERE r.rolname=ANY(%s))""",(roles,)).fetchone()[0]:
                 c.close()
                 raise AccessDenied("Access denied")
             if any(cur.execute("SELECT current_setting(%s,true)",(key,)).fetchone()[0]
-                   not in (None,"") for key in _SETTINGS + _RESOURCE_SETTINGS + (_STUDIO_SETTING,)):
+                   not in (None,"") for key in _SETTINGS + _RESOURCE_SETTINGS + (_STUDIO_SETTING,_OBJECTIVE_SETTING)):
                 # Never reuse a connection carrying session-level identity.
                 c.close()
                 raise AccessDenied("Access denied")
@@ -206,7 +214,8 @@ class ScopedWorkspace:
                                                 (_STUDIO_SETTING,",".join(result["studio_capabilities"])))
                                 cur.execute("SET LOCAL ROLE panadan_knowledge_reader")
                                 with c.cursor(row_factory=dict_row) as view:
-                                    projection = (studio_view(view,workspace,page) if page in STUDIO_PAGES
+                                    projection = (studio_view(view,workspace,page,objective_authoring=self._objective_authoring)
+                                                  if page in STUDIO_PAGES
                                                   else resource_view(view,workspace,page,args[1],args[2]))
                                     result.update(projection)
                                 cur.execute("SET LOCAL ROLE panadan_knowledge_authorizer")
@@ -216,6 +225,28 @@ class ScopedWorkspace:
                             raise AccessDenied("Access denied")
                         if service.authorize(raw,workspace,"workspace.read") != access:
                             raise AccessDenied("Access denied")
+                elif operation == "objective_command":
+                    if not self._objective_authoring:
+                        raise AccessDenied("Access denied")
+                    access = service.authorize(raw,workspace,"workspace.read")
+                    if service.authorize(raw,workspace,"objective.configure") != access:
+                        raise AccessDenied("Access denied")
+                    cur.execute("SELECT set_config(%s,'yes',true)",(_OBJECTIVE_SETTING,))
+                    cur.execute("SET LOCAL ROLE panadan_knowledge_objective_author")
+                    from psycopg.rows import dict_row
+                    with c.cursor(row_factory=dict_row) as author:
+                        writer = _revise_objective if kwargs["expected_revision"] else _publish_objective
+                        result = writer(author,workspace,**kwargs)
+                    cur.execute("SET LOCAL ROLE panadan_knowledge_authorizer")
+                    if (service.authorize(raw,workspace,"objective.configure") != access
+                            or service.authorize(raw,workspace,"workspace.read") != access):
+                        raise AccessDenied("Access denied")
+                    action = "objective.revise" if kwargs["expected_revision"] else "objective.publish"
+                    cur.execute("""INSERT INTO panadan_knowledge.audit_events
+                        (workspace_id,principal_id,membership_id,channel,action,target_kind,target_ref,
+                         policy_epoch,outcome,correlation_id) VALUES (%s,%s,%s,'web',%s,'objective_version',%s,%s,'succeeded',%s)""",
+                        (workspace,access.principal_id,access.membership_id,action,str(result.version_id),
+                         access.policy_epoch,uuid4()))
                 elif operation == "ui_command":
                     service.authorize(raw,workspace,"workspace.read")
                     result = getattr(service,args[0])(raw,workspace,*args[1:],**kwargs)
@@ -259,6 +290,13 @@ class ScopedWorkspace:
         if type(operation) is not str or operation not in _COMMANDS:
             raise AccessDenied("Access denied")
         return self._invoke(raw,workspace,"ui_command",(operation,*args),kwargs)
+
+    def objective_command(self, raw, workspace, *, key, label, purpose, expected_revision, validation_policy=None,
+                          template_key=None, fields=None):
+        options = dict(key=key,label=label,purpose=purpose,expected_revision=expected_revision)
+        if not expected_revision:
+            options.update(validation_policy=validation_policy,template_key=template_key,fields=fields)
+        return self._invoke(raw,workspace,"objective_command",(),options)
 
     def command(self, raw, workspace, operation, *args, **kwargs):
         if type(operation) is not str or operation not in _COMMANDS:
