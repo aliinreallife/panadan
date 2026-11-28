@@ -20,7 +20,7 @@ from server.security import Store
 from server.knowledge_identity import SQLiteIdentityBridge, install_profile_identity
 from server.knowledge_authorization import AccessDenied, CAPABILITIES, WorkspaceAuthorization
 from server.knowledge_scope import ScopedWorkspace, _SETTINGS
-from test_knowledge_foundation import db, _apply, _reject
+from test_knowledge_foundation import db, _apply, _reject, _validate_dsn
 
 ROOT = Path(__file__).resolve().parents[1]
 M005 = ROOT / "database/migrations/005_knowledge_authorization.sql"
@@ -54,7 +54,9 @@ def runtime(db, tmp_path):
     db.execute(M005.read_text())
     db.execute(M006.read_text())
     db.execute(M006.read_text())  # idempotence before runtime login provisioning
-    db.execute("CREATE ROLE panadan_knowledge_test_login NOLOGIN NOINHERIT")
+    # Actual restricted TCP login, with public synthetic-only credentials.
+    db.execute("CREATE ROLE panadan_knowledge_test_login LOGIN NOINHERIT PASSWORD 'synthetic_knowledge_test_only'")
+    db.execute("GRANT CONNECT ON DATABASE panadan_ci TO panadan_knowledge_test_login")
     db.execute("GRANT panadan_knowledge_authorizer,panadan_knowledge_reader TO panadan_knowledge_test_login WITH INHERIT FALSE, SET TRUE")
     store = Store(str(tmp_path / "auth.sqlite"))
     store.bootstrap("admin","synthetic-password-only")
@@ -94,12 +96,11 @@ def runtime(db, tmp_path):
     db.commit()
     connections=[]
     def connect():
-        # SET SESSION AUTHORIZATION emulates a restricted login using the
-        # disposable administrator's connection; real logins cannot reset to
-        # that administrator. All operations below run as the synthetic role.
-        c=psycopg.connect(os.environ["PANADAN_PLATFORM_TEST_DSN"],autocommit=True,connect_timeout=5)
+        cfg=_validate_dsn(os.environ["PANADAN_PLATFORM_TEST_DSN"],os.environ.get("PANADAN_PLATFORM_TEST_ALLOW_RESET"))
+        cfg.update(user="panadan_knowledge_test_login",password="synthetic_knowledge_test_only")
+        c=psycopg.connect(**cfg,autocommit=True,connect_timeout=5)
         connections.append(c)
-        c.execute("SET SESSION AUTHORIZATION panadan_knowledge_test_login")
+        assert c.execute("SELECT current_user,session_user").fetchone()==("panadan_knowledge_test_login",)*2
         return c
     try:
         yield dict(db=db,connect=connect,bridge=bridge,store=store,a=a,b=b,
@@ -111,6 +112,7 @@ def runtime(db, tmp_path):
         db.rollback()
         with db.transaction():
             db.execute("DROP SCHEMA panadan_knowledge CASCADE")
+            db.execute("REVOKE CONNECT ON DATABASE panadan_ci FROM panadan_knowledge_test_login")
             db.execute("DROP ROLE panadan_knowledge_test_login")
             db.execute("DROP ROLE panadan_knowledge_authorizer,panadan_knowledge_reader,panadan_knowledge_owner")
 
@@ -135,6 +137,9 @@ def test_runtime_roles_and_missing_or_invalid_scope(runtime):
         ('panadan_knowledge_authorizer','panadan_knowledge_reader')
         AND NOT (rolcanlogin OR rolinherit OR rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)""").fetchone()==(2,)
     assert c.execute("SELECT has_schema_privilege(current_user,'panadan_knowledge','USAGE')").fetchone()==(False,)
+    with c.transaction():
+        _reject(c,errors.InsufficientPrivilege,"SET ROLE panadan_knowledge_owner")
+        _reject(c,errors.InsufficientPrivilege,"SET SESSION AUTHORIZATION panadan_ci")
     with c.transaction():
         c.execute("SET LOCAL ROLE panadan_knowledge_authorizer")
         for table in ("memberships","role_versions","membership_roles","scope_grants"):
@@ -331,3 +336,33 @@ def test_session_revoked_after_projection_never_returns_data(runtime,monkeypatch
         svc.read_workspace(s["user"],s["a"])
     _assert_clean(c)
     assert svc.read_workspace(s["other"],s["b"])["id"]==s["b"]
+
+
+def test_legacy_schemas_remain_inaccessible_to_new_roles(db):
+    db.execute((ROOT/"database/migrations/001_multisource_foundation.sql").read_text())
+    db.execute((ROOT/"database/migrations/003_auth_foundation.sql").read_text())
+    _apply(db)
+    db.execute(M005.read_text())
+    db.execute(M006.read_text())
+    for role in ("panadan_knowledge_authorizer","panadan_knowledge_reader"):
+        # Fixed internal role names, never request input.
+        db.execute("SET LOCAL ROLE "+role)
+        for table in ("panadan_ingest.sources","panadan_auth.users"):
+            assert db.execute("SELECT has_table_privilege(current_user,%s,'SELECT')",(table,)).fetchone()==(False,)
+            assert db.execute("SELECT has_table_privilege(current_user,%s,'INSERT')",(table,)).fetchone()==(False,)
+        db.execute("RESET ROLE")
+
+
+def test_privileged_or_misconfigured_connection_is_rejected(runtime):
+    s=runtime
+    with psycopg.connect(os.environ["PANADAN_PLATFORM_TEST_DSN"],autocommit=True,connect_timeout=5) as admin:
+        with pytest.raises(AccessDenied):
+            ScopedWorkspace(admin,s["bridge"],enabled=True).read_workspace(s["admin"],s["a"])
+        assert admin.closed
+    db=s["db"]
+    with db.transaction():
+        db.execute("GRANT USAGE ON SCHEMA panadan_knowledge TO panadan_knowledge_test_login")
+    c=s["connect"]()
+    with pytest.raises(AccessDenied):
+        ScopedWorkspace(c,s["bridge"],enabled=True).read_workspace(s["admin"],s["a"])
+    assert c.closed
