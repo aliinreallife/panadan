@@ -1,10 +1,10 @@
 # Panadan Knowledge Platform — Implementation Status
 
-Date: 2026-11-26
+Date: 2026-11-27 (last updated)
 Authorization: D-067 roadmap; M00 completed and owner explicitly authorized M01.1 only on 2026-11-26. [Roadmap](ROADMAP.md) approved.
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G0 passed; M01.1 test assertions corrected after first local run; rerun required. G1 not passed.**
+Current gate: **G0 passed; M01.1 complete and verified on owner-provided synthetic test evidence. M01.2 awaits separate authorization. G1 remains pending.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -13,7 +13,7 @@ This ledger records evidence, not estimates. No implementation milestone is veri
 | --- | --- | --- |
 | M00.1 | Static inspection complete | GitHub connector branch/tree inspection, current auth, ingestion, migration, frontend and verification files examined. Protected refs confirmed. No live queries. Assistant runner checkout unavailable; owner subsequently cloned the exact expected documentation-only HEAD in a local development environment. |
 | M00.2 | Verified synthetic (owner-reported) | Owner-provided terminal output at 38e176b3343ace81b1ef2fe72b840f326fbf527f: clean fresh clone, Python 3.13.14, uv 0.11.32, Node 24.22.2, npm 11.19.1, Docker Engine 29.8.1 / Docker Desktop 4.93.0. `./panadan.sh verify --docker --assets` completed successfully. Dedicated disposable PG18.6 auth migration suite subsequently passed: 21 passed, 0 skipped/failed in 19.06s; compileall completed successfully. Final marker: M00 additional verification PASSED. |
-| M00.3 | Complete (reviewed documentation) | This ledger defines synthetic fixture plan, default-off contract, migration review, UI backlog and proposed M01 increments. These are reviewable implementation conventions, not implemented controls. G0 passed; separate M01.1 authorization required. |
+| M00.3 | Complete (reviewed documentation) | This ledger defines synthetic fixture plan, default-off contract, migration review, UI backlog and proposed M01 increments. These are reviewable implementation conventions, not implemented controls. G0 passed; M01.1 subsequently authorized and verified. |
 
 ### Reuse inventory
 
@@ -90,7 +90,7 @@ D-066/D-067 adopt both references as inputs. [UI_DESIGN_REVIEW.md](UI_DESIGN_REV
 
 Three-pane knowledge inspector on desktop and sequential detail on mobile are candidates; preserve filter/selection state without retaining unauthorized cached payload. No new design dependency/framework or dark-mode requirement added. No actual UI implementation or screen rendering performed in M00.
 
-## 4. M01.1 — additive knowledge foundation (implemented, unverified)
+## 4. M01.1 — additive knowledge foundation (verified synthetic)
 
 Owner approved M00 completion and M01.1. This authorizes implementation of existing decisions D-047–D-050, D-057–D-058 and D-067, not a new architecture decision, further increments or any production execution.
 
@@ -98,16 +98,16 @@ Owner approved M00 completion and M01.1. This authorizes implementation of exist
 
 - database/migrations/004_knowledge_foundation.sql: new schema and five tables (workspaces, principals, memberships, policy_versions, audit_events); UUID keys, tenant composite PK/FKs and same-workspace policy approver/audit actor consistency, uniqueness, state and bounded JSON checks, indexes. Workspaces/principals disabled by default; policy versions draft by default. No seeded tenants, account copies, credentials or source payloads.
 - Guard requires PostgreSQL 18, exact database/user pair (panadan/panadan_owner or panadan_ci/panadan_ci), administrator and explicit transaction-local target confirmation. Dedicated NOLOGIN, NOINHERIT, NOSUPERUSER, NOBYPASSRLS owner; refuse incompatible role or schema ownership. PUBLIC privileges revoked. Three tenant tables have ENABLE/FORCE RLS and no policies, so they are inaccessible through ordinary RLS; no runtime grants. Global registry tables not granted to runtime either. Superuser maintenance can bypass RLS as expected. This is a guarded migration foundation, not proof of production privileges or service authorization.
-- tests/test_knowledge_foundation.py: 18 planned test cases (nine offline DSN validator cases and nine opt-in DB cases). Checks guard failure, role/schema collision, replay and default state, legacy data preservation, unique and tenant composite keys, invalid approval and audit actors, JSON bounds, owner and default-deny ACL/RLS. Strict synthetic loopback DSN and explicit reset opt-in; removes inherited PG environment variables; rolls back each fixture transaction, no persistent fixture data. Refuses preexisting knowledge schema instead of deleting it.
+- tests/test_knowledge_foundation.py: 18 test cases (nine offline DSN validator cases and nine opt-in DB cases). Checks guard failure, role/schema collision, replay and default state, legacy data preservation, unique and tenant composite keys, invalid approval and audit actors, JSON bounds, owner and default-deny ACL/RLS. Strict synthetic loopback DSN and explicit reset opt-in; removes inherited PG environment variables; rolls back each fixture transaction, no persistent fixture data. Refuses preexisting knowledge schema instead of deleting it.
 - tools/test-platform-integration.sh and .github/workflows/tests.yml: include foundation suite in local disposable and CI integration coverage; local runner also includes previously separate auth migration suite. CI still runs on PR/main as before; no PR opened. Existing platform-db init continues to apply only migration 001. No auto migration, auth change, runtime feature flag, new route or grant.
 
 Structural approval fields do not establish actual authority; identity binding, grant resolution, typed policy validation and immutable published version/append-only audit command enforcement belong to M01.2 onward. Scope grants referencing sources, client/sharing tables and runtime policies/grants are deferred to their approved increments. Exact identity authority contract remains unresolved. M01.3 adds scoped transaction context/RLS policies; M01.4 adds the workspace UI. No change to prior migrations or existing source access.
 
 ### Verification and next action
 
-Owner-reported verification at 3f01e8ed870e249270092e123277e5401e37df4f: 534 Python offline tests passed, 36 skipped (nine more than M00, corresponding to the new PG-dependent foundation cases); 65 Node tests passed; syntax checks and asset build passed. Disposable PG18 integration: 79 passed, two failed in 21.14s. Both failures were incorrect test expectations for ON DELETE RESTRICT: PostgreSQL emitted psycopg.errors.RestrictViolation when deleting a workspace referenced by memberships or a membership referenced by audit events. The deletion was correctly rejected in each case. Commit 4e157217879f70612b23f2040a9e555d821d75aa corrects only these two expected exception types; migration SQL and its RESTRICT constraints are unchanged. The first run did not reach the runner's subsequent restart/backup/restore checks; compileall success was not explicitly reported. No tests executed by the assistant. M01.1 remains unverified pending a successful rerun at the corrected revision. Prior M00 evidence remains baseline only.
+Owner-reported verification at 3f01e8ed870e249270092e123277e5401e37df4f: 534 Python offline tests passed, 36 skipped (nine more than M00, corresponding to the new PG-dependent foundation cases); 65 Node tests passed; syntax checks and asset build passed. Disposable PG18 integration: 79 passed, two failed in 21.14s. Both failures were incorrect test expectations for ON DELETE RESTRICT: PostgreSQL emitted psycopg.errors.RestrictViolation when deleting a workspace referenced by memberships or a membership referenced by audit events. The deletion was correctly rejected in each case. Commit 4e157217879f70612b23f2040a9e555d821d75aa corrects only these two expected exception types; migration SQL and its RESTRICT constraints are unchanged. The first run did not reach the runner's subsequent restart/backup/restore checks; compileall success was not explicitly reported. No tests executed by the assistant. Subsequent owner-reported rerun at 01491b919382ce1c25a06c2c34655c8358fbc87e (received 2026-11-27): all 81 integration test executions passed in 21.91s, zero failures or skips; the disposable PG18.6 runner completed its existing ingestion schema initialization/restart/persistence and backup/restore checks. The successful `M01.1 verification PASSED` marker from the fail-fast command also establishes successful Python compileall for server, tests and tools. The only intervening code changes were two corrected test exception assertions, so the earlier offline 534 passes, 36 environment-dependent skips, 65 Node passes and asset/syntax results remain applicable. All nine new opt-in database cases ran in the corrected suite. The runner's restart/restore smoke verifies the legacy ingestion fixture, not persistence or recovery of the new knowledge schema (its tests roll back their transactions); knowledge-specific recovery remains future work. M01.1 acceptance satisfied on reviewed owner-provided synthetic evidence, not independently executed by the assistant and not production verification. No runtime access enabled.
 
-Run from the existing local synthetic clone:
+Reproduction commands (completed; full offline verification and corrected targeted PG rerun evidence recorded above):
 
 ```bash
 cd ~/panadan-m00
@@ -118,14 +118,14 @@ git status --short
 uv run --locked python -m compileall -q server tests tools
 ```
 
-The disposable runner now includes both auth and knowledge integration suites; review all failures and skip reasons before marking M01.1 verified. Do not use the production checkout or manually apply the migration to any real database. Rollback at this stage means leaving the feature inaccessible and reverting feature-branch code if required; no destructive schema downgrade. G1 remains pending M01.2–M01.4 and associated tests. Obtain separate M01.2 authorization after M01.1 evidence is reviewed.
+The disposable runner includes both auth and knowledge integration suites; the corrected run passed. No additional M01.1 verification rerun is required on the unchanged implementation. Do not use the production checkout or manually apply the migration to any real database. Rollback at this stage means leaving the feature inaccessible and reverting feature-branch code if required; no destructive schema downgrade. G1 remains pending M01.2–M01.4 and associated tests. Obtain separate M01.2 authorization after M01.1 evidence is reviewed.
 
 ## 5. Milestone ledger
 
 | Milestone | Status | Gate |
 | --- | --- | --- |
 | M00 Baseline/harness | Complete — verified synthetic baseline (owner-reported) and reviewed harness | G0 passed |
-| M01 Workspace security | M01.1 two test expectation failures corrected; verification rerun pending; M01.2–M01.4 not started | G1 pending |
+| M01 Workspace security | M01.1 verified synthetic (owner-reported); M01.2–M01.4 not started | G1 pending |
 | M02 Resources/privacy | Not started | G1 |
 | M03 Objectives/runs | Not started | G2 |
 | M04 AI gateway/budgets | Not started | G3 |
@@ -139,4 +139,4 @@ The disposable runner now includes both auth and knowledge integration suites; r
 | M12 Real-data E1–E3 | Not started / unauthorized | G11 + private approvals |
 | M13 Release/E4 | Not started / unauthorized | Reviewed pilot + release approval |
 
-Next action: obtain local M01.1 verification evidence; fix any failures before approving M01.2. Migration and test code committed only on authorized branch; no migration executed by assistant, no runtime app changes, source records, external connections, paid requests or production changes. Protected refs must be rechecked after commit.
+Next action: obtain explicit authorization for M01.2 only, then review the current identity lifecycle and implement/test stable principal binding, workspace membership and permission resolution, role versions and revocation without changing the live identity authority. No automatic account mapping or runtime activation. Migration and test code committed only on authorized branch; no migration executed by assistant, no runtime app changes, source records, external connections, paid requests or production changes. Protected refs must be rechecked after commit.
