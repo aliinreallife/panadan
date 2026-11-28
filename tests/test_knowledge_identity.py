@@ -56,6 +56,8 @@ def test_deletion_replacement_and_profile_rewrite_blocked(auth):
     for query, params in [
         ("DELETE FROM users WHERE id=?", (uid,)),
         ("UPDATE users SET id=99 WHERE id=?", (uid,)),
+        ("UPDATE users SET rowid=99 WHERE id=?", (uid,)),
+        ("INSERT OR REPLACE INTO knowledge_identity_installation VALUES(1,'different')", ()),
         ("UPDATE users SET profile_id=NULL WHERE id=?", (uid,)),
         ("INSERT OR REPLACE INTO users(id,username,password_hash,role) VALUES (?,?,?,'reader')",
          (uid, "replacement", "not-a-password-hash")),
