@@ -10,9 +10,10 @@ from __future__ import annotations
 from psycopg.pq import TransactionStatus
 from psycopg.rows import tuple_row
 
-from .knowledge_authorization import AccessDenied, WorkspaceAuthorization, _uuid
+from .knowledge_authorization import AccessDenied, STUDIO_CAPABILITIES, WorkspaceAuthorization, _uuid
 from .knowledge_identity import SQLiteIdentityBridge
 from .knowledge_resource_views import PAGES as RESOURCE_PAGES, ResourceFilters, resource_view
+from .knowledge_studio_views import PAGES as STUDIO_PAGES, studio_view
 
 AUTHOR = "panadan_knowledge_authorizer"
 READER = "panadan_knowledge_reader"
@@ -21,6 +22,7 @@ _SETTINGS = (
     "panadan.target_principal", "panadan.read_authorized", "panadan.policy_epoch",
 )
 _RESOURCE_SETTINGS = ("panadan.resource_member", "panadan.resource_capabilities")
+_STUDIO_SETTING = "panadan.studio_capabilities"
 _COMMANDS = frozenset({
     "create_role", "add_member", "assign_role", "grant_scope", "revoke_membership",
     "revoke_role", "revoke_scope", "retire_role",
@@ -35,12 +37,13 @@ class ScopedWorkspace:
     Only this internal boundary may establish scope. No client can choose
     a DB role, principal, epoch, context value or command implementation.
     """
-    def __init__(self, connection, identity: SQLiteIdentityBridge, *, enabled=False, resources=False):
+    def __init__(self, connection, identity: SQLiteIdentityBridge, *, enabled=False, resources=False, studio=False):
         if enabled is not True or type(identity) is not SQLiteIdentityBridge:
             raise AccessDenied("Access denied")
         self._conn = connection
         self._identity = identity
         self._resources = resources is True
+        self._studio = studio is True and self._resources
 
     def _clean(self):
         c = self._conn
@@ -80,7 +83,7 @@ class ScopedWorkspace:
                 c.close()
                 raise AccessDenied("Access denied")
             if any(cur.execute("SELECT current_setting(%s,true)",(key,)).fetchone()[0]
-                   not in (None,"") for key in _SETTINGS + _RESOURCE_SETTINGS):
+                   not in (None,"") for key in _SETTINGS + _RESOURCE_SETTINGS + (_STUDIO_SETTING,)):
                 # Never reuse a connection carrying session-level identity.
                 c.close()
                 raise AccessDenied("Access denied")
@@ -116,7 +119,7 @@ class ScopedWorkspace:
                 if operation in ("read_workspace","ui_view"):
                     access = service.authorize(raw,workspace,"workspace.read")
                     page = args[0] if operation == "ui_view" else "overview"
-                    required = {"members":"members.manage","roles":"roles.manage"}.get(page, "workspace.read")
+                    required = {"members":"members.manage","roles":"roles.manage",**STUDIO_PAGES}.get(page,"workspace.read")
                     if required != "workspace.read":
                         service.authorize(raw,workspace,required)
                     cur.execute("SELECT set_config('panadan.policy_epoch',%s,true)",(str(access.policy_epoch),))
@@ -188,17 +191,24 @@ class ScopedWorkspace:
                             if resource_access != access:
                                 raise AccessDenied("Access denied")
                             result["resource_capabilities"] = sorted(resource_capabilities)
-                            if page in RESOURCE_PAGES:
+                            if self._studio:
+                                result["studio_capabilities"] = sorted(access.capabilities & STUDIO_CAPABILITIES)
+                            if page in RESOURCE_PAGES or page in STUDIO_PAGES:
                                 required_resource = "resource.read" if page == "resource" else "resource.list"
-                                if required_resource not in resource_capabilities:
+                                if page in RESOURCE_PAGES and required_resource not in resource_capabilities:
                                     raise AccessDenied("Access denied")
                                 settings = (str(access.membership_id), ",".join(sorted(resource_capabilities)))
                                 for key, value in zip(_RESOURCE_SETTINGS, settings, strict=True):
                                     cur.execute("SELECT set_config(%s,%s,true)", (key, value))
                                 cur.execute("SET LOCAL TIME ZONE 'UTC'")
+                                if page in STUDIO_PAGES:
+                                    cur.execute("SELECT set_config(%s,%s,true)",
+                                                (_STUDIO_SETTING,",".join(result["studio_capabilities"])))
                                 cur.execute("SET LOCAL ROLE panadan_knowledge_reader")
                                 with c.cursor(row_factory=dict_row) as view:
-                                    result.update(resource_view(view, workspace, page, args[1], args[2]))
+                                    projection = (studio_view(view,workspace,page) if page in STUDIO_PAGES
+                                                  else resource_view(view,workspace,page,args[1],args[2]))
+                                    result.update(projection)
                                 cur.execute("SET LOCAL ROLE panadan_knowledge_authorizer")
                                 if service.authorize_resource_capabilities(raw, workspace) != source_access:
                                     raise AccessDenied("Access denied")
@@ -235,7 +245,8 @@ class ScopedWorkspace:
         return self._invoke(raw,workspace,"read_workspace",(),{})
 
     def ui_view(self, raw, workspace, page, *, resource_id=None, filters=None):
-        allowed = page in ("overview","members","roles") or (self._resources and page in RESOURCE_PAGES)
+        allowed = (page in ("overview","members","roles") or (self._resources and page in RESOURCE_PAGES)
+                   or (self._studio and page in STUDIO_PAGES))
         if not allowed or (page == "resource" and resource_id is None):
             raise AccessDenied("Access denied")
         if resource_id is not None:

@@ -19,6 +19,8 @@ from .knowledge_identity import SQLiteIdentityBridge
 
 CAPABILITIES = frozenset({"workspace.read", "members.manage", "roles.manage"})
 RESOURCE_CAPABILITIES = frozenset({"resource.list", "resource.read", "representation.read"})
+STUDIO_CAPABILITIES = frozenset({"objective.configure", "pipeline.configure", "pipeline.run"})
+WORKSPACE_CAPABILITIES = CAPABILITIES | STUDIO_CAPABILITIES
 ROLE_TEMPLATES = {
     "workspace_reader": ("workspace.read",),
     "workspace_administrator": ("workspace.read", "members.manage", "roles.manage"),
@@ -31,7 +33,7 @@ class AccessDenied(Exception):
 
 
 def _caps(value) -> frozenset[str]:
-    if (not isinstance(value, list) or any(type(x) is not str or x not in CAPABILITIES | RESOURCE_CAPABILITIES for x in value)
+    if (not isinstance(value, list) or any(type(x) is not str or x not in WORKSPACE_CAPABILITIES | RESOURCE_CAPABILITIES for x in value)
             or len(set(value)) != len(value)):
         raise AccessDenied("Access denied")
     return frozenset(value)
@@ -120,7 +122,7 @@ class WorkspaceAuthorization:
                   channel: str = "web", purpose: str = PURPOSE,
                   data_class: str = "operational") -> WorkspaceAccess:
         """Fresh check, not a reusable credential. No data or external access."""
-        if (type(capability) is not str or capability not in CAPABILITIES
+        if (type(capability) is not str or capability not in WORKSPACE_CAPABILITIES
                 or channel != "web" or purpose != PURPOSE or data_class != "operational"):
             raise AccessDenied("Access denied")
         identity = self._current(raw)
@@ -266,7 +268,7 @@ class WorkspaceAuthorization:
         return self._change(raw,workspace,"roles.manage","role.assign","membership_role",op)
 
     def grant_scope(self, raw, workspace, member, capability, *, valid_until=None):
-        if type(capability) is not str or capability not in CAPABILITIES:
+        if type(capability) is not str or capability not in WORKSPACE_CAPABILITIES:
             raise AccessDenied("Access denied")
         def op(cur,a,e,now):
             self._target(cur,workspace,member,a.membership_id)

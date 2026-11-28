@@ -16,10 +16,11 @@ import psycopg
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 from .ingress import valid_form_origin
-from .knowledge_authorization import AccessDenied, CAPABILITIES
+from .knowledge_authorization import AccessDenied, WORKSPACE_CAPABILITIES
 from .knowledge_identity import SQLiteIdentityBridge
 from .knowledge_resource_views import PAGES as RESOURCE_PAGES, ResourceFilters, parse_uuid
 from .knowledge_scope import ScopedWorkspace
+from .knowledge_studio_views import PAGES as STUDIO_PAGES
 from .security import Store, has_capability
 
 # Chromium sends Origin: null on form POST from a no-referrer document.
@@ -28,10 +29,13 @@ HEADERS = {"Cache-Control": "no-store, private", "Pragma": "no-cache",
            "Referrer-Policy": "same-origin", "X-Content-Type-Options": "nosniff",
            "Content-Security-Policy": "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"}
 PAGES = {"overview": "مرور کلی", "members": "اعضا", "roles": "نقش‌ها و دسترسی",
-         "resources": "منابع", "resource": "جزئیات تماس", "integrations": "اتصال‌ها"}
+         "resources": "منابع", "resource": "جزئیات تماس", "integrations": "اتصال‌ها",
+         "objectives": "اهداف دانش", "pipelines": "خطوط پردازش", "runs": "اجراها"}
 LABELS = {"workspace.read": "مشاهده فضای کاری", "members.manage": "مدیریت اعضا",
           "roles.manage": "مدیریت نقش‌ها و دسترسی", "resource.list": "فهرست منابع",
-          "resource.read": "مشاهده منبع", "representation.read": "مشاهده متن پالایش‌شده"}
+          "resource.read": "مشاهده منبع", "representation.read": "مشاهده متن پالایش‌شده",
+          "objective.configure": "تنظیم اهداف دانش", "pipeline.configure": "تنظیم خطوط پردازش",
+          "pipeline.run": "اجرای خطوط پردازش"}
 ACTIONS = {"add_member": "members", "revoke_membership": "members",
            "create_role": "roles", "assign_role": "roles", "grant_scope": "roles",
            "revoke_scope": "roles", "revoke_role": "roles", "retire_role": "roles"}
@@ -43,6 +47,7 @@ class PreviewConfig:
     installation: UUID
     candidates: tuple[UUID, ...]
     resources: bool = False
+    studio: bool = False
 
     @classmethod
     def from_env(cls, env):
@@ -64,7 +69,11 @@ class PreviewConfig:
                 raise ValueError()
         except (KeyError,ValueError):
             raise ValueError("Explicit synthetic installation and workspace candidates required") from None
-        return cls(int(raw_port),installation,candidates,env.get("PANADAN_KNOWLEDGE_PREVIEW_RESOURCES") == "YES")
+        resources = env.get("PANADAN_KNOWLEDGE_PREVIEW_RESOURCES") == "YES"
+        studio = env.get("PANADAN_KNOWLEDGE_PREVIEW_STUDIO") == "YES"
+        if studio and not resources:
+            raise ValueError("Studio requires the isolated resource preview")
+        return cls(int(raw_port),installation,candidates,resources,studio)
 
 
 def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name="panadan_session"):
@@ -82,7 +91,7 @@ def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name=
         with psycopg.connect(host="127.0.0.1",port=config.port,dbname="panadan_ci",
                 user="panadan_knowledge_test_login",password="synthetic_knowledge_test_only",
                 connect_timeout=3,autocommit=True,sslmode="disable") as conn:
-            yield ScopedWorkspace(conn,bridge,enabled=True,resources=config.resources)
+            yield ScopedWorkspace(conn,bridge,enabled=True,resources=config.resources,studio=config.studio)
 
     def render(request, **context):
         status=context.pop("status_code",200)
@@ -137,7 +146,7 @@ def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name=
         except ValueError:
             return denied(request)
         if (not session or workspace not in config.candidates or page not in PAGES
-                or (page in RESOURCE_PAGES and not config.resources)):
+                or (page in RESOURCE_PAGES and not config.resources) or (page in STUDIO_PAGES and not config.studio)):
             return denied(request)
         try:
             with scoped() as svc:
@@ -196,7 +205,7 @@ def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name=
                     raise ValueError()
             kwargs={}
             if operation=="create_role":
-                if not capabilities or len(capabilities)>len(CAPABILITIES):
+                if not capabilities or len(capabilities)>len(WORKSPACE_CAPABILITIES):
                     raise ValueError()
                 args=(role_key,name,capabilities)
             elif operation=="assign_role":

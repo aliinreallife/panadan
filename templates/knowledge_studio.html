@@ -1,0 +1,75 @@
+{% set root = '/workspace/' ~ data.id %}
+{% set inputs = {'filtered_call':'تماس پالایش‌شده','validated_knowledge':'دانش اعتبارسنجی‌شده'} %}
+{% set run_states = {'queued':'در صف','running':'در حال اجرا','paused':'متوقف موقت','succeeded':'تکمیل شده','partial':'تکمیل بخشی','failed':'ناموفق','canceled':'لغو شده','blocked_policy':'محدود شده'} %}
+{% macro timestamp(value) %}
+{% if value %}<time datetime="{{value.isoformat()}}"><bdi>{{value.strftime('%Y-%m-%d %H:%M')}} UTC</bdi></time>{% else %}—{% endif %}
+{% endmacro %}
+
+{% if page == 'objectives' %}
+<section class="panel">
+  <div class="panel-head"><h2>اهداف سازمان</h2></div>
+  <ul class="resource-list">
+  {% for objective in data.objectives %}
+    <li class="resource-row"><div><strong>{{objective.label}}</strong><span>{{objective.purpose}}</span></div>
+    <div><span>{{inputs[objective.input_kind]}}</span><span>{{objective.template or 'هدف سفارشی'}}</span></div>
+    <span class="tag">نسخهٔ {{objective.rev}}</span></li>
+  {% else %}<li class="resource-message">هدفی برای این سازمان ثبت نشده است.</li>
+  {% endfor %}
+  </ul>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>الگوهای اهداف</h2></div>
+  <ul class="resource-list">
+  {% for template in data.objective_templates %}
+    <li class="resource-row"><strong>{{template.label}}</strong><span>{{inputs[template.input_kind]}}</span></li>
+  {% endfor %}
+  </ul>
+</section>
+{% elif page == 'pipelines' %}
+<section class="panel">
+  <div class="panel-head"><h2>تنظیمات خطوط پردازش</h2>{% if 'pipeline.run' in data.studio_capabilities %}<a class="button secondary" href="{{root}}/runs">تاریخچهٔ اجراها</a>{% endif %}</div>
+  {% for pipeline in data.pipelines %}
+    <article class="sync-scope">
+      <h3>{{pipeline.label}} <span class="muted">· نسخهٔ {{pipeline.rev}}</span></h3>
+      <dl class="facts">
+        <dt>محدودهٔ منبع</dt><dd>{{pipeline.source}} · {{pipeline.operator}}</dd>
+        <dt>از زمان تماس</dt><dd>{{timestamp(pipeline.event_start)}}</dd>
+        <dt>تا (انحصاری)</dt><dd>{{timestamp(pipeline.event_end)}}</dd>
+        <dt>سقف تماس در اجرا</dt><dd>{{pipeline.max_resources}}</dd>
+        <dt>پردازشگر</dt><dd>قطعی و آزمایشی</dd>
+        <dt>وضعیت</dt><dd>{{'فعال' if pipeline.enabled else 'غیرفعال'}}</dd>
+      </dl>
+    </article>
+  {% else %}<p class="resource-message">خط پردازشی در محدودهٔ دسترسی شما ثبت نشده است.</p>
+  {% endfor %}
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>زمان‌بندی‌ها</h2></div>
+  <ul class="resource-list">
+  {% for schedule in data.schedules %}
+    <li class="resource-row"><strong>{{schedule.label}}</strong><span>{% if schedule.cadence_seconds == 86400 %}روزانه{% else %}هر {{schedule.cadence_seconds // 60}} دقیقه{% endif %}</span>
+    {% if schedule.enabled %}{{timestamp(schedule.next_due_at)}}{% else %}<span class="tag">غیرفعال</span>{% endif %}</li>
+  {% else %}<li class="resource-message">زمان‌بندی ثبت نشده است.</li>
+  {% endfor %}
+  </ul>
+</section>
+{% else %}
+<section class="panel">
+  <div class="panel-head"><h2>تاریخچهٔ اجراهای من</h2></div>
+  {% for run in data.runs %}
+    <article class="sync-scope">
+      <h3>{{run.label}} <span class="muted">· نسخهٔ {{run.rev}}</span></h3>
+      <dl class="facts">
+        <dt>وضعیت</dt><dd>{{run_states[run.state]}}</dd>
+        <dt>نوع درخواست</dt><dd>{{'زمان‌بندی‌شده' if run.trigger_kind == 'schedule' else 'دستی'}}</dd>
+        <dt>ثبت درخواست</dt><dd>{{timestamp(run.created_at)}}</dd>
+        <dt>پایان</dt><dd>{{timestamp(run.finished_at)}}</dd>
+        <dt>پوشش داده‌های ذخیره‌شده</dt><dd>{{run.measured_count}} بررسی، {{run.ready_count}} آماده، {{run.excluded_count}} کنار گذاشته{% if run.bounded %} · محدود به سقف اجرا{% endif %}</dd>
+        <dt>تعداد کل در مبدأ</dt><dd>{% if run.source_eligible_count is none %}نامشخص{% else %}{{run.source_eligible_count}}{% endif %}</dd>
+        <dt>پردازش</dt><dd>{{run.succeeded}} تکمیل، {{run.failed}} ناموفق یا محدود، {{run.open}} باز</dd>
+      </dl>
+    </article>
+  {% else %}<p class="resource-message">اجرایی برای نمایش وجود ندارد.</p>
+  {% endfor %}
+</section>
+{% endif %}

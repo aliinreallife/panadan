@@ -60,6 +60,12 @@
 <a href="/workspace/{{data.id}}/resources" {% if page in ('resources','resource') %}aria-current="page"{% endif %}><span aria-hidden="true">▤</span> منابع</a>
 <a href="/workspace/{{data.id}}/integrations" {% if page=='integrations' %}aria-current="page"{% endif %}><span aria-hidden="true">↔</span> اتصال‌ها</a>
 {% endif %}
+{% if data.studio_capabilities %}
+<span class="nav-caption">گردش کار</span>
+{% if 'objective.configure' in data.studio_capabilities %}<a href="/workspace/{{data.id}}/objectives" {% if page=='objectives' %}aria-current="page"{% endif %}><span aria-hidden="true">◎</span> اهداف دانش</a>{% endif %}
+{% if 'pipeline.configure' in data.studio_capabilities %}<a href="/workspace/{{data.id}}/pipelines" {% if page=='pipelines' %}aria-current="page"{% endif %}><span aria-hidden="true">≡</span> خطوط پردازش</a>{% endif %}
+{% if 'pipeline.run' in data.studio_capabilities %}<a href="/workspace/{{data.id}}/runs" {% if page=='runs' %}aria-current="page"{% endif %}><span aria-hidden="true">▷</span> اجراها</a>{% endif %}
+{% endif %}
 {% if 'members.manage' in data.capabilities or 'roles.manage' in data.capabilities %}<span class="nav-caption">سازمان و دسترسی</span>{% endif %}
 {% if 'members.manage' in data.capabilities %}<a href="/workspace/{{data.id}}/members" {% if page=='members' %}aria-current="page"{% endif %}><span aria-hidden="true">♙</span> اعضا</a>{% endif %}
 {% if 'roles.manage' in data.capabilities %}<a href="/workspace/{{data.id}}/roles" {% if page=='roles' %}aria-current="page"{% endif %}><span aria-hidden="true">◇</span> نقش‌ها و دسترسی</a>{% endif %}
@@ -102,6 +108,8 @@
 {% for m in data.members %}<tr><td><strong><bdi>{{m.name}}</bdi></strong>{% if m.id==data.membership_id %}<small class="self">شما</small>{% endif %}{{reference(m.id)}}</td><td><span class="tag {{'active' if m.state=='active' else 'inactive'}}">{{'فعال' if m.state=='active' else 'لغو شده'}}</span></td><td>{% if m.state=='active' and m.id!=data.membership_id %}{{revoke('revoke_membership',m.id,'لغو عضویت')}}{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="3">عضوی برای نمایش وجود ندارد.</td></tr>{% endfor %}</tbody></table></div></section>
 {% elif page in ('resources','resource','integrations') %}
 {% include "knowledge_call_resources.html" %}
+{% elif page in ('objectives','pipelines','runs') %}
+{% include "knowledge_studio.html" %}
 {% elif page=='roles' %}
 <p class="table-scroll-note">برای دیدن همهٔ ستون‌ها، جدول را افقی پیمایش کنید. از کلیدهای جهت‌نما هم می‌توانید استفاده کنید.</p>
 <section class="panel"><div class="panel-head"><div><h2 id="role-list">نقش‌ها</h2><p>نسخه‌های فعال و بازنشسته؛ تغییر تعریف، نسخه جدید می‌سازد.</p></div></div>

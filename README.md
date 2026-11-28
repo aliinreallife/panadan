@@ -340,13 +340,13 @@ for setup, security and restore validation.
 
 ## Local knowledge workspace preview (synthetic only)
 
-Review the Persian workspace, Resource Explorer and Integrations in an isolated local preview. Run this command in the development checkout with Docker, uv and npm available.
+Review the Persian workspace, Resource Explorer, Integrations and the read-only Studio in an isolated local preview. Run this command in the development checkout with Docker, uv and npm available.
 
 ```bash
 bash tools/preview-knowledge.sh
 ```
 
-The launcher builds locked frontend assets, creates a fresh loopback-only PostgreSQL 18.6 container and temporary SQLite authority, and applies migrations 004–009 to the disposable owned database. A separate synthetic source database is read through a column-scoped read-only login. The collector filters the fixture calls and commits local resources and checkpoint history before the web app starts at `127.0.0.1:8765`. Stop with Ctrl+C to discard the container and temporary authority.
+The launcher builds locked frontend assets, creates a fresh loopback-only PostgreSQL 18.6 container and temporary SQLite authority, and applies migrations 004–013 to the disposable owned database. It filters fixture calls from a separate synthetic source through a column-scoped read-only login, then runs the deterministic processor on eligible filtered inputs. Objectives, pipelines and persisted run results are available for inspection after the web app starts at `127.0.0.1:8765`. Stop with Ctrl+C to discard the container and temporary authority.
 
 Sign in on the local `/login` page using the synthetic password printed by the launcher. `admin` can switch between both organizations. `reader` can browse call metadata in A. `other` can read eligible filtered transcripts in B. `newmember` starts without workspace access. Reporting access is independently authorized. The preview uses generated data and an explicitly isolated configuration only.
 
