@@ -201,6 +201,9 @@ class WorkspaceAuthorization:
     def add_member(self, raw, workspace, principal):
         _uuid(principal)
         def op(cur,a,e,now):
+            # M01.3: expose only this explicit provisioned principal to the
+            # scoped registry lookup, after members.manage has been checked.
+            cur.execute("SELECT set_config('panadan.target_principal',%s,true)",(str(principal),))
             if principal == a.principal_id or not cur.execute("""SELECT 1 FROM panadan_knowledge.principals
                 WHERE id=%s AND state='active' AND kind='human'""",(principal,)).fetchone():
                 raise AccessDenied("Access denied")
@@ -212,6 +215,7 @@ class WorkspaceAuthorization:
                 (workspace,principal,a.principal_id)).fetchone()
             if not row:
                 raise AccessDenied("Access denied")
+            cur.execute("SELECT set_config('panadan.target_principal','',true)")
             return row["id"]
         return self._change(raw,workspace,"members.manage","membership.add","membership",op)
 
