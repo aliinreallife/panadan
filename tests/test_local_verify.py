@@ -31,6 +31,7 @@ def _project(tmp_path):
             '[[ -z "${PGHOST:-}" && -z "${PGPORT:-}" && -z "${PGUSER:-}" ]] || exit 67\n'
             '[[ -z "${PGPASSWORD:-}" && -z "${PGDATABASE:-}" ]] || exit 67\n'
             '[[ -z "${PANADAN_PLATFORM_TEST_DSN:-}" && -z "${PANADAN_PLATFORM_TEST_ALLOW_RESET:-}" ]] || exit 67\n'
+            '[[ -z "${PANADAN_KNOWLEDGE_PREVIEW:-}" ]] || exit 67\n'
             'printf "%s %s\\n" "' + name + '" "$*" >> "$MOCK_VERIFY_LOG"\n'
         )
         stub.chmod(0o700)
@@ -44,6 +45,7 @@ def _project(tmp_path):
     env["PGDATABASE"] = "mock-do-not-connect"
     env["PANADAN_PLATFORM_TEST_DSN"] = "not-a-real-platform"
     env["PANADAN_PLATFORM_TEST_ALLOW_RESET"] = "YES"
+    env["PANADAN_KNOWLEDGE_PREVIEW"] = "YES"
     return env
 
 
