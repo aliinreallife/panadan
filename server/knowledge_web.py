@@ -152,15 +152,16 @@ def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name=
                 csrf: str=Form(...), target: str=Form(""), role: str=Form(""),
                 role_key: str=Form(""), name: str=Form(""),
                 capabilities: list[str]=Form([]), capability: str=Form(""),
-                valid_until: str=Form("")):
+                valid_until: str=Form(""), confirm: str=Form("")):
         raw,session=auth(request)
         try:
             workspace=UUID(workspace_id)
         except ValueError:
             return denied(request)
         if (not session or workspace not in config.candidates or operation not in ACTIONS
-                or not hmac.compare_digest(csrf,session["csrf"])
-                or not valid_form_origin(request,None)):
+                or not hmac.compare_digest(csrf.encode("utf-8"),session["csrf"].encode("utf-8"))
+                or not valid_form_origin(request,None)
+                or ((operation.startswith("revoke_") or operation=="retire_role") and confirm!="yes")):
             return denied(request)
         try:
             until=None
