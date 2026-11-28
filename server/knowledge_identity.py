@@ -35,6 +35,9 @@ def install_profile_identity(store: Store, installation: UUID, *, confirmed: boo
     """Explicit administrative migration; never invoked by Store or HTTP startup.
 
     Existing users receive random stable profiles, not knowledge memberships.
+    First installation invalidates pre-profile browser sessions; fresh login
+    is required because historical integer-keyed sessions cannot prove profile
+    continuity. Reapplying the same installation does not revoke sessions.
     The existing PG auth importer preserves profile_id. This is not a cutover
     mechanism: a future authority change or restore needs separate review.
     The existing account lifecycle is deactivate-only; once installed, direct
@@ -97,6 +100,9 @@ def install_profile_identity(store: Store, installation: UUID, *, confirmed: boo
             BEGIN SELECT RAISE(ABORT,'Replacement identity forbidden'); END""")
         db.execute("""CREATE TRIGGER knowledge_account_no_delete BEFORE DELETE ON users
             BEGIN SELECT RAISE(ABORT,'Deactivate the account instead of deleting it'); END""")
+        # Only on first explicit installation, in the same transaction.
+        # Do not bridge pre-installation integer-keyed browser sessions.
+        db.execute("DELETE FROM sessions")
 
 
 class SQLiteIdentityBridge:
