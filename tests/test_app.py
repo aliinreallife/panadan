@@ -10,6 +10,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv('PANADAN_ADMIN_USER','admin')
     monkeypatch.setenv('PANADAN_ADMIN_PASSWORD','a-long-safe-testing-password')
     monkeypatch.setenv('PANADAN_COOKIE_SECURE','false')
+    monkeypatch.delenv('PANADAN_KNOWLEDGE_PREVIEW', raising=False)
     import importlib, server.main as main
     # TestClient mocks data access. No business data or DB credentials required.
     main = importlib.reload(main)
@@ -33,6 +34,7 @@ def client(tmp_path, monkeypatch):
 
 def test_reject_unauthorized(client):
     c,_=client
+    assert c.get('/workspace').status_code==404
     assert c.get('/api/v1/calls').status_code==401
     assert c.get('/dashboard/data').status_code==401
     assert c.post('/mcp/',json={}).status_code==401
