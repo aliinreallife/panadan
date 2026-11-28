@@ -7,7 +7,7 @@
 | Status | Approved by owner on 2026-11-26 (D-067); Phase 8 M00 authorized |
 | Baseline | 18e39b7ad992758115ca12fb3cbee936eb48343a |
 | Authorized branch | feature/knowledge-platform |
-| Accepted direction | D-001–D-067 (65 public accepted entries; intentional numbering gaps) |
+| Accepted direction | D-001–D-068 (66 public accepted entries; intentional numbering gaps) |
 | Approved design | [PRD](PRD.md), [Architecture](ARCHITECTURE.md), [Data Model](DATA_MODEL.md), [UI direction review](UI_DESIGN_REVIEW.md) |
 | Implementation | M00 authorized; see [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for actual evidence; later increments separately authorized |
 
@@ -264,7 +264,7 @@ Release gate G13: actual environment evidence, approval and rollback plan; E3 bu
 
 ## 5. UI/UX implementation track (D-066)
 
-Both UI references are approved as design inputs under D-066/D-067; see [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md) §6. Visual direction approved: quiet warm neutrals, muted green/olive, restrained borders, editorial typography, compact readable RTL, professional knowledge workspace. Exact tokens/contrast, logo asset and final screens are pending detailed review. No image extracted/recreated or committed by this roadmap. Use current component library/assets where compatible; inspect before replacing. Existing Jinja/JS/esbuild and Doran/Vazirmatn are reuse candidates, not a mandate to reproduce legacy layout. No framework rewrite without reviewed justification.
+All three UI references are approved as complementary design inputs under D-066/D-067/D-068; see [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md) §§6–7. The prototype backend is not adopted. Visual direction approved: quiet warm neutrals, muted green/olive, restrained borders, editorial typography, compact readable RTL, professional knowledge workspace. Exact tokens/contrast, logo asset and final screens are pending detailed review. No image extracted/recreated or committed by this roadmap. Use current component library/assets where compatible; inspect before replacing. Existing Jinja/JS/esbuild and Doran/Vazirmatn are reuse candidates, not a mandate to reproduce legacy layout. No framework rewrite without reviewed justification.
 
 | Design increment | Deliverable | Functional milestone |
 | --- | --- | --- |
