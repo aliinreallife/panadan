@@ -33,11 +33,11 @@ def scenario(db, tmp_path):
     admin_id = store.verify_login("admin", "synthetic-password-only")
     user_id = store.create_user("reader", "synthetic-password-only", "reader")
     outsider_id = store.create_user("outsider", "synthetic-password-only", "admin")
+    ns = uuid4()
+    install_profile_identity(store, ns, confirmed=True)
     admin, _ = store.create_session(admin_id)
     user, _ = store.create_session(user_id)
     outsider, _ = store.create_session(outsider_id)
-    ns = uuid4()
-    install_profile_identity(store, ns, confirmed=True)
     bridge = SQLiteIdentityBridge(store, ns)
     a, b = [
         db.execute("INSERT INTO panadan_knowledge.workspaces(slug,name,state) VALUES (%s,'Synthetic','active') RETURNING id",
@@ -263,7 +263,7 @@ def test_audit_failure_rolls_back_role_and_epoch(scenario):
     s=scenario
     c,svc,a,admin=s["db"],s["svc"],s["a"],s["admin"]
     c.execute("""CREATE FUNCTION panadan_knowledge.synthetic_audit_failure() RETURNS trigger
-        LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'Synthetic audit failure'; END$$""")
+        LANGUAGE plpgsql AS $BEGIN RAISE EXCEPTION 'Synthetic audit failure'; END;$""")
     c.execute("""CREATE TRIGGER synthetic_audit_failure BEFORE INSERT ON panadan_knowledge.audit_events
         FOR EACH ROW EXECUTE FUNCTION panadan_knowledge.synthetic_audit_failure()""")
     with pytest.raises(errors.RaiseException,match="Synthetic audit failure"):
