@@ -1,5 +1,5 @@
 """M01.2 synthetic authorization tests. No live auth, routes or runtime grants."""
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -146,13 +146,24 @@ def test_delegation_cannot_exceed_actor_permissions_or_expiry(scenario):
         (authority_namespace,authority_subject,kind,state) VALUES (%s,%s,'human','active') RETURNING id""",
         (ident.namespace,ident.subject)).fetchone()[0]
     target=svc.add_member(admin,a,third)
-    expiry=datetime.now(timezone.utc)+timedelta(minutes=5)
-    c.execute("UPDATE panadan_knowledge.scope_grants SET valid_until=%s WHERE workspace_id=%s AND membership_id=%s AND capability='roles.manage'",(expiry,a,m))
+    # Authorization uses PostgreSQL's clock_timestamp(), not the WSL host
+    # clock. Derive all expiry boundaries from the same database clock.
+    expiry = c.execute("""UPDATE panadan_knowledge.scope_grants
+        SET valid_until=clock_timestamp()+interval '1 hour'
+        WHERE workspace_id=%s AND membership_id=%s AND capability='roles.manage'
+        RETURNING valid_until""",(a,m)).fetchone()[0]
+    assert svc.authorize(user,a,"roles.manage").capabilities == {"workspace.read","roles.manage"}
     with pytest.raises(AccessDenied):
         svc.grant_scope(user,a,target,"workspace.read")
     with pytest.raises(AccessDenied):
         svc.grant_scope(user,a,target,"workspace.read",valid_until=expiry+timedelta(minutes=5))
-    assert svc.grant_scope(user,a,target,"workspace.read",valid_until=expiry-timedelta(minutes=1))
+    # Check that the denied operations did not create a grant.
+    assert c.execute("""SELECT count(*) FROM panadan_knowledge.scope_grants
+        WHERE workspace_id=%s AND membership_id=%s""",(a,target)).fetchone()==(0,)
+    deadline=expiry-timedelta(minutes=30)
+    grant=svc.grant_scope(user,a,target,"workspace.read",valid_until=deadline)
+    assert c.execute("""SELECT membership_id,grantor,valid_until FROM panadan_knowledge.scope_grants
+        WHERE workspace_id=%s AND id=%s""",(a,grant)).fetchone()==(target,m,deadline)
     with pytest.raises(AccessDenied):
         svc.authorize(s["outsider"],a,"workspace.read")  # Scope alone does not grant access.
 
