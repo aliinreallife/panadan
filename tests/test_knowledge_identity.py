@@ -31,6 +31,10 @@ def test_profile_identity_stable_explicit_and_namespace_bound(auth):
     store, uid, token, ns = auth
     install_profile_identity(store, ns, confirmed=True)
     bridge = SQLiteIdentityBridge(store, ns)
+    token, _ = store.create_session(uid)
+    assert bridge.resolve_session(token) is None
+    assert store.session(token) is None
+    token, _ = store.create_session(uid)
     first = bridge.resolve_session(token)
     assert first is not None and first.subject.startswith("prf_")
     install_profile_identity(store, ns, confirmed=True)
@@ -44,7 +48,7 @@ def test_profile_identity_stable_explicit_and_namespace_bound(auth):
     other = store.create_user("other", "synthetic-password-only", "reader")
     second, _ = store.create_session(other)
     assert bridge.resolve_session(second).subject != first.subject
-    # No changes to login or existing session semantics.
+    # No changes to login or post-installation session semantics.
     assert store.verify_login("renamed", "synthetic-password-only") == uid
 
 
@@ -52,6 +56,7 @@ def test_deletion_replacement_and_profile_rewrite_blocked(auth):
     store, uid, token, ns = auth
     install_profile_identity(store, ns, confirmed=True)
     bridge = SQLiteIdentityBridge(store, ns)
+    token, _ = store.create_session(uid)
     before = bridge.resolve_session(token)
     for query, params in [
         ("DELETE FROM users WHERE id=?", (uid,)),
@@ -94,6 +99,8 @@ def test_separate_installations_do_not_share_identity(auth, tmp_path):
     token2, _ = other.create_session(uid2)
     ns2 = uuid4()
     install_profile_identity(other, ns2, confirmed=True)
+    token, _ = store.create_session(uid)
+    token2, _ = other.create_session(uid2)
     assert uid == uid2
     assert SQLiteIdentityBridge(other, ns2).resolve_session(token2) != SQLiteIdentityBridge(store, ns).resolve_session(token)
     assert SQLiteIdentityBridge(other, ns).resolve_session(token2) is None
