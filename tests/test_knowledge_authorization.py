@@ -171,7 +171,7 @@ def test_delegation_cannot_exceed_actor_permissions_or_expiry(scenario):
         SET valid_until=clock_timestamp()+interval '1 hour'
         WHERE workspace_id=%s AND membership_id=%s AND capability='roles.manage'
         RETURNING valid_until""",(a,m)).fetchone()[0]
-    assert svc.authorize(user,a,"roles.manage").capabilities == {"workspace.read","roles.manage"}
+    _assert_effective(s,user,m,"roles.manage",{"workspace.read","roles.manage"})
     with pytest.raises(AccessDenied):
         svc.grant_scope(user,a,target,"workspace.read")
     with pytest.raises(AccessDenied):
