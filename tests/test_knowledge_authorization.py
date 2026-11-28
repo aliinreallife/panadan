@@ -263,7 +263,11 @@ def test_audit_failure_rolls_back_role_and_epoch(scenario):
     s=scenario
     c,svc,a,admin=s["db"],s["svc"],s["a"],s["admin"]
     c.execute("""CREATE FUNCTION panadan_knowledge.synthetic_audit_failure() RETURNS trigger
-        LANGUAGE plpgsql AS $BEGIN RAISE EXCEPTION 'Synthetic audit failure'; END;$""")
+        LANGUAGE plpgsql AS $audit_failure$
+        BEGIN
+            RAISE EXCEPTION 'Synthetic audit failure';
+        END;
+        $audit_failure$""")
     c.execute("""CREATE TRIGGER synthetic_audit_failure BEFORE INSERT ON panadan_knowledge.audit_events
         FOR EACH ROW EXECUTE FUNCTION panadan_knowledge.synthetic_audit_failure()""")
     with pytest.raises(errors.RaiseException,match="Synthetic audit failure"):
