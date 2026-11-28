@@ -8,6 +8,7 @@ from psycopg import errors
 import pytest
 
 from server.knowledge_call_contract import SOURCE_FIELDS, SYNTHETIC_ADAPTER, UnsupportedCallContract, synthetic_call_contract
+from server.knowledge_call_privacy import prepare_call
 from server.knowledge_call_source import (
     CallCursor,
     CallSourceUnavailable,
@@ -158,3 +159,14 @@ def test_reader_refuses_malformed_rows_and_missing_source_fields(source):
     admin.execute("ALTER TABLE panadan_synthetic_source.calls ALTER COLUMN event_at DROP NOT NULL")
     with pytest.raises(CallSourceUnavailable, match="fields are unavailable"):
         _reader(port).read_page(**WINDOW)
+
+
+def test_source_to_filter_boundary_yields_only_filtered_text_and_keeps_source(source):
+    admin, port, _ = source
+    original = "بلیط رفت‌وبرگشت، تلفن ۰۹۱۲۳۴۵۶۷۸۹ و contact-canary@example.invalid"
+    _row(admin, 1, text=original)
+    call, = _reader(port).read_page(**WINDOW)
+    prepared = prepare_call(call)
+    assert prepared.representation.text == "بلیط رفت‌وبرگشت، تلفن [PHONE] و [EMAIL]"
+    assert "contact-canary" not in repr(prepared)
+    assert admin.execute("SELECT transcript FROM panadan_synthetic_source.calls").fetchone() == (original,)

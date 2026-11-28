@@ -4,7 +4,7 @@ Date: 2026-11-28 (last updated)
 Authorization: D-067 roadmap and D-069 owner authorization to complete synthetic implementation through M11 as prerequisite gates pass. D-068 records the three UI references. See the approved [Roadmap](ROADMAP.md).
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G1 passed. M02.1–M02.2 are verified synthetic. G2 is pending.**
+Current gate: **G1 passed. M02.1–M02.3 are verified synthetic. G2 is pending.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -234,7 +234,7 @@ Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node pass
 | --- | --- | --- |
 | M00 Baseline/harness | Complete — verified synthetic baseline (owner-reported) and reviewed harness | G0 passed |
 | M01 Workspace security | M01.1–M01.3 verified synthetic; M01.4 accepted with independent browser and regression evidence | G1 passed |
-| M02 Resources/privacy | M02.1–M02.2 verified synthetic; privacy filter, persistence and explorer pending | G1 passed; G2 pending |
+| M02 Resources/privacy | M02.1–M02.3 verified synthetic; persistence and explorer pending | G1 passed; G2 pending |
 | M03 Objectives/runs | Not started | G2 |
 | M04 AI gateway/budgets | Not started | G3 |
 | M05 Observations/aggregation | Not started | G4 |
@@ -259,4 +259,11 @@ Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node pass
 - The reader accepts only the reviewed synthetic contract, active source, and a trusted runtime's explicit operator key. It connects using a separate restricted login to a loopback synthetic source database. It checks PostgreSQL version, read-only transaction state, fixed column names/types, a single-column call identity key, exact column grants and the absence of write/elevated privileges.
 - Reads use a parameterized allowlist, a half-open UTC event window of at most 30 days, a frozen exclusive change cutoff and a bounded change-time/call-ID keyset. Explicit tombstones carry no transcript. Missing and oversized transcripts are distinct. Source exceptions surface a fixed error and transient transcript values are excluded from repr output.
 - The selected PostgreSQL 18.6 suite passed all 122 tests, including five reader tests for scope and time bounds, separate restricted credentials, schema/privilege drift, malformed rows and unchanged source contents. Syntax and compilation passed. Live source contracts, source reassignments, worker authorization, checkpoints, retention and Resource Explorer still require their applicable gates.
-- Next increment is M02.3 pre-persistence filtering. The reader remains internal and synthetic-only. No UI, scheduler, live source or persistence entry point invokes it in this increment.
+- The reader remains internal and synthetic-only. No UI, scheduler, live source or persistence entry point invokes it in this increment.
+
+## 11. M02.3 — Pre-persistence call privacy (verified synthetic)
+
+- `call-redaction-v1` processes transient source text in memory. It detects configured contact and identifier forms across Persian, Arabic and Latin digits, common separators, and invisible format characters. It emits typed placeholders, an exact filtered UTF-8 digest, and Unicode code point offsets against the filtered representation. It keeps eligible call duration separate, and returns metadata-only outcomes for absent, oversized, invalid, ambiguous email-like or tombstone input. Raw and filtered text are omitted from their respective object reprs.
+- The existing paginated transcript mask keeps its original offset contract. The new filter uses its own offsets after detection and replacement. Spoken names, addresses, unsupported identifiers and context can remain sensitive. The rule set is limited to synthetic processing, and live retention/disclosure still requires reviewed privacy decisions.
+- 38 selected tests passed, including a real PostgreSQL 18.6 source-to-filter canary and unchanged source content, mixed-script contact and ID fixtures, preserved ordinary prices and dates, evidence spans, rejection outcomes, and existing transcript regressions. Python compilation passed.
+- Next increment is M02.4. Integrate the filtered output with transactional checkpoints, immutable revisions, durable work intent and bounded synthetic collection authorization. Durable no-raw-payload and replay evidence belongs to M02.4. The Resource Explorer remains pending M02.5.
