@@ -78,6 +78,7 @@ Evolve the existing read-only reporting product into a reusable organizational k
 | D-066 | Preferred visual direction with required workflow additions (UI direction) | Adopt the owner-supplied visual reference direction: warm neutral surfaces, muted green/olive accents, restrained borders, editorial typography, compact readable Persian RTL knowledge workspace, responsive layouts. Complete all required PRD workflows in the same design language. |
 | D-067 | Approved implementation roadmap and incremental delivery | Approve ROADMAP.md M00–M13 and U0–U11, use both UI references within D-066, and authorize M00 baseline/harness only. Subsequent increments and live activation remain independently gated. |
 | D-068 | Three complementary UI references | Use the approved visual direction, supplemental interaction concept and owner-supplied interactive prototype as frontend design inputs; do not adopt the prototype backend or expand MVP scope. |
+| D-069 | Synthetic implementation authorization through M11 | Proceed through the approved synthetic increments after each prerequisite passes. Use the design references as guidance and exercise independent judgment on routine UI decisions. |
 
 Decision identifiers preserve the original negotiation numbering; gaps intentionally do not expose internal strategy.
 
@@ -145,6 +146,7 @@ This is a living decision register, not a one-time handoff. Every contributor, i
 | 2026-11-26 | D-066 | Owner approved UI direction — Preferred visual direction with required workflow additions. |
 | 2026-11-26 | D-067 | Owner approved Phase 7 roadmap, use of both UI references and start of Phase 8 M00. |
 | 2026-11-27 | D-068 | Owner approved all three UI references for frontend implementation. |
+| 2026-11-27 | D-069 | Owner authorized synthetic implementation through M11 and delegated routine UI design and acceptance decisions. |
 
 Append dated entries for future accepted decisions and supersessions. Do not erase prior entries.
 
@@ -667,6 +669,16 @@ Append dated entries for future accepted decisions and supersessions. Do not era
 - Affected documents/components: [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md), frontend milestones U0–U11.
 - Authorization: M01.2 separately authorized by owner; this UI decision does not authorize M01.3, frontend implementation, live data, deployment or migration.
 
+### D-069 — Synthetic implementation authorization through M11
+- Date: 2026-11-27
+- Status: Accepted
+- Approval: Product owner adopted the implementation handover in the current discussion.
+- Decision: Finish M01.4 and proceed through M11 on `feature/knowledge-platform` as each prerequisite passes. Implement, test, review, document, commit and push verified increments. Use the approved design references as guidance and exercise independent judgment on detailed UI choices and synthetic acceptance. Preserve lowercase panadan, Persian RTL and the approved application architecture.
+- Rationale: Replace routine approval round trips with independently verified, reversible increments.
+- Scope and constraints: Use synthetic fixtures, isolated infrastructure and mocked external services and AI providers. Main, the backup branch, production, customer data, live integrations, paid calls, M12 and M13 retain their existing approval boundaries. Significant unresolved product, architecture, security or brand decisions still require owner involvement.
+- Supersedes: The M00-only authorization and routine increment approval requirement in D-067, and any routine reference-fidelity or detailed UI sign-off requirement in D-066/D-068. The approved roadmap, acceptance gates and architecture remain in force.
+- Affected documents: [ROADMAP.md](ROADMAP.md), [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md) and [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+
 ### Template for future decision details
 
 ```markdown
@@ -732,4 +744,4 @@ Defer broad connector catalogs, full visual builders, advanced knowledge graphs,
 4. Develop incrementally on the feature branch. Preserve existing interfaces, source read-only constraints, production behavior and rollback options.
 5. Verify a complete pilot flow with synthetic or explicitly approved data before deployment; do not deploy or change production without separate authorization.
 
-The initial audit and gap analysis are recorded in [CURRENT_STATE.md](CURRENT_STATE.md) and [GAP_ANALYSIS.md](GAP_ANALYSIS.md); pilot discovery and PRD have been approved, and Phase 5 architecture choices AP-01–AP-10 are accepted as D-047–D-056. Phase 6 data model and UI direction are approved as D-057–D-066. Phase 7 roadmap is approved as D-067. Phase 8 M00 and M01.1 are verified on synthetic evidence; M01.2 is authorized. D-068 adds the third UI reference as a design input. Subsequent increments and live activation remain separately gated. Do not infer implemented or deployed capabilities from these decisions. See [historical decisions](../DECISIONS.md), [original reporting MVP PRD](../PRD.md), [status](../STATUS.md), [security](../SECURITY.md) and [production operations](../PRODUCTION_OPERATIONS.md). Existing safety/operational rules remain in force until a reviewed migration explicitly supersedes them. Update this document when the product owner approves a changed decision; distinguish accepted decisions from proposals and implementation evidence.
+The initial audit and gap analysis are recorded in [CURRENT_STATE.md](CURRENT_STATE.md) and [GAP_ANALYSIS.md). The approved PRD, architecture, data model, UI direction and roadmap are recorded in D-047–D-068. D-069 authorizes synthetic Phase 8 implementation through M11. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for evidence and current gates. Live activation retains its separate approval requirements. The [historical decisions](../DECISIONS.md), [reporting PRD](../PRD.md), [status](../STATUS.md), [security](../SECURITY.md) and [production operations](../PRODUCTION_OPERATIONS.md) govern existing operations.

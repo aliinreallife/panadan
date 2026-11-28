@@ -1,10 +1,10 @@
 # Panadan Knowledge Platform — Implementation Status
 
 Date: 2026-11-27 (last updated)
-Authorization: D-067 roadmap; M00 and M01.1–M01.3 verified; owner explicitly authorized M01.4 on 2026-11-27. D-068 approves all three UI references for frontend increments only. [Roadmap](ROADMAP.md) approved.
+Authorization: D-067 roadmap and D-069 owner authorization to complete synthetic implementation through M11 as prerequisite gates pass. D-068 records the three UI references. See the approved [Roadmap](ROADMAP.md).
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G0 passed; M01.1–M01.3 verified; M01.4 implemented, awaiting synthetic regression, HTTP integration and visual review. G1 remains pending.**
+Current gate: **G0 passed. M01.1–M01.3 verified. M01.4 automated verification passed on owner-reported evidence; independent browser acceptance and G1 are pending.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -238,4 +238,4 @@ Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node pass
 | M12 Real-data E1–E3 | Not started / unauthorized | G11 + private approvals |
 | M13 Release/E4 | Not started / unauthorized | Reviewed pilot + release approval |
 
-Next action: review the synthetic M01.4 desktop/mobile preview; resolve any issues, close G1 only after visual acceptance and evidence, then obtain explicit authorization for M02.1. Real activation remains separately gated. No automatic account mapping or production activation. UI/service/test code committed only on authorized branch; no live migration, login/session mutation, source records, external connections, paid requests or production changes. Protected refs must be rechecked after commit.
+Next action: verify the synthetic M01.4 desktop/mobile preview, address findings, close G1 if the evidence satisfies its criteria, then proceed to M02.1 under D-069. Record code and test evidence on the authorized branch and recheck protected refs after publishing.

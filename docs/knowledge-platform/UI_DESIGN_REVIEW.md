@@ -152,6 +152,8 @@ Use all three references as complementary inputs: D-066 original visual directio
 
 ## 8. U0/U1 implementation review — M01.4 (2026-11-27)
 
+D-069 delegates routine frontend design and synthetic acceptance through M11. The three references inform UI decisions. Persian RTL, the lowercase panadan wordmark and the approved product, architecture and security constraints govern implementation.
+
 Owner authorized M01.4 after M01.3 synthetic verification. All three original inputs were reopened: composite image, supplemental textual design concept and interactive ZIP source (shell/overview/platform components). No original asset, source archive, real data or prototype backend copied into this public repository.
 
 - Candidate implementation tokens in static/knowledge.css: forest #293F34, sage #A4B5A0, ink #202822, canvas #F6F5F1, white #FFFFFF, border #DADFD7; readable dark muted/semantic colors, restrained 7–10px radii, self-hosted existing Vazirmatn Variable, 44px controls, visible focus, reduced-motion support. Small CSS leaf motif and lowercase wordmark are provisional; no final logo decision. The original image informs warm neutrals, leaf character and restrained hierarchy; the textual concept informs role-appropriate briefing and navigation; the prototype informs the switcher, section grouping, native form/disclosure patterns and mobile organization.

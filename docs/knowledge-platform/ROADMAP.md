@@ -4,12 +4,12 @@
 | --- | --- |
 | Version | 0.1 — Phase 7 review |
 | Date | 2026-11-26 |
-| Status | Approved by owner on 2026-11-26 (D-067); Phase 8 M00 authorized |
+| Status | Roadmap approved in D-067; synthetic Phase 8 through M11 authorized in D-069 |
 | Baseline | 18e39b7ad992758115ca12fb3cbee936eb48343a |
 | Authorized branch | feature/knowledge-platform |
-| Accepted direction | D-001–D-068 (66 public accepted entries; intentional numbering gaps) |
+| Accepted direction | D-001–D-069 (67 public accepted entries; intentional numbering gaps) |
 | Approved design | [PRD](PRD.md), [Architecture](ARCHITECTURE.md), [Data Model](DATA_MODEL.md), [UI direction review](UI_DESIGN_REVIEW.md) |
-| Implementation | M00 authorized; see [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for actual evidence; later increments separately authorized |
+| Implementation | Synthetic M00–M11 authorized and dependency-gated. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for actual evidence. |
 
 ## 1. Delivery strategy and constraints
 
@@ -68,7 +68,7 @@ flowchart LR
 
 ## 3. Execution protocol and definition of done
 
-Every milestone contains candidate small increments below. Before each increment, fetch current branch HEAD, read mandatory docs and actual affected code/tests, state expected files, acceptance and stop conditions. Work only within explicit authorization; if a substantive conflict arises, stop and request the required decision, rather than broadening scope or inventing source/provider contracts. The owner approved M00 only on 2026-11-26; G0 must pass before a separately approved M01. Later milestones require explicit increment approval; roadmap approval alone does not authorize implementation.
+Every milestone contains candidate small increments below. Before each increment, fetch current branch HEAD, review affected requirements, code and tests, and identify acceptance and stop conditions. D-069 authorizes synthetic implementation through M11 as each prerequisite passes. Seek a decision for substantive unresolved product, architecture or security conflicts. Real source and provider contracts require separate approval.
 
 For each increment: (1) verify clean or understood working state and protected refs, (2) review proposed schema/DTO/security contracts and design screens, (3) implement bounded change with additive migrations and tests, (4) run targeted and applicable regression/integration suites, (5) verify diff and commit only authorized branch, (6) report commit, changed files, tests with actual results/skips, limitations, security and rollback, and remaining tasks, (7) update a knowledge-platform implementation status ledger and affected docs based on evidence, not optimism. Establish the ledger during M00; do not overwrite historical reporting STATUS.md indiscriminately. Never mark a failed or skipped required test passed. Failed gate blocks dependent activation. Partial work is labeled partial. Proposed state labels: not started, in progress, blocked, implemented unverified, verified synthetic, verified authorized pilot, released. Approval and verification are distinct.
 
@@ -330,5 +330,5 @@ No dates or story-point claims until M00 establishes baseline and team capacity.
 
 Deferred post-MVP: Market Intelligence and other app expansions; broad CRM/Telegram/SEO/market connectors; audio ingestion/retranscription; individual customer profiles; advanced schema/visual workflow/agent/ontology/graph builders; intelligent routing/BYOK/self-hosted inference; billing/wallet; dedicated chat/editor/CMS; automatic public publication; event-driven scale infrastructure unless measured and approved. No bidirectional source mutation. Revisit with measured pilot evidence and separate approved decisions.
 
-Phase 7 exit: owner approved M00–M13, dependencies, gates, UI track, scope and incremental approval protocol on 2026-11-26 (D-067). Roadmap review does not itself implement or activate anything. Current authorization: execute **M00 baseline and implementation harness only**, produce evidence ledger and proposed M01 increment. See the status ledger for verification blockers. Further milestones require separately authorized increments. Preserve main/backup, no production DB or live source operation, no paid calls, no merge or deploy. Update progress from actual verified work rather than phase count.
+Phase 7 exit was approved in D-067. D-069 authorizes synthetic execution through M11 on the feature branch, subject to prerequisite gates. Preserve main and backup. Keep production, real data, live integrations, paid calls, merges, deployment and M12–M13 behind separate approval. Record actual evidence in the status ledger.
 
