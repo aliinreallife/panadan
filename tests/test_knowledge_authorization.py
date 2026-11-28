@@ -63,7 +63,8 @@ def scenario(db, tmp_path):
         (a,member,role,member))
     for cap in CAPABILITIES:
         db.execute("""INSERT INTO panadan_knowledge.scope_grants
-            (workspace_id,membership_id,capability,grantor) VALUES (%s,%s,%s,%s)""",(a,member,cap,member))
+            (workspace_id,membership_id,capability,grantor,valid_from)
+            VALUES (%s,%s,%s,%s,clock_timestamp()-interval '1 day')""",(a,member,cap,member))
     svc = WorkspaceAuthorization(db,bridge)
     return dict(db=db,store=store,bridge=bridge,svc=svc,a=a,b=b,admin=admin,user=user,outsider=outsider,
                 owner=owner,reader=reader,member=member,bootstrap_role=role)
@@ -127,11 +128,29 @@ def test_role_versions_pinned_and_immutable(scenario):
     _reject(c,errors.RaiseException,"UPDATE panadan_knowledge.role_versions SET state='active' WHERE workspace_id=%s AND id=%s",(a,r))
 
 
+def _assert_effective(s,raw,member,capability,expected):
+    """Diagnose timing-sensitive denial without logging session credentials."""
+    try:
+        result=s["svc"].authorize(raw,s["a"],capability)
+    except AccessDenied:
+        rows=s["db"].execute("""SELECT capability,valid_from,valid_until,revoked_at,
+            clock_timestamp() AS database_time, transaction_timestamp() AS transaction_time,
+            valid_from<=clock_timestamp() AS started
+            FROM panadan_knowledge.scope_grants WHERE workspace_id=%s AND membership_id=%s
+            ORDER BY capability""",(s["a"],member)).fetchall()
+        pytest.fail(f"Expected {capability}; synthetic grant timing: {rows!r}")
+    assert result.capabilities==expected
+
+
 def test_delegation_cannot_exceed_actor_permissions_or_expiry(scenario):
     s=scenario
     c,svc,a,admin,user=s["db"],s["svc"],s["a"],s["admin"],s["user"]
+    # Bootstrap grants represent already-active permissions, not grants whose
+    # activation depends on the instant this fixture's transaction started.
+    _assert_effective(s,admin,s["member"],"members.manage",CAPABILITIES)
     m,_,_,_=_reader(s,caps=["workspace.read","roles.manage"])
     svc.grant_scope(admin,a,m,"roles.manage")
+    _assert_effective(s,user,m,"roles.manage",{"workspace.read","roles.manage"})
     # Member has role administration but cannot grant an unheld permission.
     with pytest.raises(AccessDenied):
         svc.create_role(user,a,"escalate","Escalate",["members.manage"])
