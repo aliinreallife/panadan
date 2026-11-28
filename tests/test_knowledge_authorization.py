@@ -141,12 +141,20 @@ def test_delegation_cannot_exceed_actor_permissions_or_expiry(scenario):
         svc.grant_scope(user,a,m,"roles.manage")  # no self grant
     with pytest.raises(AccessDenied):
         svc.assign_role(user,a,s["member"],s["bootstrap_role"])
+    ident=s["bridge"].resolve_session(s["outsider"])
+    third=c.execute("""INSERT INTO panadan_knowledge.principals
+        (authority_namespace,authority_subject,kind,state) VALUES (%s,%s,'human','active') RETURNING id""",
+        (ident.namespace,ident.subject)).fetchone()[0]
+    target=svc.add_member(admin,a,third)
     expiry=datetime.now(timezone.utc)+timedelta(minutes=5)
     c.execute("UPDATE panadan_knowledge.scope_grants SET valid_until=%s WHERE workspace_id=%s AND membership_id=%s AND capability='roles.manage'",(expiry,a,m))
     with pytest.raises(AccessDenied):
-        svc.grant_scope(user,a,s["member"],"workspace.read")
+        svc.grant_scope(user,a,target,"workspace.read")
     with pytest.raises(AccessDenied):
-        svc.grant_scope(user,a,s["member"],"workspace.read",valid_until=expiry+timedelta(minutes=5))
+        svc.grant_scope(user,a,target,"workspace.read",valid_until=expiry+timedelta(minutes=5))
+    assert svc.grant_scope(user,a,target,"workspace.read",valid_until=expiry-timedelta(minutes=1))
+    with pytest.raises(AccessDenied):
+        svc.authorize(s["outsider"],a,"workspace.read")  # Scope alone does not grant access.
 
 
 def test_cross_workspace_references_and_default_deny(scenario):
@@ -236,3 +244,29 @@ def test_session_revocation_rechecked_and_rollback(scenario,monkeypatch):
     assert c.execute("SELECT count(*) FROM panadan_knowledge.audit_events WHERE workspace_id=%s",(a,)).fetchone()==(0,)
     with pytest.raises(AccessDenied):
         svc.authorize(admin,a,"workspace.read")
+
+
+def test_disabled_principal_membership_can_be_revoked(scenario):
+    s=scenario
+    c,svc,a,admin,user=s["db"],s["svc"],s["a"],s["admin"],s["user"]
+    m,_,_,_=_reader(s)
+    c.execute("UPDATE panadan_knowledge.principals SET state='disabled' WHERE id=%s",(s["reader"],))
+    with pytest.raises(AccessDenied):
+        svc.authorize(user,a,"workspace.read")
+    svc.revoke_membership(admin,a,m)
+    c.execute("UPDATE panadan_knowledge.principals SET state='active' WHERE id=%s",(s["reader"],))
+    with pytest.raises(AccessDenied):
+        svc.authorize(user,a,"workspace.read")
+
+
+def test_audit_failure_rolls_back_role_and_epoch(scenario):
+    s=scenario
+    c,svc,a,admin=s["db"],s["svc"],s["a"],s["admin"]
+    c.execute("""CREATE FUNCTION panadan_knowledge.synthetic_audit_failure() RETURNS trigger
+        LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'Synthetic audit failure'; END$$""")
+    c.execute("""CREATE TRIGGER synthetic_audit_failure BEFORE INSERT ON panadan_knowledge.audit_events
+        FOR EACH ROW EXECUTE FUNCTION panadan_knowledge.synthetic_audit_failure()""")
+    with pytest.raises(errors.RaiseException,match="Synthetic audit failure"):
+        svc.create_role(admin,a,"audit_rollback","Rollback",["workspace.read"])
+    assert c.execute("SELECT count(*) FROM panadan_knowledge.role_versions WHERE workspace_id=%s AND role_key='audit_rollback'",(a,)).fetchone()==(0,)
+    assert c.execute("SELECT policy_epoch FROM panadan_knowledge.workspaces WHERE id=%s",(a,)).fetchone()==(0,)
