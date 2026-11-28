@@ -75,6 +75,10 @@ def install_profile_identity(store: Store, installation: UUID, *, confirmed: boo
         db.execute("""CREATE TRIGGER knowledge_namespace_no_update
             BEFORE UPDATE ON knowledge_identity_installation
             BEGIN SELECT RAISE(ABORT,'Knowledge identity namespace is immutable'); END""")
+        db.execute("""CREATE TRIGGER knowledge_namespace_no_replace
+            BEFORE INSERT ON knowledge_identity_installation
+            WHEN EXISTS(SELECT 1 FROM knowledge_identity_installation)
+            BEGIN SELECT RAISE(ABORT,'Knowledge identity namespace is immutable'); END""")
         db.execute("""CREATE TRIGGER knowledge_namespace_no_delete
             BEFORE DELETE ON knowledge_identity_installation
             BEGIN SELECT RAISE(ABORT,'Knowledge identity namespace is immutable'); END""")
@@ -84,7 +88,7 @@ def install_profile_identity(store: Store, installation: UUID, *, confirmed: boo
         db.execute("""CREATE TRIGGER knowledge_profile_allocate AFTER INSERT ON users
             WHEN NEW.profile_id IS NULL
             BEGIN UPDATE users SET profile_id='prf_' || lower(hex(randomblob(24))) WHERE id=NEW.id; END""")
-        db.execute("""CREATE TRIGGER knowledge_profile_immutable BEFORE UPDATE OF profile_id,id ON users
+        db.execute("""CREATE TRIGGER knowledge_profile_immutable BEFORE UPDATE ON users
             WHEN NEW.id IS NOT OLD.id OR
                  (OLD.profile_id IS NOT NULL AND NEW.profile_id IS NOT OLD.profile_id)
             BEGIN SELECT RAISE(ABORT,'Knowledge account identity is immutable'); END""")
