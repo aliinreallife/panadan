@@ -31,9 +31,10 @@ def test_profile_identity_stable_explicit_and_namespace_bound(auth):
     store, uid, token, ns = auth
     install_profile_identity(store, ns, confirmed=True)
     bridge = SQLiteIdentityBridge(store, ns)
-    token, _ = store.create_session(uid)
+    # The fixture token predates stable profile installation.
     assert bridge.resolve_session(token) is None
     assert store.session(token) is None
+    assert store.verify_login("reader", "synthetic-password-only") == uid
     token, _ = store.create_session(uid)
     first = bridge.resolve_session(token)
     assert first is not None and first.subject.startswith("prf_")
@@ -77,6 +78,9 @@ def test_logout_disable_and_expiry_rechecked(auth):
     store, uid, token, ns = auth
     install_profile_identity(store, ns, confirmed=True)
     bridge = SQLiteIdentityBridge(store, ns)
+    assert bridge.resolve_session(token) is None
+    assert store.verify_login("reader", "synthetic-password-only") == uid
+    token, _ = store.create_session(uid)
     assert bridge.resolve_session(token)
     store.logout(token)
     assert bridge.resolve_session(token) is None
