@@ -77,22 +77,25 @@ def runtime(db, tmp_path):
     a,b = [db.execute("""INSERT INTO panadan_knowledge.workspaces(slug,name,state)
             VALUES (%s,%s,'active') RETURNING id""",(slug,slug)).fetchone()[0] for slug in ("synthetic-a","synthetic-b")]
     overlap=uuid4()
-    def seed(w,principal_id,member,capabilities):
+    def seed(w,principal_id,member,role_key,capabilities):
         db.execute("""INSERT INTO panadan_knowledge.memberships(workspace_id,id,principal_id,state)
             VALUES (%s,%s,%s,'active')""",(w,member,principal_id))
         role=db.execute("""INSERT INTO panadan_knowledge.role_versions
             (workspace_id,role_key,rev,name,capability_set,state)
-            VALUES (%s,'initial',1,'Synthetic',%s,'active') RETURNING id""",(w,Jsonb(sorted(capabilities)))).fetchone()[0]
+            VALUES (%s,%s,1,'Synthetic',%s,'active') RETURNING id""",(w,role_key,Jsonb(sorted(capabilities)))).fetchone()[0]
         db.execute("""INSERT INTO panadan_knowledge.membership_roles
             (workspace_id,membership_id,role_version_id,granted_by)
             VALUES (%s,%s,%s,%s)""",(w,member,role,member))
         for cap in capabilities:
             db.execute("""INSERT INTO panadan_knowledge.scope_grants
-                (workspace_id,membership_id,capability,grantor) VALUES (%s,%s,%s,%s)""",(w,member,cap,member))
+                (workspace_id,membership_id,capability,grantor,valid_from)
+                VALUES (%s,%s,%s,%s,clock_timestamp()-interval '1 day')""",(w,member,cap,member))
     owner=uuid4()
-    seed(a,p,owner,CAPABILITIES)
-    seed(a,q,overlap,{"workspace.read"})
-    seed(b,r,overlap,{"workspace.read"})
+    # Distinct role definitions inside A; the same reader role key and local
+    # membership ID intentionally recur in B to exercise tenant isolation.
+    seed(a,p,owner,"initial-admin",CAPABILITIES)
+    seed(a,q,overlap,"initial-reader",{"workspace.read"})
+    seed(b,r,overlap,"initial-reader",{"workspace.read"})
     db.commit()
     connections=[]
     def connect():
