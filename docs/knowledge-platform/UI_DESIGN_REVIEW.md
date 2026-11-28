@@ -106,3 +106,46 @@ Keep the independently authorized one-way destination distribution and legacy re
 ### 6.5 Implementation handoff
 
 Use the supplemental concept as a design input within existing [ROADMAP.md](ROADMAP.md) U0–U11. U0 reviews navigation and exact token/components; U1 reviews briefing/workspace/access; U2 resource inspector/source setup; U3 research objectives and execution plans; U4 budgets; U5/U6 reusable evidence inspector and review/taxonomy; U7/U8 shared customer/content journeys; U9 pinned package and effective client-grant previews; U10 destination/integration setup; U11 responsive/accessibility and full journey verification. Detailed designs use synthetic data only. D-067 records Phase 7 approval and M00 authorization, including both references as inputs without extending roadmap scope. Exact detailed choices remain subject to review; no further D-ID until a substantive additional choice is approved.
+
+## 7. Interactive prototype reference (owner-supplied, 2026-11-27)
+
+Reference: panadan-product-design-brief.zip (SHA-256 b48e0478d9f771ca91518000be83d260a5a9883ecd52f2c5a87c3d2094659cec). Static inspection of the supplied archive, including DESIGN.md, component/CSS source, model, actions, permissions, database schema and representative API/session code. The archive is not republished to this public repository. No dependency installation, browser rendering, execution, deployment, database access, security certification or accessibility test performed. The owner offered it as an additional design aid, not as a replacement product or architecture approval. D-066/D-067 and approved roadmap remain governing.
+
+### 7.1 Design value
+
+DESIGN.md explores field journal, knowledge atlas and evidence workbench; the last is the implemented concept. The prototype is materially more useful than a static board for interaction handoff. It contains a Next.js/React/TypeScript UI, CSS, synthetic local workflows and a Drizzle/PostgreSQL demonstration backend. The overview combines briefing, signals, attention queue and recent discoveries; an inspection drawer maintains context while exploring evidence or review. Persian and English copy, mirrored logical layout, mobile navigation drawer, keyboard command search and dialog focus behavior are implemented in source or described in the design brief; actual behavior/accessibility must be verified on the production implementation. It illustrates 16 view identifiers (overview, resources, knowledge, validation, sources, objectives, pipelines, taxonomy, packages, customers, content, apps, gateway, connections, settings, activity), not 16 accepted production features or a completed MVP.
+
+The visual system differs from the approved warm-green direction: base.css uses charcoal #292a32, purple #7752c6, lilac #f0ebfa, canvas #fafbfc, line #e3e4eb, 222px navigation rail, 12px panel radius, Manrope/Vazirmatn and small desktop controls. The three-layer folded mark is another logo concept. Do not replace D-066 with this alternate identity, or finalize tokens/fonts/logo without explicit review. Reuse interaction and layout ideas within approved visual direction; verify target sizes, text contrast, font licensing, RTL and reduced motion. English language switching is a candidate, not a new localization requirement.
+
+### 7.2 Component reference map
+
+| Prototype source | Reusable design pattern | Roadmap |
+| --- | --- | --- |
+| src/components/shell.tsx, workspace.tsx, workspace-context.tsx, ui.tsx | Workspace shell, role-aware navigation, command search, shared tabs/popovers/overlays, detail and dialog lifecycle, mobile layout | U0/U1, U11 |
+| src/components/overview.tsx | Briefing, period selection, attention list, recent discoveries and activity visualization | U1/U7/U11 |
+| src/components/library.tsx, details.tsx | Resource/knowledge/validation list-to-inspector workflow, evidence tabs, review rationale and revision context | U2/U5/U6 |
+| src/components/studio.tsx, forms.tsx, dialogs.tsx | Source scope, objectives, pipeline setup and run status, taxonomy, package configuration | U2/U3/U6/U9 |
+| src/components/applications.tsx | Customer patterns and content opportunity-to-brief workflow | U7/U8 |
+| src/components/platform.tsx | Organization settings/members, gateway, connections, activity and audit presentation | U1/U4/U9/U11 |
+| src/app/base.css, workspace.css, panels.css, responsive.css | Component sizing, layout, responsive patterns and bidi behavior; adapt to approved palette and accessibility standards | U0–U11 |
+
+Prefer retaining selection/filter/page position when opening permitted evidence in a drawer. Reuse form and dialog structure, keyboard search interaction, compact review queue and operational attention list. Separate resource/knowledge results, show scope and denominator where relevant, avoid displaying example metrics as facts. Use service-bound permissions, not a client-side role check. Revalidate drawer and search results after revocation/workspace change.
+
+### 7.3 Do not adopt the demo backend
+
+| Observed demo implementation | Production boundary |
+| --- | --- |
+| Next.js and Drizzle stack; src/db/schema.ts stores workspace Store as one JSONB state row plus access keys, invitations and member sessions | Existing modular FastAPI/Python/owned PostgreSQL architecture D-047–D-050 and relational panadan_knowledge D-057–D-065 remain authoritative. Port interaction patterns to reviewed frontend architecture; no second backend, parallel auth system or replacement schema. |
+| Browser capability creates demo workspace; invitation sessions and four broad roles; permissions.ts uses coarse role/view/action checks and viewer fallback | Existing verified identity authority, explicit stable bridge, default-deny workspace memberships, least-privilege granular grants, current client consent, tenant composite FKs and RLS. No implicit owner or fallback grant, no self-service capability identity. M01.2/M01.3 remain gated. |
+| Workspace server transaction settles and schedules preview runs; browser polls every minute and while work runs | Demonstration only; durable jobs, worker leases/fencing, independent schedule occurrences and reconciliation under D-052/D-060. Work must not depend on open browser. |
+| actions.ts checks simulated fixed cost and inferred provider from model name | D-054/D-064 explicit verified model/provider/disclosure/rates, atomic dual-account reservation and uncertain charge reconciliation. No simulated spending promoted to real budget ledger. |
+| model.ts resource.text, evidence array of resource IDs and knowledge version number | Separate filtered immutable representation revisions, validated evidence anchors, versioned observations/claims, conditions, freshness, invalidation, exact aggregate membership; no new raw original exposure. |
+| Package model units: string[] and external authorization resolves current validated units by ID; simple JSON-RPC resources endpoint | D-063 pin exact revision membership; D-055 shared permission-scoped API/MCP SDK query contracts, separate resource/knowledge retrieval, current client/user intersection. No copying prototype token/transport implementation. |
+| Review actions, taxonomy edits and generated findings in shared demo state | Governed versioned review/validation/retention policies, immutable history subject to approved erasure, exact evidence checks and no human override of hard safety constraints. |
+| Sample counts, configured source connections and reporting period through 2026-11-26 | Synthetic only, not verified source connections, pilot scope or production metrics. No live Google/Slack/telephony/web/email/paid AI activation; initial pilot and permitted source set remain unchanged. |
+
+Do not import dependencies, sample data, logo files, application source or credentials into the public repo merely because the archive exists. Separate destination distribution, legacy reporting, granular permissions and all approved coverage/validation/budget/retention workflows still required even if simplified or missing from the demo.
+
+### 7.4 Handoff
+
+Use all three references as complementary inputs: D-066 original visual direction, supplemental navigation/interaction concept in section 6, and this source-level prototype for concrete implementation patterns. Recommend reviewing shell and representative detail/form flows at U0/U1/M01.4, then the relevant components in each later functional increment. Keep the actual uploaded archive available as an external reference, not a production dependency; archive hash and component paths allow matching the source if reattached later. No new product decision, framework switch, final logo/palette, UI implementation or milestone authorization recorded. M01.1 remains verified; M01.2 awaits separate authorization.
