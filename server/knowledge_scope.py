@@ -1,6 +1,6 @@
 """M01.3 trusted transaction boundary for the synthetic workspace service.
 
-No HTTP endpoints, general query interface, runtime login provisioning or
+No general query interface, runtime login provisioning or
 production connection factory. The caller supplies an idle, dedicated,
 autocommit PG18 connection as a restricted login that can SET ROLE to the
 two NOLOGIN knowledge roles. Do not share a connection concurrently.
@@ -110,8 +110,12 @@ class ScopedWorkspace:
                 for key,value in zip(_SETTINGS,(str(workspace),identity.namespace,identity.subject,"","",""),strict=True):
                     cur.execute("SELECT set_config(%s,%s,true)",(key,value))
                 service = WorkspaceAuthorization(c,self._identity)
-                if operation == "read_workspace":
+                if operation in ("read_workspace","ui_view"):
                     access = service.authorize(raw,workspace,"workspace.read")
+                    page = args[0] if operation == "ui_view" else "overview"
+                    required = {"overview":"workspace.read","members":"members.manage","roles":"roles.manage"}[page]
+                    if required != "workspace.read":
+                        service.authorize(raw,workspace,required)
                     cur.execute("SELECT set_config('panadan.policy_epoch',%s,true)",(str(access.policy_epoch),))
                     cur.execute("SELECT set_config('panadan.read_authorized','yes',true)")
                     cur.execute("SET LOCAL ROLE panadan_knowledge_reader")
@@ -124,6 +128,45 @@ class ScopedWorkspace:
                     if current != access:
                         raise AccessDenied("Access denied")
                     result = dict(zip(("id","slug","name","state","policy_epoch","timezone"),row,strict=True))
+                    if operation == "ui_view":
+                        # Fixed, bounded projections under the same locked
+                        # workspace transaction. Never expose authority subjects,
+                        # policy definitions, raw audit, or unscoped registries.
+                        result["capabilities"] = sorted(access.capabilities)
+                        result["membership_id"] = access.membership_id
+                        result["members"] = []
+                        result["roles"] = []
+                        result["assignments"] = []
+                        result["grants"] = []
+                        from psycopg.rows import dict_row
+                        with c.cursor(row_factory=dict_row) as view:
+                            if page in ("members","roles"):
+                                result["members"] = view.execute("""SELECT id,state,created_at,revoked_at
+                                    FROM panadan_knowledge.memberships WHERE workspace_id=%s
+                                    ORDER BY created_at,id LIMIT 101""",(workspace,)).fetchall()
+                            if page == "roles":
+                                result["roles"] = view.execute("""SELECT id,role_key,rev,name,state,capability_set
+                                    FROM panadan_knowledge.role_versions WHERE workspace_id=%s
+                                    ORDER BY role_key,rev DESC LIMIT 101""",(workspace,)).fetchall()
+                                result["assignments"] = view.execute("""SELECT id,membership_id,role_version_id,valid_until,
+                                    revoked_at,(revoked_at IS NULL AND (valid_until IS NULL OR valid_until>clock_timestamp())) AS current
+                                    FROM panadan_knowledge.membership_roles WHERE workspace_id=%s
+                                    ORDER BY created_at,id LIMIT 101""",(workspace,)).fetchall()
+                                result["grants"] = view.execute("""SELECT id,membership_id,capability,valid_from,valid_until,revoked_at,
+                                    (revoked_at IS NULL AND valid_from<=clock_timestamp()
+                                    AND (valid_until IS NULL OR valid_until>clock_timestamp())) AS current
+                                    FROM panadan_knowledge.scope_grants WHERE workspace_id=%s
+                                    ORDER BY created_at,id LIMIT 101""",(workspace,)).fetchall()
+                        result["limited"] = any(len(result[key])>100 for key in ("members","roles","assignments","grants"))
+                        for key in ("members","roles","assignments","grants"):
+                            result[key] = result[key][:100]
+                        if service.authorize(raw,workspace,required) != access:
+                            raise AccessDenied("Access denied")
+                        if service.authorize(raw,workspace,"workspace.read") != access:
+                            raise AccessDenied("Access denied")
+                elif operation == "ui_command":
+                    service.authorize(raw,workspace,"workspace.read")
+                    result = getattr(service,args[0])(raw,workspace,*args[1:],**kwargs)
                 elif operation == "authorize":
                     result = service.authorize(raw,workspace,*args,**kwargs)
                 elif operation in _COMMANDS:
@@ -148,6 +191,16 @@ class ScopedWorkspace:
 
     def read_workspace(self, raw, workspace):
         return self._invoke(raw,workspace,"read_workspace",(),{})
+
+    def ui_view(self, raw, workspace, page):
+        if page not in ("overview","members","roles"):
+            raise AccessDenied("Access denied")
+        return self._invoke(raw,workspace,"ui_view",(page,),{})
+
+    def ui_command(self, raw, workspace, operation, *args, **kwargs):
+        if type(operation) is not str or operation not in _COMMANDS:
+            raise AccessDenied("Access denied")
+        return self._invoke(raw,workspace,"ui_command",(operation,*args),kwargs)
 
     def command(self, raw, workspace, operation, *args, **kwargs):
         if type(operation) is not str or operation not in _COMMANDS:
