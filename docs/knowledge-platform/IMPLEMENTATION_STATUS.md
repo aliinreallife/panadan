@@ -4,7 +4,7 @@ Date: 2026-11-28 (last updated)
 Authorization: D-067 roadmap and D-069 owner authorization to complete synthetic implementation through M11 as prerequisite gates pass. D-068 records the three UI references. See the approved [Roadmap](ROADMAP.md).
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G2 passed on synthetic call collection, privacy and Resource Explorer evidence. M03 is authorized under D-069.**
+Current gate: **G2 passed. M03.1 is verified synthetic. G3 is pending.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -235,7 +235,7 @@ Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node pass
 | M00 Baseline/harness | Complete — verified synthetic baseline (owner-reported) and reviewed harness | G0 passed |
 | M01 Workspace security | M01.1–M01.3 verified synthetic; M01.4 accepted with independent browser and regression evidence | G1 passed |
 | M02 Resources/privacy | M02.1–M02.5 accepted synthetic | G2 passed |
-| M03 Objectives/runs | Ready for M03.1 | G2 passed |
+| M03 Objectives/runs | M03.1 verified synthetic; admission, workers and UI pending | G2 passed; G3 pending |
 | M04 AI gateway/budgets | Not started | G3 |
 | M05 Observations/aggregation | Not started | G4 |
 | M06 Knowledge/review/taxonomy | Not started | G5 |
@@ -281,4 +281,11 @@ Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node pass
 - The standard preview now bootstraps two isolated workspaces and a separate temporary synthetic call source with its own read-only login. It runs the collector and reconciliation before starting the browser app. Fixture accounts exercise full filtered access, metadata-only access, and unauthorized direct links. No production, customer records or external service is involved.
 - Chromium/Playwright exercised the actual collector-backed preview at 1440, 390 and 320 CSS pixels. Nine sampled states passed the configured axe WCAG 2.0/2.1 A/AA checks and RTL/overflow checks. It verified mixed Persian/Arabic-digit search, scoped navigation, filter restoration, cross-workspace denial, missing/deleted/restricted text and metadata-only access. Screenshots were captured and inspected. The M01.4 signed-in account management, revocation, keyboard and logout workflows also passed again on this preview.
 - 134 selected PostgreSQL 18.6 tests passed, including same-workspace operator isolation, exact direct-ID denial, role and explicit grant intersection, expiry, pagination, and the earlier collector and workspace tests. Locked offline verification reported 571 Python passes and 81 environment-dependent skips, 67 Node passes, valid syntax, assets and Python compilation. A native PostgreSQL custom-format dump of the disposable owned knowledge schema was examined. The raw synthetic phone canary remained in the separate source and was absent from the owned dump and PostgreSQL log, while the filtered marker was present in the dump.
-- G2 is accepted for the synthetic call subset of AT-02/03 and DM-T02/03/04. Live source contracts, retention/erasure operations, manual/web fixtures, external access and deployment remain separately gated. M03.1 is next under D-069.
+- G2 is accepted for the synthetic call subset of AT-02/03 and DM-T02/03/04. Live source contracts, retention/erasure operations, manual/web fixtures, external access and deployment remain separately gated.
+
+## 14. M03.1 — Versioned objective and pipeline definitions (verified synthetic)
+
+- Migration 010 adds the seven-template catalog, typed output/context schema versions, immutable objective and pipeline definitions, and exact pipeline-to-objective/source/operator parameters. The first six templates take filtered call input. Content Opportunities pins validated knowledge input and is unavailable to the call processor. Custom call objectives use a bounded field vocabulary and explicit validation policy.
+- The explicit synthetic configuration service publishes a new version on edit and preserves previous schema and pipeline bindings. It requires an active member, an approved validation policy, the current registered source/contract/operator, an explicitly provisioned event window, and current representation role/grant intersection. Definitions and bindings remain separate from execution, and pipeline activation stays off.
+- The locked offline run passed 573 Python tests with 84 environment-dependent skips, 67 Node tests, syntax, browser asset build and compilation. All 139 selected PostgreSQL 18.6 tests passed, including schema rejection, exact source/version bounds, replay-safe edits and unavailable runtime privileges. No UI, provider, queue or schedule activation was added by this increment.
+- Next increment is M03.2 manual/scheduled admission, pinned run manifest and scoped, frozen population coverage. G3 remains pending durable worker and browser acceptance.
