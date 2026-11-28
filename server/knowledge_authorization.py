@@ -141,14 +141,15 @@ class WorkspaceAuthorization:
                 raise AccessDenied("Access denied")
 
     @staticmethod
-    def _target(cur, workspace, member, actor):
+    def _target(cur, workspace, member, actor, *, require_active_principal=True):
         _uuid(member)
         if member == actor:
             raise AccessDenied("Access denied")
         if not cur.execute("""SELECT 1 FROM panadan_knowledge.memberships m
             JOIN panadan_knowledge.principals p ON p.id=m.principal_id
             WHERE m.workspace_id=%s AND m.id=%s AND m.state='active'
-            AND m.revoked_at IS NULL AND p.state='active'""",(workspace,member)).fetchone():
+            AND m.revoked_at IS NULL AND (NOT %s OR p.state='active')""",
+            (workspace,member,require_active_principal)).fetchone():
             raise AccessDenied("Access denied")
 
     def _change(self, raw, workspace, required, action, target_kind, operation):
@@ -241,7 +242,7 @@ class WorkspaceAuthorization:
 
     def revoke_membership(self, raw, workspace, member):
         def op(cur,a,e,now):
-            self._target(cur,workspace,member,a.membership_id)
+            self._target(cur,workspace,member,a.membership_id,require_active_principal=False)
             cur.execute("""UPDATE panadan_knowledge.memberships SET state='revoked',revoked_at=%s,
                 updated_at=%s,lock_version=lock_version+1 WHERE workspace_id=%s AND id=%s""",
                 (now,now,workspace,member))
@@ -261,7 +262,7 @@ class WorkspaceAuthorization:
                 " WHERE workspace_id=%s AND id=%s AND revoked_at IS NULL",(workspace,assignment)).fetchone()
             if not row:
                 raise AccessDenied("Access denied")
-            self._target(cur,workspace,row["membership_id"],a.membership_id)
+            self._target(cur,workspace,row["membership_id"],a.membership_id,require_active_principal=False)
             cur.execute("UPDATE panadan_knowledge."+table+
                 " SET revoked_at=%s,updated_at=%s,lock_version=lock_version+1 WHERE workspace_id=%s AND id=%s",
                 (now,now,workspace,assignment))
