@@ -4,7 +4,7 @@ Date: 2026-11-27 (last updated)
 Authorization: D-067 roadmap; M00, M01.1 and M01.2 verified; owner explicitly authorized M01.3 on 2026-11-27. D-068 approves all three UI references for frontend increments only. [Roadmap](ROADMAP.md) approved.
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G0 passed; M01.1 and M01.2 verified; M01.3 implemented, awaiting synthetic integration and regression verification. G1 remains pending.**
+Current gate: **G0 passed; M01.1 and M01.2 verified; M01.3 offline/frontend passed; runtime fixture collision corrected; recurring delegation denial addressed in synthetic bootstrap and diagnostics; PG rerun pending. G1 remains pending.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -185,14 +185,14 @@ echo "M01.3 verification PASSED"
 '
 ```
 
-Expected 539 offline Python passes, 60 offline environment-dependent skips, 65 Node passes, 105 disposable PG integration passes, syntax/assets and compileall. Actual test evidence required; no assumption of passing or production security. Legacy restart/restore smoke remains legacy-only. M01.4 scoped UI and all live activation require separate authorization. G1 remains pending.
+Expected 539 offline Python passes, 60 offline environment-dependent skips, 65 Node passes, 105 disposable PG integration passes, syntax/assets and compileall. Owner-reported first full run at d011e3eb25c38f1e7ad59dbd0ae0d755bf02ef4f: 539 offline passes, 60 skips (46.37s), 65 Node passes, JS/shell syntax and asset build passed. PG18 integration reported one failed test and ten setup errors; the pasted summary was truncated. The ten M01.3 runtime cases failed before their assertions because the synthetic fixture inserted administrator and reader definitions with the same (workspace_id,role_key,rev) in workspace A. The uniqueness constraint correctly rejected that setup. The previously verified M01.2 delegation test also intermittently denied the initial administrator's members.manage permission, before reaching its expiry scenario. The negative npm elapsed time in the supplied run and the use of transaction_timestamp defaults versus clock_timestamp comparisons suggest possible wall-clock regression, not a proven cause. Commit 27363fa5d3e9a036f969b13abea9a3c42e17946c seeds distinct administrator and reader role keys, preserves intentionally overlapping membership IDs and reader role keys between tenants, and sets synthetic bootstrap grant activation one day before database clock. Commits 2ac40ad31e8a2520fb8bd8fff3f154f0fbdd7e7f and 580017247c24fc9f4371e5ba3113465794cff31d do the same for the earlier synthetic owner bootstrap and add explicit positive capability preconditions and credential-free grant timestamp diagnostics before/after delegation expiry setup. These changes model preexisting active grants; no service-issued grant is backdated, no production code, permission check, uniqueness constraint, or migration changed. The new restricted runtime assertions have not yet run successfully; no assistant runtime tests executed. Rerun only the full disposable integration runner and compileall from the existing WSL checkout; the unchanged offline, Node and asset evidence remains applicable. If timing denial recurs, preserve diagnostics and inspect system/database clocks and grant validity rather than weakening authorization. Actual test evidence required; no assumption of passing or production security. Legacy restart/restore smoke remains legacy-only. M01.4 scoped UI and all live activation require separate authorization. G1 remains pending.
 
 ## 7. Milestone ledger
 
 | Milestone | Status | Gate |
 | --- | --- | --- |
 | M00 Baseline/harness | Complete — verified synthetic baseline (owner-reported) and reviewed harness | G0 passed |
-| M01 Workspace security | M01.1 and M01.2 verified synthetic; M01.3 implemented unverified; M01.4 not started | G1 pending |
+| M01 Workspace security | M01.1 and M01.2 verified synthetic; M01.3 fixture corrections committed, targeted integration rerun pending; M01.4 not started | G1 pending |
 | M02 Resources/privacy | Not started | G1 |
 | M03 Objectives/runs | Not started | G2 |
 | M04 AI gateway/budgets | Not started | G3 |
