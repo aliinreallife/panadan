@@ -4,7 +4,7 @@ Date: 2026-11-28 (last updated)
 Authorization: D-067 roadmap and D-069 owner authorization to complete synthetic implementation through M11 as prerequisite gates pass. D-068 records the three UI references. See the approved [Roadmap](ROADMAP.md).
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G2 passed. M03.1–M03.2 are verified synthetic. G3 is pending.**
+Current gate: **G2 passed. M03.1–M03.3 are verified synthetic. G3 is pending.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -235,7 +235,7 @@ Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node pass
 | M00 Baseline/harness | Complete — verified synthetic baseline (owner-reported) and reviewed harness | G0 passed |
 | M01 Workspace security | M01.1–M01.3 verified synthetic; M01.4 accepted with independent browser and regression evidence | G1 passed |
 | M02 Resources/privacy | M02.1–M02.5 accepted synthetic | G2 passed |
-| M03 Objectives/runs | M03.1–M03.2 verified synthetic; workers and UI pending | G2 passed; G3 pending |
+| M03 Objectives/runs | M03.1–M03.3 verified synthetic; Studio pending | G2 passed; G3 pending |
 | M04 AI gateway/budgets | Not started | G3 |
 | M05 Observations/aggregation | Not started | G4 |
 | M06 Knowledge/review/taxonomy | Not started | G5 |
@@ -295,4 +295,9 @@ Expected 542 offline Python passes, 63 environment-dependent skips, 67 Node pass
 - Migration 011 adds default-off schedules, unique manual request and schedule occurrence identities, immutable run manifests, frozen population membership and initial coverage. Separate scope and UTC pins identify the exact current policy epoch, source, operator, contract, pipeline and objective versions. Changing the pipeline definition disables the replacement until explicitly enabled.
 - The synthetic service resolves current workspace/member and representation authority, admits one bounded run, and commits its population and coverage with the request or occurrence. Replays reauthorize and retain the original run and scoped membership, including when newer resources arrive. Scheduling advancement commits with the occurrence. Coverage counts measured owned rows and preserves an unknown source-wide denominator. No file, transcript text, provider dispatch or paid execution enters a run manifest.
 - All 144 selected PostgreSQL 18.6 tests passed. Cases cover default-off admission, manual and scheduled replay, simultaneous manual deduplication, revision replacement, half-open window and operator bounds, stale or withdrawn authority and bounded versus unknown coverage. Python compilation and shell syntax passed.
-- Next increment is M03.3 durable queue claims, retry, failure and stale-fence recovery. G3 remains pending worker and browser acceptance.
+## 16. M03.3 — Fenced work and deterministic fixture effects (verified synthetic)
+
+- Migration 012 adds reference-only work items and attempt history, a lease owner and monotonically increasing fence, and one durable fixture effect per item. The explicit synthetic setup service supports start, bounded claims, retry wait, lease recovery, pause/resume/cancel and restart-safe run reconciliation.
+- A claim and a completion recheck the pinned resource revision, current eligible representation, expiry and current workspace/source authority. Attempts and effects commit together. Lease expiration and interruption invalidate previous workers. Ready work uses fresh/backfill classes with age-based priority within a run. The fixture effect stores a filtered digest and character count and makes no provider calls.
+- All 151 selected PostgreSQL 18.6 tests passed, including simultaneous claims, stale and duplicate effects, retry exhaustion, pause/resume/cancel, scope/representation revocation and backfill aging. Shell syntax and Python compilation passed.
+- Next increment is M03.4, which still needs Studio authoring and controls, scoped execution and browser evidence before G3. M03.3 is an explicit synthetic setup path with forced RLS defaults on its new tables. It provisions no runtime worker login.
