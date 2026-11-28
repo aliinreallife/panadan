@@ -46,8 +46,7 @@ class PreviewConfig:
                 or env.get("PANADAN_AUTH_BACKEND","sqlite") != "sqlite"
                 or env.get("PANADAN_PUBLIC_ORIGIN")
                 or env.get("PANADAN_COOKIE_SECURE") != "false"
-                or any(env.get(k) for k in ("PGHOST","PGHOSTADDR","PGUSER","PGPASSWORD",
-                      "PGDATABASE","PGPORT","PGSERVICE","PGSERVICEFILE","PGOPTIONS"))):
+                or any(value for key,value in env.items() if key.startswith("PG"))):
             raise ValueError("Workspace preview requires isolated local SQLite and no source credentials")
         raw_port=env.get("PANADAN_KNOWLEDGE_PREVIEW_PORT","")
         if not re.fullmatch(r"[0-9]{1,5}",raw_port) or not 1<=int(raw_port)<=65535:
@@ -72,8 +71,7 @@ def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name=
     def scoped():
         # Fixed disposable login; no caller-supplied DSN or environment-based
         # libpq target selection. All PG variables are refused at activation.
-        if any(os.environ.get(k) for k in ("PGHOST","PGHOSTADDR","PGUSER","PGPASSWORD",
-               "PGDATABASE","PGPORT","PGSERVICE","PGSERVICEFILE","PGOPTIONS")):
+        if any(value for key,value in os.environ.items() if key.startswith("PG")):
             raise AccessDenied("Access denied")
         with psycopg.connect(host="127.0.0.1",port=config.port,dbname="panadan_ci",
                 user="panadan_knowledge_test_login",password="synthetic_knowledge_test_only",
