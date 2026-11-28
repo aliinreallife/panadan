@@ -141,9 +141,11 @@ class ScopedWorkspace:
                         from psycopg.rows import dict_row
                         with c.cursor(row_factory=dict_row) as view:
                             if page in ("members","roles"):
-                                result["members"] = view.execute("""SELECT id,state,created_at,revoked_at
-                                    FROM panadan_knowledge.memberships WHERE workspace_id=%s
-                                    ORDER BY created_at,id LIMIT 101""",(workspace,)).fetchall()
+                                result["members"] = view.execute("""SELECT m.id,m.state,m.created_at,m.revoked_at,
+                                    CASE WHEN p.authority_namespace=%s THEN p.authority_subject ELSE NULL END AS label_ref
+                                    FROM panadan_knowledge.memberships m JOIN panadan_knowledge.principals p ON p.id=m.principal_id
+                                    WHERE m.workspace_id=%s ORDER BY m.created_at,m.id LIMIT 101""",
+                                    (identity.namespace,workspace)).fetchall()
                             if page == "roles":
                                 result["roles"] = view.execute("""SELECT id,role_key,rev,name,state,capability_set
                                     FROM panadan_knowledge.role_versions WHERE workspace_id=%s
@@ -160,6 +162,23 @@ class ScopedWorkspace:
                         result["limited"] = any(len(result[key])>100 for key in ("members","roles","assignments","grants"))
                         for key in ("members","roles","assignments","grants"):
                             result[key] = result[key][:100]
+                        # Labels are presentation-only and never expose the
+                        # stable authority subjects in the returned projection.
+                        names=self._identity._display_names(m["label_ref"] for m in result["members"])
+                        for member in result["members"]:
+                            member["name"]=names.get(member.pop("label_ref")) or "عضو"
+                        result["member_names"]={m["id"]:m["name"] for m in result["members"]}
+                        result["role_names"]={r["id"]:r["name"]+" · "+str(r["rev"]) for r in result["roles"]}
+                        # Malformed catalog definitions are not rendered as
+                        # effective permissions or arbitrary display content.
+                        from .knowledge_authorization import _caps
+                        for role in result["roles"]:
+                            try:
+                                _caps(role["capability_set"])
+                                role["invalid"]=False
+                            except AccessDenied:
+                                role["capability_set"]=[]
+                                role["invalid"]=True
                         if service.authorize(raw,workspace,required) != access:
                             raise AccessDenied("Access denied")
                         if service.authorize(raw,workspace,"workspace.read") != access:
