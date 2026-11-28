@@ -46,16 +46,18 @@ def _identifier(value):
     return value
 
 
-def _require_member(db, workspace, member):
+def _require_member(db, workspace, member, *, exclusive=False):
     _identifier(workspace)
     _identifier(member)
-    present = db.execute("""SELECT 1 FROM panadan_knowledge.workspaces w
+    lock = " FOR UPDATE OF w FOR SHARE OF m,p" if exclusive else " FOR SHARE OF w,m,p"
+    present = db.execute("""SELECT w.policy_epoch FROM panadan_knowledge.workspaces w
         JOIN panadan_knowledge.memberships m ON m.workspace_id=w.id
         JOIN panadan_knowledge.principals p ON p.id=m.principal_id
         WHERE w.id=%s AND w.state='active' AND m.id=%s AND m.state='active' AND m.revoked_at IS NULL
-          AND p.kind='human' AND p.state='active' FOR SHARE OF w,m,p""", (workspace,member)).fetchone()
+          AND p.kind='human' AND p.state='active'""" + lock, (workspace,member)).fetchone()
     if present is None:
         raise AccessDenied("Synthetic configuration scope unavailable")
+    return present["policy_epoch"]
 
 
 def install_objective_catalog(conn, *, enabled=False):
@@ -207,7 +209,7 @@ def save_pipeline(conn, *, workspace, member, key, label, objectives, source, co
             (workspace_id,pipeline_version_id,source_id,contract_id,operator_scope_id) VALUES (%s,%s,%s,%s,%s)""",
             (workspace,version,source,contract,operator))
         db.execute("UPDATE panadan_knowledge.pipeline_versions SET state='active' WHERE workspace_id=%s AND id=%s",(workspace,version))
-        db.execute("UPDATE panadan_knowledge.pipelines SET current_version_id=%s WHERE workspace_id=%s AND id=%s",
+        db.execute("UPDATE panadan_knowledge.pipelines SET current_version_id=%s,enabled=false WHERE workspace_id=%s AND id=%s",
                    (version,workspace,pipeline))
         if authority_deadline is not None and db.execute("SELECT clock_timestamp() AS instant").fetchone()["instant"] >= authority_deadline:
             raise AccessDenied("Pipeline source scope unavailable")
