@@ -71,7 +71,9 @@ class ScopedWorkspace:
             if cur.execute("""SELECT count(*) FROM pg_catalog.pg_roles
                 WHERE rolname IN ('panadan_knowledge_authorizer','panadan_knowledge_reader')
                 AND NOT (rolcanlogin OR rolinherit OR rolsuper OR rolcreatedb OR rolcreaterole
-                         OR rolreplication OR rolbypassrls)""").fetchone() != (2,):
+                         OR rolreplication OR rolbypassrls)""").fetchone() != (2,) or cur.execute("""SELECT EXISTS (
+                    SELECT 1 FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles r ON r.oid=m.member
+                    WHERE r.rolname IN ('panadan_knowledge_authorizer','panadan_knowledge_reader'))""").fetchone()[0]:
                 c.close()
                 raise AccessDenied("Access denied")
             if any(cur.execute("SELECT current_setting(%s,true)",(key,)).fetchone()[0]
