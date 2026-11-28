@@ -1,10 +1,10 @@
 # Panadan Knowledge Platform — Implementation Status
 
 Date: 2026-11-27 (last updated)
-Authorization: D-067 roadmap; M00 completed and owner explicitly authorized M01.1 only on 2026-11-26. [Roadmap](ROADMAP.md) approved.
+Authorization: D-067 roadmap; M00 and M01.1 verified; owner explicitly authorized M01.2 on 2026-11-27. D-068 approves all three UI references for frontend increments only. [Roadmap](ROADMAP.md) approved.
 Inspected baseline: 97c797c3196ea05cdf65878962f6183e484f6459.
 Protected refs observed: main and backup/pre-knowledge-platform-2026-11-25 at 44561cad16e17b7e60287dc8e0d7a7210fc5d32a.
-Current gate: **G0 passed; M01.1 complete and verified on owner-provided synthetic test evidence. M01.2 awaits separate authorization. G1 remains pending.**
+Current gate: **G0 passed; M01.1 verified; M01.2 implemented but unverified pending local synthetic test execution. G1 remains pending.**
 This ledger records evidence, not estimates. No implementation milestone is verified merely because a plan is approved.
 
 ## 1. M00 progress and evidence
@@ -77,7 +77,7 @@ Test map: M01 AT-01 / DM-T01; M02 AT-02/03 / DM-T02–04; M03 AT-04 / DM-T05; M0
 
 ## 3. U0 design preparation
 
-D-066/D-067 adopt both references as inputs. [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md) governs reconciliation. Preserve warm editorial visual language and Persian RTL; design Home briefing, Explore, Knowledge, Applications, Infrastructure with role-aware access, workspace switching and legacy reporting. Navigation remains a proposed detailed design, not a permission policy. Candidate Forest #293F34, Sage #A4B5A0, Ink #202822, Canvas #F6F5F1, Surface #FFFFFF, Border #DADFD7; alternate reference palette remains available. Use dark ink on warm surfaces; test sage/semantic contrast before using for text. Proposed 4px grid, 40px controls, >=44px mobile touch targets, 6–12px radii, functional reduced-motion-aware transitions, Vazirmatn/Inter subject to asset/license review. No final token or logo artwork approval.
+D-066/D-067/D-068 adopt all three references as complementary inputs; the original visual direction remains governing, and the interactive prototype is not a replacement backend. [UI_DESIGN_REVIEW.md](UI_DESIGN_REVIEW.md) governs reconciliation. Preserve warm editorial visual language and Persian RTL; design Home briefing, Explore, Knowledge, Applications, Infrastructure with role-aware access, workspace switching and legacy reporting. Navigation remains a proposed detailed design, not a permission policy. Candidate Forest #293F34, Sage #A4B5A0, Ink #202822, Canvas #F6F5F1, Surface #FFFFFF, Border #DADFD7; alternate reference palette remains available. Use dark ink on warm surfaces; test sage/semantic contrast before using for text. Proposed 4px grid, 40px controls, >=44px mobile touch targets, 6–12px radii, functional reduced-motion-aware transitions, Vazirmatn/Inter subject to asset/license review. No final token or logo artwork approval.
 
 | UI increment | Reviewable screens and interactions |
 | --- | --- |
@@ -120,12 +120,46 @@ uv run --locked python -m compileall -q server tests tools
 
 The disposable runner includes both auth and knowledge integration suites; the corrected run passed. No additional M01.1 verification rerun is required on the unchanged implementation. Do not use the production checkout or manually apply the migration to any real database. Rollback at this stage means leaving the feature inaccessible and reverting feature-branch code if required; no destructive schema downgrade. G1 remains pending M01.2–M01.4 and associated tests. Obtain separate M01.2 authorization after M01.1 evidence is reviewed.
 
-## 5. Milestone ledger
+## 5. M01.2 — identity and permissions (implemented, unverified)
+
+Owner explicitly approved M01.1 completion, M01.2 implementation and use of all three UI references on 2026-11-27. D-068 records the additional UI decision; no unrelated scope added.
+
+### Implementation and decisions within approved design
+
+- Existing SQLite users have reusable integer primary keys and no stable profile field; session authentication joins numeric account IDs. The PostgreSQL staging auth implementation already generates opaque profile_id values, and the existing PG migration importer accepts and preserves a SQLite profile_id if present. Do not infer actual production identity or migration continuity from the branch.
+- server/knowledge_identity.py adds an explicit opt-in transaction for stable random profile IDs and a unique, immutable installation namespace. Existing users receive identity anchors, not memberships or privileges; new user inserts allocate random profiles. Direct deletion, account ID/rowid rewriting, profile mutation and replacement conflicts are rejected in the opted-in store. First installation invalidates old browser sessions so login is fresh; same-installation replay preserves new sessions. No startup call or changes to existing Store, login routes or auth selector. This migration requires separately approved maintenance, backups and recovery checks before any live use. No live logout performed.
+- SQLiteIdentityBridge validates the current unexpired browser session, active user and expected installation namespace in one SQLite query, returns only opaque identity reference, denies missing schema or invalid session without fallback. No username/email, legacy role, client-provided profile or numeric ID-based knowledge binding. No second authority, token copying or automatic account mapping. PG auth remains staging-only; a future cutover/restore needs separate verified namespace/profile continuity, reauthentication and grant/revocation reconciliation.
+- database/migrations/005_knowledge_authorization.sql adds role_versions, membership_roles and scope_grants to the owned PG18 schema. Composite workspace keys and FKs, version uniqueness, bounded arrays, expiry/revocation checks and published role definition immutability; additive migration guard requires 004, explicit target, expected administrator and dedicated owner. New tenant tables have FORCE RLS with no policies or runtime grants. No source/operator FKs yet: only explicit workspace-scoped operational grants until M02.
+- server/knowledge_authorization.py implements the internal workspace authorization and command service against a caller-owned PG transaction. Initial operational capability catalog: workspace.read, members.manage, roles.manage; two role templates (reader, administrator) as explicit proposals, no automatic assignment. Active principal + active workspace + active membership + current active pinned role version + matching explicit unexpired operational scope grant all required. No legacy admin override, wildcard, malformed-role fallback, data access, API/MCP or service authorization. Role versions may be published, assigned, retired; membership added only for an explicitly provisioned principal. Scope grants and assignments can be revoked, membership revocation revokes its assignments/grants; no self-grant or self-targeted membership changes. Grant issuance is limited to actor's effective capability and expiry. An issued grant is not automatically cascaded when its grantor later loses access; revoke target grants explicitly. Only the synthetic fixture performs initial administrator/principal bootstrap; actual reviewed provisioning, recovery and live activation remain pending.
+- Commands lock the workspace row, use scoped parameterized SQL, recheck current authority and expiry, increment policy epoch and append metadata-only audit in the same transaction. Audit failure rolls back command. Permission result is not a reusable credential. No cross-store atomicity claim: auth revocation after the last check is still possible, and future sensitive operations must recheck at disclosure/dispatch. Runtime grants, trusted context, pool reset, concurrency and real end-to-end revocation enforcement are M01.3 gates. Generic policy schema enforcement and source/data scope are later scoped work. No runtime connection configured, HTTP route added, or role granted.
+- tests/test_knowledge_identity.py adds five offline SQLite test cases. tests/test_knowledge_authorization.py adds 12 disposable PostgreSQL cases: guarded migration, role and scope intersection, cross-tenant reference denial, role immutability, expiry/delegation, disabled principals and revocation, session recheck, atomic audit rollback. Reuses the strict disposable DSN/rollback fixture. Local integration runner and CI job include the new suite. No new dependencies.
+- ROADMAP.md and UI_DESIGN_REVIEW.md now reflect D-068; no frontend implementation or prototype code/backend import.
+
+### Verification and remaining boundary
+
+Assistant static review only; direct git probe failed DNS (github.com), Python 3.13.5 and pytest available but psycopg, Docker and psql absent. No locked repo tests or PostgreSQL migrations executed by assistant. Prior M01.1 evidence remains valid for 004 only. Run the full synthetic local gate and compile check from the existing disposable development checkout, not production:
+
+```bash
+bash -c '
+set -euo pipefail
+cd "$HOME/panadan-m00"
+git pull --ff-only
+git rev-parse HEAD
+git status --short
+./panadan.sh verify --docker --assets
+uv run --locked python -m compileall -q server tests tools
+echo "M01.2 verification PASSED"
+'
+```
+
+Expected 5 extra offline test cases and 12 extra PG integration cases relative to M01.1; actual results must be reviewed. Do not call profile installation or apply migrations on any real auth or owned database. No production bootstrap or restore guarantee yet. M01.2 remains unverified; M01.3 requires test evidence and explicit authorization. Existing legacy app behavior remains unchanged because no new entrypoints are wired.
+
+## 6. Milestone ledger
 
 | Milestone | Status | Gate |
 | --- | --- | --- |
 | M00 Baseline/harness | Complete — verified synthetic baseline (owner-reported) and reviewed harness | G0 passed |
-| M01 Workspace security | M01.1 verified synthetic (owner-reported); M01.2–M01.4 not started | G1 pending |
+| M01 Workspace security | M01.1 verified synthetic; M01.2 implemented unverified; M01.3–M01.4 not started | G1 pending |
 | M02 Resources/privacy | Not started | G1 |
 | M03 Objectives/runs | Not started | G2 |
 | M04 AI gateway/budgets | Not started | G3 |
@@ -139,4 +173,4 @@ The disposable runner includes both auth and knowledge integration suites; the c
 | M12 Real-data E1–E3 | Not started / unauthorized | G11 + private approvals |
 | M13 Release/E4 | Not started / unauthorized | Reviewed pilot + release approval |
 
-Next action: obtain explicit authorization for M01.2 only, then review the current identity lifecycle and implement/test stable principal binding, workspace membership and permission resolution, role versions and revocation without changing the live identity authority. No automatic account mapping or runtime activation. Migration and test code committed only on authorized branch; no migration executed by assistant, no runtime app changes, source records, external connections, paid requests or production changes. Protected refs must be rechecked after commit.
+Next action: review actual M01.2 local test output, correct any failures, then obtain explicit authorization for M01.3. No automatic account mapping or runtime activation. Migration, service and test code committed only on authorized branch; no live migration, login/session mutation, runtime app wiring, source records, external connections, paid requests or production changes. Protected refs must be rechecked after commit.
