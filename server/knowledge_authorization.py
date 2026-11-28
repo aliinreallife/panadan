@@ -15,7 +15,7 @@ import re
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from .knowledge_identity import SQLiteIdentityBridge, VerifiedIdentity
+from .knowledge_identity import SQLiteIdentityBridge
 
 CAPABILITIES = frozenset({"workspace.read", "members.manage", "roles.manage"})
 ROLE_TEMPLATES = {
@@ -124,8 +124,11 @@ class WorkspaceAuthorization:
             raise AccessDenied("Access denied")
         identity = self._current(raw)
         with self._conn.transaction(), self._conn.cursor(row_factory=dict_row) as cur:
-            access,_,_ = self._load(cur,workspace,identity)
+            access,effective,_ = self._load(cur,workspace,identity)
             if capability not in access.capabilities or self._current(raw) != identity:
+                raise AccessDenied("Access denied")
+            now = cur.execute("SELECT clock_timestamp() AS t").fetchone()["t"]
+            if effective[capability] is not None and effective[capability] <= now:
                 raise AccessDenied("Access denied")
             return access
 
@@ -163,6 +166,11 @@ class WorkspaceAuthorization:
             # Recheck current session before publishing any local change. M01.3+
             # must recheck at actual dispatch/read boundaries; never cache this.
             if self._current(raw) != identity:
+                raise AccessDenied("Access denied")
+            checked_at = cur.execute("SELECT clock_timestamp() AS t").fetchone()["t"]
+            # Conservative: if any effective authorization expires during a
+            # command, roll back instead of extending a stale delegation.
+            if any(deadline is not None and deadline <= checked_at for deadline in effective.values()):
                 raise AccessDenied("Access denied")
             epoch = cur.execute("""UPDATE panadan_knowledge.workspaces
                 SET policy_epoch=policy_epoch+1,lock_version=lock_version+1,updated_at=clock_timestamp()
