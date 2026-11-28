@@ -1,9 +1,37 @@
-"""Read-only projections of real synthetic configuration and run effects."""
+"""Bounded projections of synthetic configuration and run effects."""
 
 from .knowledge_authorization import AccessDenied
 
 
 PAGES = {"objectives":"objective.configure", "pipelines":"pipeline.configure", "runs":"pipeline.run"}
+
+
+def pipeline_editor(db, workspace, pipelines):
+    windows = db.execute("""SELECT DISTINCT ON (s.label,o.id,c.event_start,c.event_end)
+            c.id,c.source_id,c.operator_scope_id,c.event_start,c.event_end,
+            s.label AS source,coalesce(o.label,o.external_operator_key) AS operator
+        FROM panadan_knowledge.sync_checkpoints c JOIN panadan_knowledge.sources s
+          ON s.workspace_id=c.workspace_id AND s.id=c.source_id AND s.current_contract_id=c.contract_id
+        JOIN panadan_knowledge.source_contract_versions v
+          ON v.workspace_id=c.workspace_id AND v.source_id=c.source_id AND v.id=c.contract_id
+        JOIN panadan_knowledge.operator_scopes o
+          ON o.workspace_id=c.workspace_id AND o.source_id=c.source_id AND o.id=c.operator_scope_id
+        WHERE c.workspace_id=%s AND v.adapter_version='synthetic-call-v1'
+        ORDER BY s.label,o.id,c.event_start,c.event_end,c.id LIMIT 60""",(workspace,)).fetchall()
+    objectives = db.execute("""SELECT v.id,v.label,v.rev FROM panadan_knowledge.objectives o
+        JOIN panadan_knowledge.objective_versions v ON v.workspace_id=o.workspace_id AND v.id=o.current_version_id
+        JOIN panadan_knowledge.policy_versions p ON p.workspace_id=v.workspace_id AND p.id=v.validation_policy_id
+        WHERE o.workspace_id=%s ORDER BY v.label,v.id LIMIT 60""",(workspace,)).fetchall()
+    configs = db.execute("""SELECT p.pipeline_key,p.current_version_id,v.source_id,v.operator_scope_id,
+            array_agg(b.objective_version_id ORDER BY b.stage_order) AS objectives
+        FROM panadan_knowledge.pipelines p JOIN panadan_knowledge.pipeline_sources v
+          ON v.workspace_id=p.workspace_id AND v.pipeline_version_id=p.current_version_id
+        JOIN panadan_knowledge.pipeline_objectives b
+          ON b.workspace_id=p.workspace_id AND b.pipeline_version_id=p.current_version_id
+        WHERE p.workspace_id=%s AND p.current_version_id=ANY(%s)
+        GROUP BY p.pipeline_key,p.current_version_id,v.source_id,v.operator_scope_id""",
+        (workspace,[p["id"] for p in pipelines])).fetchall()
+    return {"windows":windows,"objectives":objectives,"versions":{c["current_version_id"]:c for c in configs}}
 
 
 def studio_view(db, workspace, page, *, objective_authoring=False):

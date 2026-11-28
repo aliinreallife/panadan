@@ -41,17 +41,19 @@ def main():
         if db.execute("""SELECT count(*) FROM pg_roles WHERE rolname IN
             ('panadan_knowledge_owner','panadan_knowledge_authorizer','panadan_knowledge_reader',
              'panadan_knowledge_test_login','panadan_knowledge_collector','panadan_knowledge_collector_ci',
-             'panadan_call_source_reader_ci','panadan_knowledge_objective_author')""").fetchone()!=(0,):
+             'panadan_call_source_reader_ci','panadan_knowledge_objective_author','panadan_knowledge_pipeline_author')""").fetchone()!=(0,):
             raise SystemExit("Refusing existing role names")
         db.execute("SELECT set_config('panadan.knowledge_migration_target','panadan_ci',true)")
         for migration in ("004_knowledge_foundation.sql","005_knowledge_authorization.sql","006_knowledge_rls.sql",
                           "007_knowledge_call_resources.sql","008_knowledge_call_collection.sql","009_knowledge_resource_explorer.sql",
                           "010_knowledge_objective_definitions.sql","011_knowledge_run_admission.sql","012_knowledge_durable_work.sql",
-                          "013_knowledge_studio_preview.sql","014_knowledge_objective_authoring.sql"):
+                          "013_knowledge_studio_preview.sql","014_knowledge_objective_authoring.sql",
+                          "015_knowledge_pipeline_authoring.sql"):
             db.execute((ROOT/"database/migrations"/migration).read_text(encoding="utf-8"))
         db.execute("CREATE ROLE panadan_knowledge_test_login LOGIN NOINHERIT PASSWORD 'synthetic_knowledge_test_only'")
         db.execute("GRANT CONNECT ON DATABASE panadan_ci TO panadan_knowledge_test_login")
-        db.execute("""GRANT panadan_knowledge_authorizer,panadan_knowledge_reader,panadan_knowledge_objective_author
+        db.execute("""GRANT panadan_knowledge_authorizer,panadan_knowledge_reader,panadan_knowledge_objective_author,
+            panadan_knowledge_pipeline_author
             TO panadan_knowledge_test_login WITH INHERIT FALSE, SET TRUE""")
         store=Store(str(path))
         store.bootstrap("admin",PASSWORD)
@@ -104,6 +106,7 @@ def main():
         PANADAN_KNOWLEDGE_PREVIEW="YES",PANADAN_KNOWLEDGE_PREVIEW_ISOLATED="YES",PANADAN_KNOWLEDGE_PREVIEW_RESOURCES="YES",
         PANADAN_KNOWLEDGE_PREVIEW_STUDIO="YES",
         PANADAN_KNOWLEDGE_PREVIEW_OBJECTIVE_AUTHORING="YES",
+        PANADAN_KNOWLEDGE_PREVIEW_PIPELINE_AUTHORING="YES",
         PANADAN_KNOWLEDGE_PREVIEW_PORT=str(port),PANADAN_KNOWLEDGE_PREVIEW_INSTALLATION=str(installation),
         PANADAN_KNOWLEDGE_PREVIEW_WORKSPACES=",".join(map(str,workspaces)))
     print("Synthetic preview only: http://127.0.0.1:8765/login",flush=True)

@@ -4,6 +4,30 @@
 {% macro timestamp(value) %}
 {% if value %}<time datetime="{{value.isoformat()}}"><bdi>{{value.strftime('%Y-%m-%d %H:%M')}} UTC</bdi></time>{% else %}—{% endif %}
 {% endmacro %}
+{% macro pipeline_form(pipeline, config, editor) %}
+<form class="form-grid" method="post" action="{{root}}/pipeline">
+  <input type="hidden" name="csrf" value="{{csrf}}">
+  <input type="hidden" name="expected_revision" value="{{pipeline.rev if pipeline else 0}}">
+  {% if pipeline %}<input type="hidden" name="key" value="{{config.pipeline_key}}">
+  {% else %}<label>کلید خط پردازش<input name="key" required spellcheck="false" dir="ltr" maxlength="40" pattern="[a-z][a-z0-9_]{0,39}"></label>{% endif %}
+  <label>نام خط پردازش<input name="label" value="{{pipeline.label if pipeline else ''}}" required maxlength="160"></label>
+  <label>بازهٔ تماس مجاز<select name="checkpoint" dir="rtl" required>
+    <option value="">انتخاب منبع، اپراتور و بازه</option>
+    {% for window in editor.windows %}
+    <option value="{{window.id}}" {% if pipeline and window.source_id == config.source_id and window.operator_scope_id == config.operator_scope_id and window.event_start == pipeline.event_start and window.event_end == pipeline.event_end %}selected{% endif %}>
+      {{window.source}} · {{window.operator}} · {{window.event_start.strftime('%Y-%m-%d %H:%M')}} تا {{window.event_end.strftime('%Y-%m-%d %H:%M')}} UTC
+    </option>{% endfor %}
+  </select></label>
+  <label>سقف تماس در اجرا<input name="max_resources" type="number" min="1" max="500" value="{{pipeline.max_resources if pipeline else 50}}" required></label>
+  <fieldset class="pipeline-objectives"><legend>نسخه‌های اهداف تماس (۱ تا ۶ مورد)</legend>
+    {% for objective in editor.objectives %}
+    <label class="check"><input type="checkbox" name="objectives" value="{{objective.id}}" {% if config and objective.id in config.objectives %}checked{% endif %}>
+      {{objective.label}} · نسخهٔ {{objective.rev}}</label>
+    {% endfor %}
+  </fieldset>
+  <button type="submit">{{'انتشار نسخهٔ جدید' if pipeline else 'انتشار خط پردازش'}}</button>
+</form>
+{% endmacro %}
 
 {% if page == 'objectives' %}
 {% if data.objective_authoring and data.validation_policies %}
@@ -67,6 +91,16 @@
   </ul>
 </section>
 {% elif page == 'pipelines' %}
+{% set editor = data.pipeline_editor %}
+{% if editor and editor.windows and editor.objectives %}
+<section class="panel"><details class="editor">
+  <summary>تعریف خط پردازش <span aria-hidden="true">＋</span></summary>
+  <p>هر نسخه ابتدا غیرفعال است و از پردازشگر آزمایشی استفاده می‌کند.</p>
+  {{pipeline_form(none, none, editor)}}
+</details></section>
+{% elif editor %}
+<section class="panel"><p class="resource-message">برای تعریف خط پردازش، یک هدف تماس و یک بازهٔ تماس مجاز لازم است.</p></section>
+{% endif %}
 <section class="panel">
   <div class="panel-head"><h2>تنظیمات خطوط پردازش</h2>{% if 'pipeline.run' in data.studio_capabilities %}<a class="button secondary" href="{{root}}/runs">تاریخچهٔ اجراها</a>{% endif %}</div>
   {% for pipeline in data.pipelines %}
@@ -80,6 +114,12 @@
         <dt>پردازشگر</dt><dd>قطعی و آزمایشی</dd>
         <dt>وضعیت</dt><dd>{{'فعال' if pipeline.enabled else 'غیرفعال'}}</dd>
       </dl>
+      {% if editor and editor.windows and editor.objectives and pipeline.id in editor.versions %}
+      <details class="editor objective-editor">
+        <summary>ویرایش تنظیمات <span aria-hidden="true">＋</span></summary>
+        {{pipeline_form(pipeline, editor.versions[pipeline.id], editor)}}
+      </details>
+      {% endif %}
     </article>
   {% else %}<p class="resource-message">خط پردازشی در محدودهٔ دسترسی شما ثبت نشده است.</p>
   {% endfor %}

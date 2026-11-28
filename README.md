@@ -346,7 +346,7 @@ Review the Persian workspace, Resource Explorer, Integrations and Studio in an i
 bash tools/preview-knowledge.sh
 ```
 
-The launcher builds locked frontend assets, creates a fresh loopback-only PostgreSQL 18.6 container and temporary SQLite authority, and applies migrations 004–014 to the disposable owned database. It filters fixture calls from a separate synthetic source through a column-scoped read-only login, then runs the deterministic processor on eligible filtered inputs. The Studio supports creating and revising synthetic objectives and inspecting configured pipelines and persisted run results after the app starts at `127.0.0.1:8765`. Stop with Ctrl+C to discard the container and temporary authority.
+The launcher builds locked frontend assets, creates a fresh loopback-only PostgreSQL 18.6 container and temporary SQLite authority, and applies migrations 004–015 to the disposable owned database. It filters fixture calls from a separate synthetic source through a column-scoped read-only login, then runs the deterministic processor on eligible filtered inputs. The Studio supports publishing synthetic objectives and disabled pipeline versions, and inspecting persisted run results after the app starts at `127.0.0.1:8765`. Stop with Ctrl+C to discard the container and temporary authority.
 
 Sign in on the local `/login` page using the synthetic password printed by the launcher. `admin` can switch between both organizations. `reader` can browse call metadata in A. `other` can read eligible filtered transcripts in B. `newmember` starts without workspace access. Reporting access is independently authorized. The preview uses generated data and an explicitly isolated configuration only.
 

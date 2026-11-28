@@ -10,17 +10,18 @@ from __future__ import annotations
 from uuid import uuid4
 
 from psycopg.pq import TransactionStatus
-from psycopg.rows import tuple_row
+from psycopg.rows import dict_row, tuple_row
 
 from .knowledge_authorization import AccessDenied, STUDIO_CAPABILITIES, WorkspaceAuthorization, _uuid
-from .knowledge_configuration import _publish_objective, _revise_objective
+from .knowledge_configuration import _publish_checkpoint_pipeline, _publish_objective, _revise_objective
 from .knowledge_identity import SQLiteIdentityBridge
 from .knowledge_resource_views import PAGES as RESOURCE_PAGES, ResourceFilters, resource_view
-from .knowledge_studio_views import PAGES as STUDIO_PAGES, studio_view
+from .knowledge_studio_views import PAGES as STUDIO_PAGES, pipeline_editor, studio_view
 
 AUTHOR = "panadan_knowledge_authorizer"
 READER = "panadan_knowledge_reader"
 OBJECTIVE_AUTHOR = "panadan_knowledge_objective_author"
+PIPELINE_AUTHOR = "panadan_knowledge_pipeline_author"
 _SETTINGS = (
     "panadan.workspace_id", "panadan.authority_namespace", "panadan.authority_subject",
     "panadan.target_principal", "panadan.read_authorized", "panadan.policy_epoch",
@@ -28,6 +29,7 @@ _SETTINGS = (
 _RESOURCE_SETTINGS = ("panadan.resource_member", "panadan.resource_capabilities")
 _STUDIO_SETTING = "panadan.studio_capabilities"
 _OBJECTIVE_SETTING = "panadan.objective_authorized"
+_PIPELINE_SETTING = "panadan.pipeline_author_member"
 _COMMANDS = frozenset({
     "create_role", "add_member", "assign_role", "grant_scope", "revoke_membership",
     "revoke_role", "revoke_scope", "retire_role",
@@ -43,7 +45,7 @@ class ScopedWorkspace:
     a DB role, principal, epoch, context value or command implementation.
     """
     def __init__(self, connection, identity: SQLiteIdentityBridge, *, enabled=False, resources=False, studio=False,
-                 objective_authoring=False):
+                 objective_authoring=False, pipeline_authoring=False):
         if enabled is not True or type(identity) is not SQLiteIdentityBridge:
             raise AccessDenied("Access denied")
         self._conn = connection
@@ -51,6 +53,7 @@ class ScopedWorkspace:
         self._resources = resources is True
         self._studio = studio is True and self._resources
         self._objective_authoring = objective_authoring is True and self._studio
+        self._pipeline_authoring = pipeline_authoring is True and self._studio
 
     def _clean(self):
         c = self._conn
@@ -78,6 +81,8 @@ class ScopedWorkspace:
                 JOIN pg_catalog.pg_roles child ON child.oid=m.member
                 WHERE child.rolname=session_user""").fetchall()
             roles = [AUTHOR, READER] + ([OBJECTIVE_AUTHOR] if self._objective_authoring else [])
+            if self._pipeline_authoring:
+                roles.append(PIPELINE_AUTHOR)
             if (set(memberships) != {(role,False,False,True) for role in roles}
                     or cur.execute("SELECT has_schema_privilege(session_user,'panadan_knowledge','USAGE')").fetchone()[0]):
                 c.close()
@@ -91,7 +96,8 @@ class ScopedWorkspace:
                 c.close()
                 raise AccessDenied("Access denied")
             if any(cur.execute("SELECT current_setting(%s,true)",(key,)).fetchone()[0]
-                   not in (None,"") for key in _SETTINGS + _RESOURCE_SETTINGS + (_STUDIO_SETTING,_OBJECTIVE_SETTING)):
+                   not in (None,"") for key in _SETTINGS + _RESOURCE_SETTINGS
+                   + (_STUDIO_SETTING,_OBJECTIVE_SETTING,_PIPELINE_SETTING)):
                 # Never reuse a connection carrying session-level identity.
                 c.close()
                 raise AccessDenied("Access denied")
@@ -152,7 +158,6 @@ class ScopedWorkspace:
                         result["roles"] = []
                         result["assignments"] = []
                         result["grants"] = []
-                        from psycopg.rows import dict_row
                         with c.cursor(row_factory=dict_row) as view:
                             if page in ("members","roles"):
                                 result["members"] = view.execute("""SELECT m.id,m.state,m.created_at,m.revoked_at,
@@ -218,6 +223,10 @@ class ScopedWorkspace:
                                                   if page in STUDIO_PAGES
                                                   else resource_view(view,workspace,page,args[1],args[2]))
                                     result.update(projection)
+                                    if page == "pipelines" and self._pipeline_authoring and "representation.read" in resource_capabilities:
+                                        cur.execute("SELECT set_config(%s,%s,true)",(_PIPELINE_SETTING,str(access.membership_id)))
+                                        cur.execute("SET LOCAL ROLE panadan_knowledge_pipeline_author")
+                                        result["pipeline_editor"] = pipeline_editor(view,workspace,result["pipelines"])
                                 cur.execute("SET LOCAL ROLE panadan_knowledge_authorizer")
                                 if service.authorize_resource_capabilities(raw, workspace) != source_access:
                                     raise AccessDenied("Access denied")
@@ -225,27 +234,35 @@ class ScopedWorkspace:
                             raise AccessDenied("Access denied")
                         if service.authorize(raw,workspace,"workspace.read") != access:
                             raise AccessDenied("Access denied")
-                elif operation == "objective_command":
-                    if not self._objective_authoring:
+                elif operation in ("objective_command","pipeline_command"):
+                    objective = operation == "objective_command"
+                    enabled = self._objective_authoring if objective else self._pipeline_authoring
+                    if not enabled:
                         raise AccessDenied("Access denied")
                     access = service.authorize(raw,workspace,"workspace.read")
-                    if service.authorize(raw,workspace,"objective.configure") != access:
+                    subject = "objective" if objective else "pipeline"
+                    capability = f"{subject}.configure"
+                    if service.authorize(raw,workspace,capability) != access:
                         raise AccessDenied("Access denied")
-                    cur.execute("SELECT set_config(%s,'yes',true)",(_OBJECTIVE_SETTING,))
-                    cur.execute("SET LOCAL ROLE panadan_knowledge_objective_author")
-                    from psycopg.rows import dict_row
                     with c.cursor(row_factory=dict_row) as author:
-                        writer = _revise_objective if kwargs["expected_revision"] else _publish_objective
-                        result = writer(author,workspace,**kwargs)
+                        if objective:
+                            cur.execute("SELECT set_config(%s,'yes',true)",(_OBJECTIVE_SETTING,))
+                            cur.execute("SET LOCAL ROLE panadan_knowledge_objective_author")
+                            writer = _revise_objective if kwargs["expected_revision"] else _publish_objective
+                            result = writer(author,workspace,**kwargs)
+                        else:
+                            cur.execute("SELECT set_config(%s,%s,true)",(_PIPELINE_SETTING,str(access.membership_id)))
+                            cur.execute("SET LOCAL ROLE panadan_knowledge_pipeline_author")
+                            result = _publish_checkpoint_pipeline(author,workspace,access.membership_id,**kwargs)
                     cur.execute("SET LOCAL ROLE panadan_knowledge_authorizer")
-                    if (service.authorize(raw,workspace,"objective.configure") != access
+                    if (service.authorize(raw,workspace,capability) != access
                             or service.authorize(raw,workspace,"workspace.read") != access):
                         raise AccessDenied("Access denied")
-                    action = "objective.revise" if kwargs["expected_revision"] else "objective.publish"
+                    verb = "revise" if kwargs["expected_revision"] else "publish"
                     cur.execute("""INSERT INTO panadan_knowledge.audit_events
                         (workspace_id,principal_id,membership_id,channel,action,target_kind,target_ref,
-                         policy_epoch,outcome,correlation_id) VALUES (%s,%s,%s,'web',%s,'objective_version',%s,%s,'succeeded',%s)""",
-                        (workspace,access.principal_id,access.membership_id,action,str(result.version_id),
+                         policy_epoch,outcome,correlation_id) VALUES (%s,%s,%s,'web',%s,%s,%s,%s,'succeeded',%s)""",
+                        (workspace,access.principal_id,access.membership_id,f"{subject}.{verb}",f"{subject}_version",str(result.version_id),
                          access.policy_epoch,uuid4()))
                 elif operation == "ui_command":
                     service.authorize(raw,workspace,"workspace.read")
@@ -297,6 +314,10 @@ class ScopedWorkspace:
         if not expected_revision:
             options.update(validation_policy=validation_policy,template_key=template_key,fields=fields)
         return self._invoke(raw,workspace,"objective_command",(),options)
+
+    def pipeline_command(self, raw, workspace, *, checkpoint, key, label, objectives, max_resources, expected_revision):
+        return self._invoke(raw,workspace,"pipeline_command",(),dict(checkpoint=checkpoint,key=key,label=label,
+            objectives=objectives,max_resources=max_resources,expected_revision=expected_revision))
 
     def command(self, raw, workspace, operation, *args, **kwargs):
         if type(operation) is not str or operation not in _COMMANDS:

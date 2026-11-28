@@ -51,6 +51,7 @@ class PreviewConfig:
     resources: bool = False
     studio: bool = False
     objective_authoring: bool = False
+    pipeline_authoring: bool = False
 
     @classmethod
     def from_env(cls, env):
@@ -75,9 +76,10 @@ class PreviewConfig:
         resources = env.get("PANADAN_KNOWLEDGE_PREVIEW_RESOURCES") == "YES"
         studio = env.get("PANADAN_KNOWLEDGE_PREVIEW_STUDIO") == "YES"
         authoring = env.get("PANADAN_KNOWLEDGE_PREVIEW_OBJECTIVE_AUTHORING") == "YES"
-        if (studio and not resources) or (authoring and not studio):
+        pipelines = env.get("PANADAN_KNOWLEDGE_PREVIEW_PIPELINE_AUTHORING") == "YES"
+        if (studio and not resources) or ((authoring or pipelines) and not studio):
             raise ValueError("Studio requires the isolated resource preview")
-        return cls(int(raw_port),installation,candidates,resources,studio,authoring)
+        return cls(int(raw_port),installation,candidates,resources,studio,authoring,pipelines)
 
 
 def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name="panadan_session"):
@@ -96,7 +98,7 @@ def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name=
                 user="panadan_knowledge_test_login",password="synthetic_knowledge_test_only",
                 connect_timeout=3,autocommit=True,sslmode="disable") as conn:
             yield ScopedWorkspace(conn,bridge,enabled=True,resources=config.resources,studio=config.studio,
-                                  objective_authoring=config.objective_authoring)
+                                  objective_authoring=config.objective_authoring,pipeline_authoring=config.pipeline_authoring)
 
     def render(request, **context):
         status=context.pop("status_code",200)
@@ -211,6 +213,35 @@ def build_router(store: Store, templates, config: PreviewConfig, *, cookie_name=
             return render(request,status_code=409,error=True,message="نسخهٔ هدف تغییر کرده است. صفحه را تازه کنید.")
         except ValueError:
             return render(request,status_code=400,error=True,message="اطلاعات هدف کامل یا معتبر نیست.")
+        except (AccessDenied,psycopg.IntegrityError):
+            return denied(request)
+        except psycopg.Error:
+            return unavailable(request)
+
+    @router.post("/{workspace_id}/pipeline")
+    def pipeline(request: Request, workspace_id: str, csrf: str=Form(...), key: str=Form(...),
+                 label: str=Form(...), expected_revision: int=Form(...), checkpoint: str=Form(...),
+                 objectives: list[str]=Form(...), max_resources: int=Form(...)):
+        raw,session=auth(request)
+        if (not config.pipeline_authoring or not session
+                or not hmac.compare_digest(csrf.encode("utf-8"),session["csrf"].encode("utf-8"))
+                or not valid_form_origin(request,None)):
+            return denied(request)
+        try:
+            workspace=parse_uuid(workspace_id)
+            if workspace not in config.candidates:
+                return denied(request)
+            if not 1 <= len(objectives) <= 6 or expected_revision < 0:
+                raise ValueError("Invalid pipeline configuration")
+            with scoped() as svc:
+                svc.pipeline_command(raw,workspace,key=key,label=label,expected_revision=expected_revision,
+                                     checkpoint=parse_uuid(checkpoint),objectives=tuple(map(parse_uuid,objectives)),
+                                     max_resources=max_resources)
+            return RedirectResponse(f"/workspace/{workspace}/pipelines",303,headers=HEADERS)
+        except ConfigurationChanged:
+            return render(request,status_code=409,error=True,message="نسخهٔ خط پردازش تغییر کرده است. صفحه را تازه کنید.")
+        except ValueError:
+            return render(request,status_code=400,error=True,message="اطلاعات خط پردازش کامل یا معتبر نیست.")
         except (AccessDenied,psycopg.IntegrityError):
             return denied(request)
         except psycopg.Error:
